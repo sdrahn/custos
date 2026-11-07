@@ -152,7 +152,7 @@ if [ "$gateway_host" = name ]; then
 	upstream=$(sed -n 's/^nameserver[[:space:]]*\([0-9.]*\).*/\1/p' /etc/resolv.conf | head -n1)
 	check "dnsmasq is installed" command -v dnsmasq
 	systemd-run --unit=osh-dnsmasq dnsmasq --keep-in-foreground --no-resolv --no-hosts --bind-interfaces \
-		--listen-address=127.0.0.1 --port=53 --address="/$gw_host/$host_ip" --server="${upstream:-127.0.0.53}" >/dev/null
+		--listen-address=127.0.0.1 --port=53 --local="/$gw_host/" --address="/$gw_host/$host_ip" --server="${upstream:-127.0.0.53}" >/dev/null
 	mv /etc/resolv.conf "$work/resolv.conf.orig"
 	printf 'nameserver 127.0.0.1\n' >/etc/resolv.conf
 	restore_resolv() { if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi; }

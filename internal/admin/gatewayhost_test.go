@@ -87,6 +87,9 @@ func TestDNSQuery(t *testing.T) {
 			}
 			r := dnsmessage.Message{Header: dnsmessage.Header{ID: q.Header.ID, Response: true}, Questions: q.Questions}
 			qq := q.Questions[0]
+			if qq.Type == dnsmessage.TypeAAAA && qq.Name.String() == "gw.test." {
+				continue // forwarded, and the upstream never answers
+			}
 			switch {
 			case qq.Name.String() != "gw.test.":
 				r.Header.RCode = dnsmessage.RCodeNameError
@@ -106,6 +109,13 @@ func TestDNSQuery(t *testing.T) {
 	got, rc, err = dnsQuery(pc.LocalAddr().String(), name("only-in-hosts.test."), dnsmessage.TypeA)
 	if err != nil || rc != dnsmessage.RCodeNameError || len(got) != 0 {
 		t.Errorf("an unknown name: %v %v %v", got, rc, err)
+	}
+	// A and AAAA: the A answer counts though AAAA times out.
+	if got, err := lookupAt(pc.LocalAddr().String(), "gw.test"); err != nil || strings.Join(got, ",") != "10.0.0.5" {
+		t.Errorf("lookupAt gw.test: %v %v", got, err)
+	}
+	if _, err := lookupAt(pc.LocalAddr().String(), "only-in-hosts.test"); err == nil || !strings.Contains(err.Error(), "not in DNS") {
+		t.Errorf("lookupAt an unknown name: %v", err)
 	}
 	// No nameserver: said so.
 	a, _ := newAdmin(t)

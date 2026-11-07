@@ -95,19 +95,32 @@ func (a *Admin) lookupDNS(host string) ([]string, error) {
 	if server == "" {
 		return nil, errors.New("no nameserver in /etc/resolv.conf")
 	}
+	return lookupAt(net.JoinHostPort(server, "53"), host)
+}
+
+// lookupAt asks the nameserver at server (host:port) for host's A and
+// AAAA records.
+func lookupAt(server, host string) ([]string, error) {
 	name, err := dnsmessage.NewName(strings.TrimSuffix(host, ".") + ".")
 	if err != nil {
 		return nil, err
 	}
+	// Each family on its own, as policy DNS asks: an answer of one counts
+	// though the other fails (a nameserver that forwards AAAA and times out).
 	var addrs []string
+	var qerr error
 	nx := false
 	for _, t := range []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA} {
-		got, rcode, err := dnsQuery(net.JoinHostPort(server, "53"), name, t)
+		got, rcode, err := dnsQuery(server, name, t)
 		if err != nil {
-			return nil, fmt.Errorf("asking the nameserver %s: %w", server, err)
+			qerr = err
+			continue
 		}
 		nx = nx || rcode == dnsmessage.RCodeNameError
 		addrs = append(addrs, got...)
+	}
+	if len(addrs) == 0 && qerr != nil {
+		return nil, fmt.Errorf("asking the nameserver %s: %w", server, qerr)
 	}
 	if len(addrs) == 0 {
 		if nx {
