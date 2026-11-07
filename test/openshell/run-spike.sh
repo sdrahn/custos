@@ -463,7 +463,17 @@ if [ -n "$relay_ok" ]; then
 	# A limit is in the configuration the sandbox was created with: edit
 	# recreates the sandbox (same provider and token) and the relay (§16a).
 	sed 's/max_invocation_seconds: 300/max_invocation_seconds: 301/' "$work/sb.yaml" >"$work/sb-edited.yaml"
+	# Security review H2: while edit recreates the sandbox, every command
+	# line (what any local user reads in /proc) is sampled; the relay
+	# secret and the configuration must be in none.
+	(while :; do cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\0' ' '; echo; done) >"$work/cmdlines" 2>/dev/null &
+	sampler=$!
 	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'"
+	kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null
+	check "the sampler saw openshell's sandbox create (the control)" grep -q "sandbox create --name agent-sb" "$work/cmdlines"
+	check "no command line had the relay secret" not grep -qF "$(cat /etc/custos/agents/sb/relay.secret)" "$work/cmdlines"
+	check "nor the configuration (CUSTOS_CONFIG=)" not grep -q "CUSTOS_CONFIG=" "$work/cmdlines"
+	rm -f "$work/cmdlines"
 	# Cockpit shows what edit prints on stdout: agent-admin's words only,
 	# openshell's progress (✓ Sandbox …, Created sandbox) on stderr.
 	check "agent-admin edit prints nothing of openshell's on stdout" not grep -qiE 'sandbox agent-sb|created sandbox|CUSTOS_RELAY_SECRET' "$work/edit.out" ||
@@ -483,6 +493,26 @@ if [ -n "$relay_ok" ]; then
 else
 	skip "the checks through the relay (the agent did not answer through it)"
 fi
+if [ -n "$relay_ok" ]; then
+	section "The forward's port held by another user"
+	# Security review H3: the relay sends its secret through the forward.
+	# A process of another user holding the port first: the forward
+	# fails, and so does the unit before its relay starts, so nothing is
+	# sent there (the relay's own check of the socket's owner is in
+	# internal/relay's tests). Once the port is free, the agent answers.
+	fport=$(sed -n 's/^FORWARD_PORT=//p' /etc/custos/agents/sb/openshell.env)
+	systemctl stop agent-openshell@sb.socket agent-openshell@sb.service
+	systemd-run --unit=osh-squatter --uid=nobody --gid="$(id -g nobody)" \
+		/usr/libexec/custos/tests/fakemodel --listen "127.0.0.1:$fport" >/dev/null
+	check "nobody holds 127.0.0.1:$fport" eventually 20 bash -c "ss -ltn 'sport = :$fport' | grep -q LISTEN"
+	check "the relay unit does not start with the port held (the forward fails)" not timeout 200 systemctl start agent-openshell@sb.service
+	systemctl stop osh-squatter agent-openshell@sb.service >/dev/null 2>&1
+	systemctl reset-failed agent-openshell@sb.service osh-squatter >/dev/null 2>&1
+	systemctl start agent-openshell@sb.socket
+	check "with the port free again, the agent answers through the relay" eventually 240 bash -c \
+		'curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status >/dev/null' || sandbox_state
+fi
+
 section "Emergency stop"
 check "agent-admin stop-all" agent-admin stop-all
 check "the relay is stopped" not systemctl is-active -q agent-openshell@sb.socket

@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/peercred"
@@ -17,6 +21,7 @@ import (
 // The relay and the agent's Relayed check together: the caller the host
 // saw arrives, a caller's own headers do not, streams flow.
 func TestRelayToAgent(t *testing.T) {
+	ForwardUID = os.Getuid() // the test's listener stands in for the forward
 	var seen peercred.Caller
 	agent := httptest.NewServer(peercred.Relayed("s", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen, _ = peercred.From(r.Context())
@@ -68,5 +73,54 @@ func TestBridge(t *testing.T) {
 	r := m.Records[0]
 	if r.Event != journal.ApprovalPending || r.Message != "Waiting for approval a-1" || r.Fields["APPROVAL_ID"] != "a-1" || r.Fields["SESSION"] != "s1" {
 		t.Errorf("record %+v", r)
+	}
+}
+
+// A listener another user owns gets nothing: the relay checks the
+// socket's owner before it sends the request with its secret (security
+// review H3). Over IPv4 and IPv6.
+func TestRelayOnlyToTheForward(t *testing.T) {
+	for _, network := range []string{"tcp4", "tcp6"} {
+		var got atomic.Int32
+		ln, err := net.Listen(network, map[string]string{"tcp4": "127.0.0.1:0", "tcp6": "[::1]:0"}[network])
+		if err != nil {
+			t.Logf("%s: %v", network, err)
+			continue
+		}
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				b := make([]byte, 1)
+				if n, _ := c.Read(b); n > 0 {
+					got.Add(1)
+				}
+				c.Close()
+			}
+		}()
+		u, _ := url.Parse("http://" + ln.Addr().String())
+		call := func() int {
+			w := httptest.NewRecorder()
+			Handler(u, "s3cret").ServeHTTP(w, httptest.NewRequest("GET", "/v1/status", nil).
+				WithContext(peercred.WithCaller(context.Background(), peercred.Caller{Name: "root"})))
+			return w.Code
+		}
+		ForwardUID = os.Getuid() + 1 // someone else's listener
+		if code := call(); code != http.StatusBadGateway {
+			t.Errorf("%s: another user's listener: %d", network, code)
+		}
+		time.Sleep(50 * time.Millisecond)
+		if n := got.Load(); n != 0 {
+			t.Errorf("%s: another user's listener received %d request(s)", network, n)
+		}
+		ForwardUID = os.Getuid()
+		call()
+		time.Sleep(50 * time.Millisecond)
+		if n := got.Load(); n != 1 {
+			t.Errorf("%s: the forward's listener received %d request(s)", network, n)
+		}
+		ln.Close()
 	}
 }
