@@ -455,32 +455,13 @@ if [ -n "$relay_ok" ]; then
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
-	section "Records from the sandbox"
-	# Security review H1: the relay journals the sandbox's records as root,
-	# and root's records of agent-admin's events are trusted. A record
-	# written on the agent's output, as a compromised agent would: a
-	# host event passes (the control), an admin's event and a field name
-	# that would add fields do not.
-	# As the agent's own user, inside the sandbox: onto agent-launcher's
-	# standard output, which the relay's log source reads.
-	forge() {
-		openshell -g openshell sandbox exec -n agent-sb -- /bin/sh -c '
-			for d in /proc/[0-9]*; do
-				case $(tr "\0" " " <"$d/cmdline" 2>/dev/null) in "/usr/libexec/custos/agent-launcher serve"*) p=${d#/proc/} ;; esac
-			done
-			[ -n "$p" ] && printf "%s\n" "$1" >"/proc/$p/fd/1"' sh "$1" </dev/null >"$work/forge.out" 2>&1
-	}
-	if forge '{"contract":"1","name":"sb","event":"tool.call","message":"spike: a host record","tool":"spike__control"}'; then
-		forge '{"contract":"1","name":"sb","event":"category.review","message":"forged","category":"spike-forged","verdict":"ok","by":"spike"}'
-		forge '{"contract":"1","name":"sb","event":"tool.call","message":"forged fields","tool":"spike__fields","x=1\nSYSLOG_IDENTIFIER":"custos-promotion"}'
-		check "a host record from the sandbox reaches the journal (the control)" eventually 30 journal_has tool.call '.AGENT_TOOL == "spike__control"'
-		# In order: once the last line is in, the review was read too.
-		check "a record with a field name that would add fields arrives without them" eventually 30 journal_has tool.call '.AGENT_TOOL == "spike__fields"'
-		check "and no field was added (its identifier is the relay's)" not journal_has tool.call '.AGENT_TOOL == "spike__fields" and .SYSLOG_IDENTIFIER != "agent-sb"'
-		check "an admin's event from the sandbox is not journalled" not journal_has category.review '.AGENT_CATEGORY == "spike-forged"'
-	else
-		skip "records from the sandbox (cannot write to the agent's output: $(tail -n 3 "$work/forge.out" | tr '\n' ' '))"
-	fi
+	# Security review H1: the relay journals the agent's records as root,
+	# so it passes only the events an agent host writes, with field names
+	# that cannot add fields (internal/relay's and internal/journal's
+	# tests). Only the agent process itself writes on its output: a
+	# process the spike runs in the sandbox (openshell sandbox exec) may
+	# not (/proc/<launcher>/fd/1: permission denied), nor can docker or
+	# podman exec reach it, so this is not tried here.
 
 	section "AG-UI through the relay"
 	out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
