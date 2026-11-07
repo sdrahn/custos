@@ -42,7 +42,10 @@ removed.
   OpenShell agent by that alias, a gateway name that resolves to a
   loopback address (which OpenShell's proxy never connects to) or not at
   all, and a `gateway.url` other than the gateway's `http.audience`;
-  Cockpit's **Check** shows the notes.
+  Cockpit's **Check** shows the notes. The agent image resolves names by
+  DNS first (OpenShell's policy DNS): with Podman, a name in the host's
+  `/etc/hosts` gave the agent an address OpenShell refused. Rebuild an
+  image built before.
 - The site's identity provider issues OpenShell agents' tokens (#111):
   `agent-admin idp-client NAME` says what the agent's OAuth client must
   be, from the gateway's own settings, and with `--keycloak` prints a

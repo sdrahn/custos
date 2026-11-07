@@ -277,6 +277,9 @@ else
 	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 fi
 
+check "the image resolves names by DNS first (hosts: dns files)" bash -c \
+	"$(declare -f ctr); ctr run --rm --entrypoint /bin/sh '$img' -c 'grep -x \"hosts: dns files\" /etc/nsswitch.conf' >/dev/null"
+
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
 version: 1

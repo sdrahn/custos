@@ -15,6 +15,14 @@ RUN (zypper -n mr -d repo-openh264 >/dev/null 2>&1 || true) && \
     zypper -n in --no-recommends ca-certificates shadow && \
     useradd -r -U -m -d /sandbox -s /usr/sbin/nologin sandbox && \
     zypper -n rm -u shadow && zypper -n clean -a
+# Names through the sandbox's DNS (OpenShell's policy DNS) first, its
+# /etc/hosts only after (#131): Podman copies the host's /etc/hosts into
+# the sandbox, and a name there (often the host's own, the gateway's) would
+# give the agent the real address, which OpenShell's network fence refuses.
+# The launcher (static Go) reads /etc/nsswitch.conf; without it, files first.
+RUN { [ -e /etc/nsswitch.conf ] || cp /usr/etc/nsswitch.conf /etc/nsswitch.conf 2>/dev/null || \
+      printf 'passwd: files\ngroup: files\nshadow: files\n' >/etc/nsswitch.conf; } && \
+    sed -i '/^hosts:/d' /etc/nsswitch.conf && echo 'hosts: dns files' >>/etc/nsswitch.conf
 COPY bin/agent-launcher /usr/libexec/custos/agent-launcher
 LABEL org.opencontainers.image.title="Custos agent" \
       org.opencontainers.image.source="https://github.com/sdrahn/custos"
