@@ -417,12 +417,20 @@ check "unit: every address denied but the host's (IPAddressDeny=any)" bash -c \
 	"systemctl show -p IPAddressDeny --value agent@t1.service | grep -q '0.0.0.0/0' && systemctl show -p IPAddressAllow --value agent@t1.service | grep -q '127.0.0.0/8'"
 check "the agent's cgroup reaches its model on localhost" in_cgroup curl -s -o /dev/null --max-time 5 http://127.0.0.1:8008/v1/models
 host_ip=$(ip -4 route get 192.0.2.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+# A host without a route (the air-gapped gate) has no such address: one
+# for the test, outside 127.0.0.0/8, which the unit does not allow.
+probe_ip=
+if [ -z "$host_ip" ]; then
+	probe_ip=192.0.2.99
+	ip addr add "$probe_ip/32" dev lo && host_ip=$probe_ip
+fi
 systemd-run --unit=custos-fence-probe --property=DynamicUser=yes "$dir/fakemodel" --listen "$host_ip:18009" >/dev/null 2>&1
 check "a listener on the host's network address ($host_ip:18009) answers (the control)" eventually 10 \
 	curl -s -o /dev/null --max-time 5 "http://$host_ip:18009/v1/models"
 check "the agent's cgroup does not reach it" bash -c \
 	"$(declare -f in_cgroup); ! in_cgroup curl -s -o /dev/null --max-time 5 http://$host_ip:18009/v1/models"
 systemctl stop custos-fence-probe.service >/dev/null 2>&1
+[ -z "$probe_ip" ] || ip addr del "$probe_ip/32" dev lo
 # A model elsewhere: its address is added for the start.
 printf 'version: 1\nname: tf\nmodel: {provider: openai, name: m, endpoint: "http://192.0.2.10:8000/v1"}\ngateway: {servers: [custos-test]}\n' >"$work/tf.yaml"
 agent-admin create tf --from "$work/tf.yaml" >/dev/null
