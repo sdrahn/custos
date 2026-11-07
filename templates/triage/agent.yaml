@@ -18,8 +18,13 @@ instruction: |
   symptom. Answer with what you checked, what you found, the likely
   cause and the steps you suggest, each with the command or tool that
   would carry it out, so a person or another agent can do it.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [systemd, zypp, snapper, firewalld, exec, tukit]
+  servers: [systemd, zypp, snapper, firewalld, exec, tukit, suse-docs]
   tools:
     - systemd__list_loaded_units
     - systemd__list_unit_files
@@ -41,6 +46,10 @@ gateway:
     - tukit__get_status
     - tukit__list_snapshots
     - tukit__list_updates
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 30
   max_tool_calls: 40

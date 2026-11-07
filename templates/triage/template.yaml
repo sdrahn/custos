@@ -6,3 +6,4 @@ needs:
   - systemd-mcp, mcp-server-zypp, mcp-server-snapper and firewalld-mcp, as far as they are installed
   - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)
   - on a transactional system, mcp-server-tukit
+  - for checking against the product documentation (optional), mcp-docs at the gateway as the server suse-docs, with documentation such as suse-docs-mcp-sles-16.0 and custos-docs

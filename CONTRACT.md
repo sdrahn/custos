@@ -1154,6 +1154,15 @@ supervised. Promoting one is a separate step, as for any agent. A
 template grants nothing by itself: the gateway enforces the permissions
 as it does any agent's.
 
+The shipped templates read the product documentation through the
+gateway's server `suse-docs`: mcp-docs over the installed documentation
+collections (SUSE's `suse-docs-mcp-*` packages, `custos-docs`, others).
+They are shown and allowed its reading tools `find_sections`, `search`,
+`outline` and `read_section` (read-only; `diagnostics` where the
+template's other permissions are), and their instructions say to check
+findings and proposed steps against it and to name the sections used. A
+gateway without `suse-docs` offers none of them (#130).
+
 ## 14b. Defaults for new agents
 
 `/etc/custos/defaults.yaml` (root 0644, written by `agent-admin defaults`;

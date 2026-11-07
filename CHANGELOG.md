@@ -35,6 +35,15 @@ removed.
 
 ### Added
 
+- The agent templates read the product documentation through the
+  gateway (#130): mcp-docs as the server `suse-docs`, with SUSE's
+  documentation packages, Custos's and the others installed. Each
+  template is shown and allowed its reading tools (`find_sections`,
+  `search`, `outline`, `read_section`; in `diagnostics` for
+  `health-check`), and its instruction says to check findings and
+  proposed steps against the documentation and to name the sections
+  used. Without the server, nothing changes. Agents created before keep
+  their configuration and permissions.
 - OpenShell agents reach mcp-gateway by the host's own name, so an
   official TLS certificate covers them (#131). The user guide (chapter
   11) recommends it; `host.openshell.internal` with a private CA remains

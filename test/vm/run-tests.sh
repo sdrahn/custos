@@ -182,11 +182,12 @@ journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
 quiet_evaluator() { systemctl stop custos-demote.timer custos-demote.service >/dev/null 2>&1; }
 gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
-# opa_effect <agent> <tool>: the decision of the gateway's OPA for a call
-# of custos-test's tool by the agent (the input the gateway gives it).
+# opa_effect <agent> <tool> [server]: the decision of the gateway's OPA for
+# a call of the server's tool (custos-test's) by the agent (the input the
+# gateway gives it).
 opa_decision() {
-	jq -nc --arg a "agent-$1" --arg t "$2" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
-		action: "tools.call", resource: {server: "custos-test", kind: "tool", name: $t}, args: {}, grants: []}}' |
+	jq -nc --arg a "agent-$1" --arg t "$2" --arg s "${3:-custos-test}" '{input: {principal: {sub: $a, uid: 990, groups: [$a, "mcp-users"], transport: "unix", session_id: "s"},
+		action: "tools.call", resource: {server: $s, kind: "tool", name: $t}, args: {}, grants: []}}' |
 		curl -sS --max-time 10 --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/authz/decision -d @-
 }
 opa_effect() { opa_decision "$@" | jq -r '.result.effect // "none"'; }
@@ -900,6 +901,16 @@ check "tt1's configuration has the defaults' model" grep -q 'name: fake-default'
 check "tt1 is advisory, as the template says" bash -c "agent-admin show tt1 | jq -e '.agents.tt1.mode == \"advisory\"' >/dev/null"
 check "tt1 has the template's permissions" bash -c \
 	"test \"\$(agent-admin show tt1 | jq '.agents.tt1.permissions | length')\" = \"\$(grep -c '^- ' $tdir/triage/permissions.yaml)\""
+# #130: the product documentation through the gateway's suse-docs server
+# (mcp-docs): the template shows tt1 its reading tools, and the gateway's
+# policy allows them, advisory as tt1 is; a docs tool it does not list it
+# does not get.
+check "tt1 is shown the suse-docs tools" bash -c \
+	"grep -q '^  servers: \[.*suse-docs\]' /etc/custos/agents/tt1/agent.yaml && grep -qx '    - suse-docs__find_sections' /etc/custos/agents/tt1/agent.yaml"
+check "the gateway's policy allows tt1 suse-docs find_sections" eventually 20 bash -c \
+	"$(declare -f opa_decision opa_effect); [ \"\$(opa_effect tt1 find_sections suse-docs)\" = allow ]"
+check "and read_section" bash -c "$(declare -f opa_decision opa_effect); [ \"\$(opa_effect tt1 read_section suse-docs)\" = allow ]"
+check "but not a docs tool it does not list (read_lines)" bash -c "$(declare -f opa_decision opa_effect); [ \"\$(opa_effect tt1 read_lines suse-docs)\" != allow ]"
 # As the Cockpit page does: the edited configuration on stdin.
 check "agent-admin create tt2 --template service-doctor --from - (stdin)" bash -c \
 	"sed -e 's/^name: .*/name: tt2/' -e 's/qwen3-32b/edited-model/' $tdir/service-doctor/agent.yaml | agent-admin create tt2 --template service-doctor --from -"

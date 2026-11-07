@@ -17,8 +17,13 @@ instruction: |
   blocks, and anything in a public or external zone that is not usual
   for a server (remote administration, databases, file sharing). You
   can only look; say what a person should change and why.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [firewalld, systemd]
+  servers: [firewalld, systemd, suse-docs]
   tools:
     - firewalld__get_default_zone
     - firewalld__get_active_zones
@@ -28,6 +33,10 @@ gateway:
     - systemd__list_loaded_units
     - systemd__list_unit_files
     - systemd__get_file
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 20
   max_tool_calls: 40

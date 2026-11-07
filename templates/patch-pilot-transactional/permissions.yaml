@@ -14,3 +14,9 @@
 - {server: tukit, tool: reboot}
 - {server: tukit, tool: apply}
 - {server: tukit, tool: rollback}
+# The product documentation through the gateway (mcp-docs as the server
+# suse-docs): reading only. Without it, these are never asked.
+- {server: suse-docs, tool: find_sections, read_only: true}
+- {server: suse-docs, tool: search, read_only: true}
+- {server: suse-docs, tool: outline, read_only: true}
+- {server: suse-docs, tool: read_section, read_only: true}

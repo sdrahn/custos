@@ -18,8 +18,13 @@ instruction: |
   marked important, and never one younger than a week. To free space,
   propose which snapshot numbers to delete and why; deleting needs an
   approval every time.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [exec, snapper, systemd]
+  servers: [exec, snapper, systemd, suse-docs]
   tools:
     - exec__disk_usage
     - snapper__list_configs
@@ -27,6 +32,10 @@ gateway:
     - snapper__list_snapshots
     - snapper__delete_snapshots
     - systemd__list_log
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 20
   max_tool_calls: 30

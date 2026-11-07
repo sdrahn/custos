@@ -18,14 +18,23 @@ instruction: |
   free space, propose cleanup_snapshots, which removes the ones the
   snapper cleanup rules allow; it needs an approval unless patch-errata
   is promoted. Never delete single snapshots.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [exec, tukit, systemd]
+  servers: [exec, tukit, systemd, suse-docs]
   tools:
     - exec__disk_usage
     - tukit__get_status
     - tukit__list_snapshots
     - tukit__cleanup_snapshots
     - systemd__list_log
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 20
   max_tool_calls: 30
