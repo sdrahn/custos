@@ -284,10 +284,13 @@ func TestForgedReviewsIgnored(t *testing.T) {
 	if r := Reviews("patch-errata", l.recs); len(r) != 0 {
 		t.Errorf("forged reviews counted: %v", r)
 	}
-	// Root's own program only: the OpenShell relay writes as root too, the
-	// agent's records it passes on (security review H1).
-	if !ByRoot(Record{"_UID": "0", "_COMM": "agent-admin"}) || ByRoot(Record{"_UID": "0"}) ||
-		ByRoot(Record{"_UID": "0", "_COMM": "agent-openshel"}) || ByRoot(Record{"_UID": "981", "_COMM": "agent-admin"}) || ByRoot(Record{}) {
+	// Root's, not the OpenShell relay's, which writes as root too, the
+	// agent's records it passes on (security review H1). A short-lived
+	// agent-admin may have no _COMM (journald reads it from /proc when the
+	// record arrives): still root's.
+	if !ByRoot(Record{"_UID": "0", "_COMM": "agent-admin"}) || !ByRoot(Record{"_UID": "0"}) ||
+		ByRoot(Record{"_UID": "0", "_COMM": "agent-openshell"}) || ByRoot(Record{"_UID": "0", "_SYSTEMD_UNIT": "agent-openshell@sb.service"}) ||
+		ByRoot(Record{"_UID": "981", "_COMM": "agent-admin"}) || ByRoot(Record{}) {
 		t.Error("ByRoot")
 	}
 }

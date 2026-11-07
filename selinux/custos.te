@@ -195,6 +195,9 @@ files_read_etc_files(agent_relay_t)
 files_read_usr_files(agent_relay_t)
 files_search_pids(agent_relay_t)
 kernel_read_system_state(agent_relay_t)
+# /proc/net/tcp: the forward's socket must be root's before the relay
+# sends its secret (security review H3).
+kernel_read_network_state(agent_relay_t)
 miscfiles_read_localization(agent_relay_t)
 miscfiles_read_generic_certs(agent_relay_t)
 auth_use_nsswitch(agent_relay_t)

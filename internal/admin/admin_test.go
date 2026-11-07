@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/openshell"
 )
 
 type rec struct {
@@ -333,11 +335,19 @@ func TestOpenShellAgent(t *testing.T) {
 	for _, want := range []string{
 		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g openshell provider create --name agent-sb-gateway --type custos-gateway-sb --credential AGENT_GATEWAY_TOKEN",
 		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
-		"--env CUSTOS_RELAY_SECRET=0123456789abcdef0123456789abcdef",
+		"CUSTOS_RELAY_SECRET=0123456789abcdef0123456789abcdef CUSTOS_CONFIG=",
+		"--env-from CUSTOS_RELAY_SECRET --env-from CUSTOS_CONFIG",
 		"systemctl enable --now agent-openshell@sb.socket",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in\n%s", want, all)
+		}
+	}
+	// The relay secret only in the environment, never as an argument
+	// (security review H2): the recorded line is "ENV… name args…".
+	for _, c := range r.cmds {
+		if i := strings.Index(c, "openshell "); i >= 0 && strings.Contains(c[i:], "0123456789abcdef0123456789abcdef") {
+			t.Errorf("the relay secret on a command line: %s", c)
 		}
 	}
 	if strings.Contains(all, "tok-123 ") && strings.Count(all, "tok-123") != 1 {
@@ -951,5 +961,40 @@ func TestStopWithoutTheGatewaysPolicy(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(r.cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
 		t.Errorf("the host was not paused: %v", r.cmds)
+	}
+}
+
+// Two OpenShell agents whose names hash to the same forward port: the
+// second is refused, since its forward would fail and its relay would
+// reach the first agent (security review E5, H3). A systemd agent with
+// that name has no forward.
+func TestOpenShellForwardPortTaken(t *testing.T) {
+	first, second := "", ""
+	seen := map[int]string{}
+	for i := 0; second == ""; i++ {
+		n := fmt.Sprintf("osh%d", i)
+		if o, ok := seen[openshell.Port(n)]; ok {
+			first, second = o, n
+		}
+		seen[openshell.Port(n)] = n
+	}
+	a, _ := newAdmin(t)
+	create := func(name, yml string) error {
+		f := filepath.Join(t.TempDir(), "a.yaml")
+		os.WriteFile(f, []byte(strings.Replace(yml, "name: sb", "name: "+name, 1)), 0o644)
+		return a.Create(name, f)
+	}
+	if err := create(first, oshYml); err != nil {
+		t.Fatal(err)
+	}
+	if err := create(second, oshYml); err == nil || !strings.Contains(err.Error(), "forward port") || !strings.Contains(err.Error(), first) {
+		t.Errorf("a second agent on %s's port: %v", first, err)
+	}
+	if _, err := os.Stat(a.agentDir(second)); err == nil {
+		t.Error("the refused agent's directory was made")
+	}
+	sys := "version: 1\nname: sb\nmodel: {provider: openai, name: m, endpoint: \"http://127.0.0.1:8008/v1\"}\ngateway: {servers: [zypp]}\n"
+	if err := create(second, sys); err != nil {
+		t.Errorf("a systemd agent of that name: %v", err)
 	}
 }
