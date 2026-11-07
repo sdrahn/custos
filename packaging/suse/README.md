@@ -112,7 +112,9 @@ To release X.Y.0:
    `git push origin release-X.Y vX.Y.Z`. The Release workflow runs the
    same check before it builds anything. After publishing, it downloads
    the files again and checks them against `SHA256SUMS` and `git
-   archive` of the tag.
+   archive` of the tag. The tag also runs CI's job `video`, which records
+   the release's demonstration videos (the CI run's artifact
+   `demo-videos`).
 4. On main, the next change sets the spec to the next version
    (`X.(Y+1).0`) and starts a new `## Unreleased`.
 

@@ -3,9 +3,12 @@ name: CI
 on:
   push:
     branches: [main, "release-*"]
+    # A release's tag: only the packages and the videos (job video); the
+    # release branch ran the tests before it was tagged.
+    tags: ["v*"]
   pull_request:
-  # Run by hand (Actions → CI → Run workflow), e.g. for the demonstration
-  # videos (job video).
+  # Run by hand (Actions → CI → Run workflow): every job, the
+  # demonstration videos (job video) too.
   workflow_dispatch:
 
 permissions:
@@ -21,6 +24,8 @@ env:
 
 jobs:
   go:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +55,8 @@ jobs:
   # A real Keycloak as the site's IdP (#111): the client agent-admin
   # idp-client --keycloak makes, and check-token's token against it.
   keycloak:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -78,6 +85,8 @@ jobs:
         run: docker logs kc 2>&1 | tail -100
 
   cockpit:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +99,8 @@ jobs:
           CHROME: /usr/bin/google-chrome
 
   policy:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -206,6 +217,8 @@ jobs:
   # with SELinux enforcing, as openQA runs them on a product system.
   vm:
     needs: [opensuse]
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -342,6 +355,8 @@ jobs:
   # Podman, SELinux enforcing, the installed packages (open item O10).
   openshell-podman:
     needs: [opensuse]
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -405,6 +420,8 @@ jobs:
   # real page are uploaded (cockpit-screenshots).
   cockpit-vm:
     needs: [opensuse]
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -493,12 +510,12 @@ jobs:
   # mcp-gateway's Cockpit pages, mcp-gateway's own approval page with a
   # sign-in at the test identity provider, Cockpit's terminal), recorded
   # without audio, in a business and a technical version, with subtitles
-  # burned in and as files. Kept as the artifact demo-videos only. On
-  # release branches, when run by hand, and on branches that change the
-  # videos (their name contains "video").
+  # burned in and as files. Kept as the artifact demo-videos only. For
+  # each release, when its tag vX.Y.Z is pushed, and when run by hand
+  # (Actions, CI, Run workflow).
   video:
     needs: [opensuse]
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release-') || contains(github.head_ref, 'video')
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -605,6 +622,8 @@ jobs:
   # the gateway by a host name of its own (as with an official certificate)
   # and by host.openshell.internal (#131).
   openshell:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

@@ -17,8 +17,9 @@ removed.
   provider, and Cockpit's terminal. Each version comes as an MP4 with
   the subtitles burned in, an MP4 with a subtitle track, and `.srt` and
   `.vtt` files, in the job's artifact `demo-videos` only. The job runs
-  on release branches, by hand (Actions, CI, Run workflow) and on
-  branches whose name contains `video`. custos-tests' `testidp` gained
+  for each release, when its tag is pushed (CI then builds the packages
+  and records the videos, nothing else), and by hand (Actions, CI, Run
+  workflow). custos-tests' `testidp` gained
   the authorization code flow with PKCE (`--login`, `--issuer`), for
   the approval page's sign-in.
 
