@@ -820,7 +820,11 @@ user, who is not necessarily allowed to approve.
 (Part II). An agent the gateway has no data for (another host's, which
 the gateway denies everything anyway) is paused by its host alone. The emergency stop works even if an agent's host ignores
 everything: the gateway denies the calls, and systemd stops the
-processes. Every intervention is journaled (`agent.paused`,
+processes. Neither waits for the other: `stop-all` writes the flag,
+stops every unit (agents, schedules, events) and sandbox, and only then
+waits for the gateway's OPA to load the flag; `pause` tells the agent's
+host before it writes the gateway's data. A slow or failing OPA delays
+neither, and the command says what is in force. Every intervention is journaled (`agent.paused`,
 `agent.resumed`, `activity.cancel`, the gateway's policy change
 records, systemd's unit records).
 
@@ -1413,7 +1417,7 @@ standard error:
 | `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?, "timeout_seconds"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
 | `check NAME\|FILE` | validates only; needs no root for a FILE |
-| `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
+| `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (`stop-all` and `pause` act on the host first, §8) (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |
 | `owners NAME [RULE…]` | sets who may approve the agent's calls besides the servers' approvers (§7), in its agent data; none clears them. Refuses `self` and an agent's own user or group; returns once the gateway's OPA has loaded it |
 | `set-credential NAME CRED < secret` | `systemd-creds encrypt`; for OpenShell agents `gateway-client-secret` or `gateway-token` (§16a) |
 | `idp-client NAME [--keycloak]` | the OAuth client an OpenShell agent needs at the issuer (§16a), from the gateway's `http` settings (`/etc/mcp-gateway/gateway.yaml`) and `_http.yaml`: the client id (`gateway.oauth.client_id`, else `agent-<name>`), the client credentials grant, the claims. `--keycloak`: a `kcadm.sh` script (`$KCADM`) that creates it in the issuer's realm and prints only its secret. Changes nothing itself |

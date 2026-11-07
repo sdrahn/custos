@@ -18,6 +18,12 @@ removed.
   host. §6b says what the seal does not cover. Records of enablement
   changes carry `AGENT_SEALED`; a host sealed before reports a removed
   seal from its next change on.
+- Security (review M3, #125): `agent-admin stop-all` stopped nothing
+  when the gateway's OPA did not load the stop within 20 s: it waited
+  for the policy first and returned its error before stopping any unit.
+  It now writes the flag, stops every unit and sandbox (and the event
+  units), then waits for the policy and reports it; `pause` tells the
+  agent's host before it writes the gateway's data.
 - Security (review H2, H3, #125): an OpenShell agent's relay secret
   could reach a local user, who could then act as root on the agent's
   control API (start activities as anyone, read every response, pause).
