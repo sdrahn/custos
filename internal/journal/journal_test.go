@@ -43,6 +43,19 @@ func TestNativeFormat(t *testing.T) {
 	if bytes.Contains(got, []byte("AGENT_EMPTY")) {
 		t.Error("empty field written")
 	}
+	// A field name journald would read otherwise is never written: a
+	// newline in it would add a field of the caller's choosing.
+	l.Log(ToolCall, "m", Fields{"X=1\nSYSLOG_IDENTIFIER": "custos-promotion", "A\nOBJECT_SYSTEMD_UNIT": "mcp-gateway.service", "TOOL": "t"})
+	n, _ = srv.Read(buf)
+	got = buf[:n]
+	if bytes.Contains(got, []byte("custos-promotion")) || bytes.Contains(got, []byte("OBJECT_SYSTEMD_UNIT")) || !bytes.Contains(got, []byte("AGENT_TOOL=t\n")) {
+		t.Errorf("field names not checked: %q", got)
+	}
+	for k, want := range map[string]bool{"TOOL": true, "APPROVAL_ID": true, "A1": true, "": false, "_X": false, "x": false, "A B": false, "A\nB": false, "A=B": false} {
+		if ValidField(k) != want {
+			t.Errorf("ValidField(%q) = %v", k, !want)
+		}
+	}
 }
 
 func TestJSON(t *testing.T) {

@@ -650,12 +650,18 @@ func Autonomous(category string, perms History, recs []Record, since time.Time) 
 	return out
 }
 
-// ByRoot reports whether journald says root wrote the record (its
-// trusted field _UID): agent-admin's records (SYSLOG_IDENTIFIER
-// custos-promotion) are root's. An agent writes its own records to the
-// journal and may set any other field, an identifier and AGENT_EVENT
-// included, but never _UID.
-func ByRoot(r Record) bool { return r["_UID"] == "0" }
+// ByRoot reports whether journald says agent-admin wrote the record as
+// root (its trusted fields _UID and _COMM): agent-admin's records
+// (SYSLOG_IDENTIFIER custos-promotion; custos-demote runs agent-admin
+// evaluate) are root's. An agent writes its own records to the journal
+// and may set any other field, an identifier and AGENT_EVENT included,
+// but never a trusted one. _UID alone is not enough: an OpenShell
+// agent's records reach the journal through its relay, which runs as
+// root (security review H1).
+func ByRoot(r Record) bool { return r["_UID"] == "0" && r["_COMM"] == RootWriter }
+
+// RootWriter is the program whose root records count (_COMM).
+const RootWriter = "agent-admin"
 
 // Reviews are the category's review records, by activity and call; a
 // later verdict on the same action replaces an earlier one. Only root's
