@@ -7,6 +7,9 @@
 #                        player can switch on and off (mov_text)
 #
 # NAME.srt and NAME.vtt stay next to them, for players and translations.
+# NAME-contact-1.jpg: a frame every 15 seconds of NAME.mp4, 4×4 to a sheet
+# (more sheets, -contact-2.jpg…, for a longer video), to look at the
+# video without downloading it (the CI job prints them in its log).
 #
 # Usage: render.sh DIR NAME   (reads DIR/NAME.webm, .ass and .srt)
 set -euo pipefail
@@ -32,3 +35,7 @@ for f in "$dir/$name.mp4" "$dir/$name-subtitles.mp4"; do
 	[ -z "$a" ] || { echo "render: $f has an audio stream" >&2; exit 1; }
 	echo "render: $f, ${d%.*} s, no audio"
 done
+rm -f "$dir/$name"-contact*.jpg
+ffmpeg -nostdin -loglevel error -y -i "$dir/$name.mp4" \
+	-vf "fps=1/15,scale=480:270,tile=4x4:padding=4:color=white" -q:v 4 "$dir/$name-contact-%d.jpg"
+echo "render: $(ls "$dir/$name"-contact-*.jpg | wc -l) contact sheet(s) of $name"
