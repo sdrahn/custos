@@ -75,6 +75,16 @@ one item with two halves:
 Only the left half is trustworthy: it comes from the gateway. The right
 half is what the agent says about itself.
 
+Characters that change how text shows (right-to-left overrides and
+isolates, zero-width ones, line separators) are shown as `\uXXXX`, with
+a red *hidden characters* badge: a model could use them to make
+`echo cleanup; rm -rf /srv #` read as `"echo cleanup" #; rm -rf /srv`.
+The same goes for a diagnosis report's plan commands (where each line
+shows on its own, with a badge for a command of several lines, and
+Copy gives what is shown) and its quotes. mcp-gateway's own approval
+page and `mcp-gateway-admin approvals show` show the arguments as they
+are: read an approval with hidden characters in Cockpit.
+
 The agent's account also reaches the gateway with each call (with
 mcp-gateway 1.15 or later): its stated reason, the activity and who
 started it, and any signs of a suspected prompt injection. So who

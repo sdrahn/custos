@@ -9,6 +9,15 @@ removed.
 
 ### Fixed
 
+- Security (review M1, #125): what an approver read in Cockpit could
+  differ from what would run. Bidi overrides and isolates, zero-width
+  characters and line separators in a call's arguments, the agent's
+  rationale, a plan's command or a quote were shown as they are, so a
+  model could make `echo cleanup; rm -rf /srv #` read as a harmless
+  command; a plan's command of two lines showed as one. They are now
+  shown as `\uXXXX` with a *hidden characters* badge, every line of a
+  command on its own (with a badge for several), and Copy gives what is
+  shown.
 - Security (review M3, #125): `agent-admin stop-all` stopped nothing
   when the gateway's OPA did not load the stop within 20 s: it waited
   for the policy first and returned its error before stopping any unit.

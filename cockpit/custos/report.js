@@ -27,7 +27,8 @@ function evidenceView(e) {
         el("div", { class: "head" },
            el("span", { class: "badge " + (e.verified ? "badge-ok" : "badge-bad") }, e.verified ? "✓ verified" : "unverified"),
            el("span", { class: "mono muted" }, e.tool + (e.call_id ? " · call " + e.call_id : ""))),
-        el("blockquote", { class: "mono" }, e.quote),
+        hiddenMark(visibleText(e.quote)),
+        el("blockquote", { class: "mono" }, visibleText(e.quote).text),
         e.verified ? null : el("div", { class: "muted" }, e.call_id
             ? "Not in what " + e.tool + " returned in this activity: the agent's claim alone."
             : e.tool + " was not called in this activity: the agent's claim alone."));
@@ -81,9 +82,16 @@ function reportView(a) {
                 (evidence[id] && evidence[id].verified ? "✓ " : "unverified ") + id).join(", ") + ")") : null))) : null,
         (r.plan || []).length ? el("h4", null, "Remediation plan, for you to carry out") : null,
         (r.plan || []).length ? el("ol", { class: "plan" }, r.plan.map(p => {
-            const code = p.command ? el("code", null, p.command) : null;
+            // The command as it is, with hidden characters shown and every
+            // line on its own (security review M1). Copy gives what is
+            // shown: with hidden characters, as \uXXXX, never the hidden
+            // text a root shell would run.
+            const v = visibleText(p.command || "");
+            const lines = v.text.split("\n").length;
+            const code = p.command ? el("code", null, v.text) : null;
             return el("li", null, el("div", null, p.text),
-                code ? el("div", { class: "command" }, code, copyButton(p.command, code)) : null,
+                code ? el("div", { class: "command" }, code, copyButton(v.hidden ? v.text : p.command, code), hiddenMark(v),
+                          lines > 1 ? el("span", { class: "badge badge-bad" }, lines + " lines") : null) : null,
                 p.risk ? el("div", { class: "muted" }, "Risk: " + p.risk) : null);
         })) : null,
         feedbackForm(a));
