@@ -104,9 +104,12 @@ async function scheduledChange() {
 let t0 = 0;
 const clock = () => Date.now() - t0;
 const subs = new Subtitles(clock);
-/* caption shows text until the next caption, a title card or the end,
- * and waits while it can be read. */
-const caption = (text, hold) => sleep(subs.show(text, hold));
+/* caption shows text while it can be read, then ends it: what follows
+ * (the next click, a page loading) has no subtitle that is not about it. */
+const caption = async (text, hold) => {
+    await sleep(subs.show(text, hold));
+    subs.end();
+};
 const endCaption = () => subs.end();
 function writeSubtitles(name) {
     fs.writeFileSync(path.join(out, name + ".srt"), subs.srt());
@@ -199,6 +202,9 @@ const pointer = () => {
     const tab = async (frame, name) => click(frame().locator(`#tabs button[data-tab="${name}"]`));
     /* card shows a title card over the whole page, for ms. */
     const card = async (title, sub, ms = 4500) => {
+        // A blank page first: written into Cockpit's, its content security
+        // policy would drop the card's styles.
+        await page.goto("about:blank");
         await page.setContent(`<!DOCTYPE html><html><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0c322c;` +
             `font-family:'SUSE','DejaVu Sans',sans-serif"><div style="text-align:center;max-width:80%">` +
             `<div style="color:#30ba78;font-size:64px;font-weight:600;line-height:1.15">${title}</div>` +
@@ -465,6 +471,9 @@ const pointer = () => {
             await page.goto(url + "/system/terminal");
             const term = terminal().locator(".xterm-screen, .terminal").first();
             await term.waitFor({ timeout: 60000 });
+            // Readable in the video: the terminal's own font size buttons.
+            const bigger = terminal().locator("button[aria-label*='ncrease'], button:has-text('+')").first();
+            for (let i = 0; i < 4; i++) await bigger.click({ timeout: 5000 }).catch(() => {});
             await click(term);
             const run = async (cmd, text, wait = 2500) => {
                 await page.keyboard.type(cmd, { delay: 45 });
