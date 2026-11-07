@@ -974,6 +974,12 @@ func (a *Admin) parsePermissions(b []byte) ([]map[string]any, error) {
 				if c == Diagnostics && p["read_only"] != true {
 					return nil, fmt.Errorf("permissions[%d]: category diagnostics only reads: add read_only: true, or use another category", i)
 				}
+				// A diagnostics-only host allows diagnostics' permissions: one
+				// for every tool of a server, or of every server, would allow
+				// what changes the system there too (security review M5).
+				if c == Diagnostics && (strings.ContainsAny(fmt.Sprint(p["server"]), "*?[") || strings.ContainsAny(fmt.Sprint(p["tool"]), "*?[") || p["tool"] == nil) {
+					return nil, fmt.Errorf("permissions[%d]: category diagnostics names each tool: no pattern in server or tool", i)
+				}
 			default:
 				return nil, fmt.Errorf("permissions[%d]: unknown key %q", i, k)
 			}
@@ -1251,6 +1257,9 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		p.Enablement.Tampered = a.enablementTampered(p.Enablement)
 	}
 	if err := a.checkSeal(p); err != nil {
+		return nil, err
+	}
+	if err := a.checkSealRemoved(p); err != nil {
 		return nil, err
 	}
 	return p, nil

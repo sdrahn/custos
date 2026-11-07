@@ -1274,6 +1274,17 @@ check "the gateway's OPA asks for the enabled category's call" eventually 30 eff
 check "readiness on a host that started diagnostics-only asks for the diagnostics history" bash -c \
 	"agent-admin readiness dg patch-errata | jq -e '.diagnostics_apply and (.categories[\"patch-errata\"].unmet | any(startswith(\"diagnosis reports with feedback\")))' >/dev/null"
 check "enabled, the category starts supervised: its change waits for an approval" change_asks dg
+# What the seal does not cover (security review M5), show reports: an
+# earlier signed state put back (it verifies; the journal has a later
+# record), and the seal removed from a host agent-admin sealed.
+cp "$enablement" "$work/enablement-current.yaml"
+cp "$work/enablement.yaml" "$enablement"
+check "show: an earlier signed state put back is reported" enablement_is '(.tampered | contains("an earlier state was put back"))'
+cp "$work/enablement-current.yaml" "$enablement"
+mv "$seal" "$work/seal.yaml"
+check "show: a removed seal is reported" enablement_is '(.tampered | contains("was removed, though agent-admin sealed this host"))'
+mv "$work/seal.yaml" "$seal"
+check "show: with both back, nothing is reported" enablement_is '(has("tampered") | not) and .sealed == true'
 # The way back (#110): disable is refused while dg has a permission in the
 # category; without it, the category is disabled again, recorded, and the
 # gateway denies it once more; disable --all returns to diagnostics-only.
