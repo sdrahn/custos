@@ -108,13 +108,15 @@ use, for example `gw.example.com`: so an official certificate (from a
 public CA or your organization's) covers them. OpenShell's proxy, which
 makes the connection for the agent, runs in the host's network: it
 resolves the name and connects as the host would, and the connection to
-the host's own address stays on the host. Two conditions:
+the host's own address stays on the host. Three conditions:
 
-- **The name resolves to the host's network address**, not to a loopback
-  address: OpenShell's proxy never connects to `127.0.0.0/8`, `::1` or a
-  link-local address. Some installations map the host's own name to
-  `127.0.0.2` in `/etc/hosts`; remove that line or use a name that DNS
-  resolves. `getent ahosts gw.example.com` shows what the host gets.
+- **The name is in DNS**: with Podman, the sandbox resolves it through
+  OpenShell's own DNS, which asks the first nameserver of the host's
+  `/etc/resolv.conf` and never reads `/etc/hosts`. A name only in
+  `/etc/hosts` resolves for the host, not for the agent.
+- **It resolves to the host's network address**, not to a loopback
+  address: OpenShell never connects to `127.0.0.0/8`, `::1` or a
+  link-local address.
 - **The gateway listens on that address**: `listen: ":8443"` listens on
   every address.
 
@@ -156,8 +158,12 @@ reaches the host as `host.openshell.internal`, OpenShell's name for the
 host's loopback. Only a private CA can issue a certificate for it
 (`DNS:host.openshell.internal`), which OpenShell must then trust
 ([step 4](#trust)), and it becomes the gateway's `http.audience` and the
-agents' `gateway.url`. `agent-admin check` notes such an agent, and one
-whose name resolves to a loopback address.
+agents' `gateway.url`.
+
+`agent-admin check NAME` (and `create`, `edit`) notes an OpenShell
+agent by `host.openshell.internal`, and one whose name is not in DNS (it
+asks the nameserver as OpenShell does) or resolves to a loopback
+address.
 
 ## Step 4: OpenShell trusts the gateway's certificate {#trust}
 

@@ -517,6 +517,9 @@ jobs:
         with:
           version: latest
           static: true
+      # The spike's gateway name in DNS (--gateway-host name, #131).
+      - name: dnsmasq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsmasq-base
       # The release in test/openshell/openshell-version, not the newest:
       # looking that up or downloading it failed now and then.
       - name: Install OpenShell

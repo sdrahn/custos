@@ -13,9 +13,9 @@
 #        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--gateway-host name|alias] [--results DIR]
 #
 # --gateway-host: the name the agent reaches the gateway by (#131). name
-# (the default): a host name of its own, custos-gw.test, which resolves to
-# the host's network address (/etc/hosts), as a host's DNS name does in a
-# deployment with an official certificate. alias: host.openshell.internal,
+# (the default): a host name of its own, custos-gw.test, which a local
+# dnsmasq resolves to the host's network address, as a host's DNS name
+# does in a deployment with an official certificate (needs dnsmasq). alias: host.openshell.internal,
 # the sandbox's name for the host's loopback.
 #
 # --system: on a system with the packages installed (custos, custos-selinux,
@@ -143,14 +143,26 @@ section "mcp-gateway on the host (HTTPS)"
 # resolves and connects to; the gateway listens on every address. By the
 # alias: host.openshell.internal, which OpenShell maps to the host.
 if [ "$gateway_host" = name ]; then
+	# The name in DNS, as a deployment's is: OpenShell's policy DNS asks the
+	# nameserver of the host's resolv.conf and never reads /etc/hosts. A
+	# local dnsmasq answers custos-gw.test and forwards the rest to the
+	# host's nameserver; resolv.conf points at it for the run.
 	gw_host=custos-gw.test
 	host_ip=$(ip -4 route get 192.0.2.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
-	sed -i '/# custos run-spike.sh$/d' /etc/hosts
-	echo "$host_ip $gw_host # custos run-spike.sh" >>/etc/hosts
-	check "$gw_host resolves to the host's network address ($host_ip)" bash -c \
-		"[ -n '$host_ip' ] && getent ahostsv4 $gw_host | grep -q '^$host_ip ' && ! getent ahostsv4 $gw_host | grep -q '^127\.'"
+	upstream=$(sed -n 's/^nameserver[[:space:]]*\([0-9.]*\).*/\1/p' /etc/resolv.conf | head -n1)
+	check "dnsmasq is installed" command -v dnsmasq
+	systemd-run --unit=osh-dnsmasq dnsmasq --keep-in-foreground --no-resolv --no-hosts --bind-interfaces \
+		--listen-address=127.0.0.1 --port=53 --address="/$gw_host/$host_ip" --server="${upstream:-127.0.0.53}" >/dev/null
+	mv /etc/resolv.conf "$work/resolv.conf.orig"
+	printf 'nameserver 127.0.0.1\n' >/etc/resolv.conf
+	restore_resolv() { if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi; }
+	trap restore_resolv EXIT
+	check "$gw_host resolves by DNS to the host's network address ($host_ip)" eventually 10 bash -c \
+		"[ -n '$host_ip' ] && getent ahostsv4 $gw_host | grep -q '^$host_ip '"
+	check "and other names still resolve (dnsmasq forwards to $upstream)" eventually 10 getent ahosts registry.opensuse.org
 else
 	gw_host=host.openshell.internal
+	restore_resolv() { :; }
 fi
 aud=https://$gw_host:18443/mcp
 issuer=http://127.0.0.1:18445
@@ -482,7 +494,6 @@ check "the relay is back" systemctl is-active -q agent-openshell@sb.socket
 
 section Removing
 check "agent-admin delete sb" agent-admin delete sb
-sed -i '/# custos run-spike.sh$/d' /etc/hosts
 check "the sandbox is gone" eventually 60 not osh sandbox get agent-sb
 if [ -n "$system" ]; then
 	section SELinux
@@ -498,7 +509,8 @@ if [ -n "$system" ]; then
 	echo "    | all denials since the start: $(grep -c 'denied' <<<"$avc")"
 	grep 'denied' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 15 | sed 's/^/    | /'
 fi
-systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp >/dev/null 2>&1
+systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp osh-dnsmasq >/dev/null 2>&1
+restore_resolv
 
 if [ -n "$results" ]; then
 	mkdir -p "$results"

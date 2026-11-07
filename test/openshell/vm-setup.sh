@@ -9,7 +9,7 @@ user=osh
 log() { echo "[vm-setup] $*"; }
 
 log "Podman"
-zypper -n in --no-recommends podman curl jq audit >/tmp/zypper-osh.log 2>&1 ||
+zypper -n in --no-recommends podman curl jq audit dnsmasq >/tmp/zypper-osh.log 2>&1 ||
 	{ tail -n 30 /tmp/zypper-osh.log; exit 1; }
 
 log "cgroup controllers for user sessions (rootless Podman sets memory and swap limits)"

@@ -2,10 +2,13 @@ package admin
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/sdrahn/custos/internal/config"
 )
@@ -40,7 +43,7 @@ func TestGatewayHostNotes(t *testing.T) {
 		"https://host.openshell.internal:8443/mcp": "only a private CA's certificate can carry",
 		"https://127.0.0.1:8443/mcp":               "only a private CA's certificate can carry",
 		"https://loop.example.com:8443/mcp":        "loop.example.com resolves to 127.0.0.2 on this host, which OpenShell's proxy never connects to",
-		"https://nowhere.example.com:8443/mcp":     "nowhere.example.com does not resolve on this host",
+		"https://nowhere.example.com:8443/mcp":     "nowhere.example.com: no such host; OpenShell resolves the name by DNS, not /etc/hosts",
 		"https://10.0.0.5:8443/mcp":                "an IP address",
 	} {
 		n := notes(url)
@@ -60,5 +63,53 @@ func TestGatewayHostNotes(t *testing.T) {
 	os.WriteFile(f, []byte(strings.Replace(oshOAuthYml, "https://gw.example.com:8443/mcp", "https://host.openshell.internal:8443/mcp", 1)), 0o644)
 	if err := a.Check(f); err != nil || !strings.Contains(out.String(), "agent sb: note: gateway.url https://host.openshell.internal:8443/mcp") {
 		t.Errorf("check: %v %q", err, out.String())
+	}
+}
+
+// The DNS-only lookup asks the nameserver as OpenShell's policy DNS does:
+// an address it has, a name it does not know (NXDOMAIN).
+func TestDNSQuery(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip(err)
+	}
+	defer pc.Close()
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			n, from, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			var q dnsmessage.Message
+			if q.Unpack(buf[:n]) != nil || len(q.Questions) != 1 {
+				continue
+			}
+			r := dnsmessage.Message{Header: dnsmessage.Header{ID: q.Header.ID, Response: true}, Questions: q.Questions}
+			qq := q.Questions[0]
+			switch {
+			case qq.Name.String() != "gw.test.":
+				r.Header.RCode = dnsmessage.RCodeNameError
+			case qq.Type == dnsmessage.TypeA:
+				r.Answers = []dnsmessage.Resource{{Header: dnsmessage.ResourceHeader{Name: qq.Name, Type: qq.Type, Class: qq.Class, TTL: 5},
+					Body: &dnsmessage.AResource{A: [4]byte{10, 0, 0, 5}}}}
+			}
+			b, _ := r.Pack()
+			pc.WriteTo(b, from)
+		}
+	}()
+	name := func(s string) dnsmessage.Name { n, _ := dnsmessage.NewName(s); return n }
+	got, rc, err := dnsQuery(pc.LocalAddr().String(), name("gw.test."), dnsmessage.TypeA)
+	if err != nil || rc != dnsmessage.RCodeSuccess || strings.Join(got, ",") != "10.0.0.5" {
+		t.Errorf("gw.test: %v %v %v", got, rc, err)
+	}
+	got, rc, err = dnsQuery(pc.LocalAddr().String(), name("only-in-hosts.test."), dnsmessage.TypeA)
+	if err != nil || rc != dnsmessage.RCodeNameError || len(got) != 0 {
+		t.Errorf("an unknown name: %v %v %v", got, rc, err)
+	}
+	// No nameserver: said so.
+	a, _ := newAdmin(t)
+	if _, err := a.lookupDNS("gw.test"); err == nil {
+		t.Error("no resolv.conf: no error")
 	}
 }

@@ -39,9 +39,9 @@ removed.
   official TLS certificate covers them (#131). The user guide (chapter
   11) recommends it; `host.openshell.internal` with a private CA remains
   for test systems. `agent-admin check`, `create` and `edit` note an
-  OpenShell agent by that alias, a gateway name that resolves to a
-  loopback address (which OpenShell's proxy never connects to) or not at
-  all, and a `gateway.url` other than the gateway's `http.audience`;
+  OpenShell agent by that alias, a gateway name that is not in DNS
+  (OpenShell resolves it by DNS, never `/etc/hosts`) or resolves to a
+  loopback address (which OpenShell never connects to), and a `gateway.url` other than the gateway's `http.audience`;
   Cockpit's **Check** shows the notes. The agent image resolves names by
   DNS first (OpenShell's policy DNS): with Podman, a name in the host's
   `/etc/hosts` gave the agent an address OpenShell refused. Rebuild an
