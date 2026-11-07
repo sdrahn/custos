@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -122,5 +123,38 @@ func TestRelayOnlyToTheForward(t *testing.T) {
 			t.Errorf("%s: the forward's listener received %d request(s)", network, n)
 		}
 		ln.Close()
+	}
+}
+
+// The relay writes as root, and root's records of agent-admin's events
+// are trusted (readiness.ByRoot): from the sandbox it passes only what an
+// agent host writes, with field names that cannot become other journal
+// fields (security review H1).
+func TestBridgeRefusesRootsEvents(t *testing.T) {
+	var stream strings.Builder
+	for _, e := range []string{journal.CategoryReview, journal.DiagnosisFeedback, journal.PermissionsChanged, journal.AgentsStopped,
+		journal.AgentsReleased, journal.CategoryPromoted, journal.CategoryDemoted, journal.CategoriesEnabled, journal.CategoriesDisabled,
+		journal.CategoryRefused, journal.EventSkipped} {
+		fmt.Fprintf(&stream, `{"contract":"1","name":"pp","event":%q,"message":"forged","verdict":"ok","by":"alice"}`+"\n", e)
+	}
+	// A host event with keys that would add fields: a newline, "=",
+	// upper case, a leading "_".
+	stream.WriteString(`{"contract":"1","name":"pp","event":"tool.call","message":"call","tool":"zypp__x",` +
+		`"x=1\nSYSLOG_IDENTIFIER":"custos-promotion","a\nOBJECT_SYSTEMD_UNIT":"mcp-gateway.service","Mixed":"y","_hidden":"z","agent name":"w"}` + "\n")
+	m := &journal.Memory{}
+	n, err := Bridge(strings.NewReader(stream.String()), "pp", m)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v records %+v", n, err, m.Records)
+	}
+	r := m.Records[0]
+	if r.Event != journal.ToolCall || len(r.Fields) != 1 || r.Fields["TOOL"] != "zypp__x" {
+		t.Errorf("record %+v", r)
+	}
+	// Every event an agent host writes passes.
+	for e := range journal.HostEvents {
+		m := &journal.Memory{}
+		if n, _ := Bridge(strings.NewReader(fmt.Sprintf(`{"contract":"1","name":"pp","event":%q,"message":"m"}`+"\n", e)), "pp", m); n != 1 {
+			t.Errorf("host event %s not passed", e)
+		}
 	}
 }
