@@ -921,6 +921,49 @@ func TestPauseWithoutGatewayData(t *testing.T) {
 	}
 }
 
+// The emergency stop and a pause hold on the host whatever the gateway's
+// policy does: with an OPA that never loads the change, every unit and
+// sandbox still stops, the agent's host is still paused, and the error
+// says what is in force (security review M3).
+func TestStopWithoutTheGatewaysPolicy(t *testing.T) {
+	a, r := newAdmin(t)
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	a.Now = func() time.Time { now = now.Add(time.Second); return now }
+	a.PolicyWait = 3 * time.Second
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(f, []byte(strings.Replace(oshYml, "name: sb", "name: sb", 1)), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	a.OPAData = func(string) (any, error) { return nil, nil } // never loads
+	r.cmds = nil
+	err := a.StopAll("alice")
+	all := strings.Join(r.cmds, "\n")
+	if err == nil || !strings.Contains(err.Error(), "the agents' units are stopped, but the gateway's policy has not loaded the stop yet") {
+		t.Errorf("stop-all with a stale gateway: %v", err)
+	}
+	for _, want := range []string{"systemctl stop agent-schedule@*.timer agent@*.socket agent@*.service agent-openshell@*.socket agent-openshell@*.service agent-event@*.service",
+		"openshell -g openshell sandbox stop agent-sb"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("stop-all did not run %q:\n%s", want, all)
+		}
+	}
+	if b, _ := os.ReadFile(a.p(GatewayStop)); !strings.Contains(string(b), "stopped: true") {
+		t.Errorf("the flag: %s", b)
+	}
+	r.cmds = nil
+	if err := a.Pause("patch-pilot", "alice", true); err == nil {
+		t.Error("pause with a stale gateway: no error")
+	}
+	if !strings.Contains(strings.Join(r.cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
+		t.Errorf("the host was not paused: %v", r.cmds)
+	}
+}
+
 // Two OpenShell agents whose names hash to the same forward port: the
 // second is refused, since its forward would fail and its relay would
 // reach the first agent (security review E5, H3). A systemd agent with

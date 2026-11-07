@@ -1036,7 +1036,21 @@ func (a *Admin) Pause(name, by string, on bool) error {
 	d.Paused, d.PausedBy = on, ""
 	if on {
 		d.PausedBy = by + " " + a.Now().UTC().Format(time.RFC3339)
+		// The host first: a pause holds there whatever the gateway's
+		// policy does, and a slow OPA delays nothing (security review M3).
+		herr := a.Control(sock, path)
+		if err := a.writeGateway(name, d); err != nil {
+			if herr == nil {
+				return fmt.Errorf("agent %s is paused on its host, but the gateway's data: %w", name, err)
+			}
+			return err
+		}
+		if herr != nil {
+			fmt.Fprintf(a.Out, "agent %s: the gateway denies its calls; the agent itself was not reached (%v)\n", name, herr)
+		}
+		return nil
 	}
+	// Resuming: the gateway first, so the host never runs ahead of it.
 	if err := a.writeGateway(name, d); err != nil {
 		return err
 	}
@@ -1048,15 +1062,21 @@ func (a *Admin) Pause(name, by string, on bool) error {
 
 // StopAll is the emergency stop: the gateway denies every agent
 // everything, and every agent unit and schedule stops.
+//
+// The units stop whatever the gateway's policy does: the flag is written
+// first, then the units and sandboxes stop, and only then does it wait
+// for the gateway's OPA to load the flag. A slow or failing OPA delays
+// nothing and is reported (security review M3).
 func (a *Admin) StopAll(by string) error {
-	if err := a.writeStop(true, by); err != nil {
-		return err
-	}
+	ferr := a.writeStopFlag(true, by)
 	// Root's record: readiness counts an approved call whose activity it
 	// stopped as an incident (O11).
 	a.record(journal.AgentsStopped, "", by+" stopped every agent (emergency stop)", journal.Fields{"BY": by})
 	err := a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service",
-		"agent-openshell@*.socket", "agent-openshell@*.service")
+		"agent-openshell@*.socket", "agent-openshell@*.service", "agent-event@*.service")
+	if err != nil {
+		err = fmt.Errorf("stopping the agents' units: %w", err)
+	}
 	// Sandboxes outlive their relay unit: stop them by name as well.
 	names, _ := a.List()
 	for _, n := range names {
@@ -1064,17 +1084,29 @@ func (a *Admin) StopAll(by string) error {
 			a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "sandbox", "stop", openshell.SandboxName(n))
 		}
 	}
-	return err
+	if ferr == nil {
+		if werr := a.waitPolicy("mcp/agents/_control/stopped", func(v any) bool { return v == true }); werr != nil {
+			ferr = fmt.Errorf("the agents' units are stopped, but the gateway's policy has not loaded the stop yet: %w", werr)
+		}
+	} else {
+		ferr = fmt.Errorf("the agents' units are stopped, but the gateway's flag was not written: %w", ferr)
+	}
+	return errors.Join(err, ferr)
 }
 
 // writeStop writes the emergency stop's flag (data.mcp.agents._control).
 func (a *Admin) writeStop(stopped bool, by string) error {
-	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# custos CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
-		stopped, by, a.Now().UTC().Format(time.RFC3339))
-	if err := writeFile(a.p(GatewayStop), []byte(b), 0o644); err != nil {
+	if err := a.writeStopFlag(stopped, by); err != nil {
 		return err
 	}
 	return a.waitPolicy("mcp/agents/_control/stopped", func(v any) bool { return v == stopped })
+}
+
+// writeStopFlag writes the flag, without waiting for the gateway.
+func (a *Admin) writeStopFlag(stopped bool, by string) error {
+	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# custos CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
+		stopped, by, a.Now().UTC().Format(time.RFC3339))
+	return writeFile(a.p(GatewayStop), []byte(b), 0o644)
 }
 
 // waitPolicy waits until the gateway's OPA has loaded what was just
