@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -240,4 +241,48 @@ func (a *Admin) currentEnablement() (*Enablement, error) {
 		return &Enablement{State: DiagnosticsOnly, Enabled: []string{Diagnostics}}, nil
 	}
 	return e, nil
+}
+
+// checkSealRemoved makes show report a seal that was removed: a host
+// without _seal.yaml whose journal says agent-admin sealed it. The gateway
+// then counts the state as it is, or every category without one (security
+// review M5).
+func (a *Admin) checkSealRemoved(p *Posture) error {
+	if pub, err := a.sealPublicKey(); err != nil || pub != "" {
+		return err
+	}
+	read := a.JournalJSON
+	if read == nil {
+		read = func(args ...string) ([]byte, error) {
+			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager"}, args...)...).Output()
+		}
+	}
+	recs, err := a.enablementRecords(read)
+	if err != nil {
+		return nil
+	}
+	sealed := false
+	for _, r := range recs {
+		sealed = sealed || r["AGENT_SEALED"] == "1"
+	}
+	if !sealed {
+		return nil
+	}
+	why := "the seal (" + GatewaySeal + ") was removed, though agent-admin sealed this host: the gateway counts the state on file as it is, " +
+		"edited or not; agent-admin enable or disable seals it again"
+	if p.Enablement == nil {
+		cats, _ := a.Categories()
+		var all []string
+		for c := range cats {
+			all = append(all, c)
+		}
+		slices.Sort(all)
+		p.Enablement = &Enablement{State: SomeCategories, Enabled: all, Tampered: why + " (no state: every category)"}
+		return nil
+	}
+	if p.Enablement.Tampered != "" {
+		why += "; " + p.Enablement.Tampered
+	}
+	p.Enablement.Tampered = why
+	return nil
 }
