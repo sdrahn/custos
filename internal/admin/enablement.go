@@ -154,6 +154,9 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 	a.record(ev, "", msg, journal.Fields{
 		"BY": by, "ENABLEMENT": id, "ENABLEMENT_FROM": fromJSON, "ENABLEMENT_TO": to.summary(),
 		"ENABLEMENT_SHA256": to.Digest(),
+		// The host is sealed from here on: a later show that finds no
+		// seal knows it was removed (security review M5).
+		"SEALED": "1",
 	})
 	return a.waitPolicy("mcp/agents/_enablement/record", func(v any) bool { return v == id })
 }
@@ -445,21 +448,19 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 	if e.Record == "" {
 		return "the state has no record: it was not written by agent-admin"
 	}
-	// Both kinds of change: journalctl ORs matches of the same field.
-	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
-		"AGENT_EVENT="+journal.CategoriesDisabled, "AGENT_ENABLEMENT="+e.Record)
+	recs, err := a.enablementRecords(read)
 	if err != nil {
 		return ""
 	}
-	digest := ""
-	for _, line := range bytes.Split(out, []byte("\n")) {
-		var r map[string]any
-		// agent-admin's records as root only: an agent could write one
-		// with any other field (readiness.ByRoot).
-		if json.Unmarshal(line, &r) == nil && readiness.ByRoot(stringsOf(r)) {
+	digest, latest := "", ""
+	for _, r := range recs {
+		if r["AGENT_ENABLEMENT"] == e.Record {
 			if d, ok := r["AGENT_ENABLEMENT_SHA256"].(string); ok {
 				digest = d
 			}
+		}
+		if id, ok := r["AGENT_ENABLEMENT"].(string); ok && id != "" {
+			latest = id
 		}
 	}
 	switch {
@@ -467,8 +468,33 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 		return "no enablement record " + e.Record + " in the journal"
 	case digest != e.Digest():
 		return "the state differs from its record " + e.Record
+	case latest != e.Record:
+		// A state signed earlier verifies: the seal has no freshness, the
+		// journal does (security review M5).
+		return "the state on file is record " + e.Record + "'s, but the latest change is record " + latest +
+			": an earlier state was put back; agent-admin enable or disable writes the current one"
 	}
 	return ""
+}
+
+// enablementRecords are agent-admin's enablement records as root, oldest
+// first (journalctl's order). journalctl ORs matches of the same field.
+func (a *Admin) enablementRecords(read func(...string) ([]byte, error)) ([]map[string]any, error) {
+	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
+		"AGENT_EVENT="+journal.CategoriesDisabled)
+	if err != nil {
+		return nil, err
+	}
+	var recs []map[string]any
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var r map[string]any
+		// agent-admin's records as root only: an agent could write one
+		// with any other field (readiness.ByRoot).
+		if json.Unmarshal(line, &r) == nil && readiness.ByRoot(stringsOf(r)) {
+			recs = append(recs, r)
+		}
+	}
+	return recs, nil
 }
 
 // stringsOf is a journal record's string fields.

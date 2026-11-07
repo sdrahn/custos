@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -371,5 +372,84 @@ func TestDisableRecordNotTampered(t *testing.T) {
 	}
 	if p.Enablement.Tampered != "" || !strings.Contains(strings.Join(asked, " "), "AGENT_EVENT="+journal.CategoriesDisabled) {
 		t.Errorf("tampered %q, asked %v", p.Enablement.Tampered, asked)
+	}
+}
+
+// rootJournal is the enablement records as journalctl gives them,
+// agent-admin's as root, oldest first, with every field it wrote.
+func rootJournal(mem *journal.Memory) func(...string) ([]byte, error) {
+	return func(...string) ([]byte, error) {
+		var out []string
+		for _, r := range mem.Records {
+			if r.Event != journal.CategoriesEnabled && r.Event != journal.CategoriesDisabled {
+				continue
+			}
+			m := map[string]string{"_UID": "0", "_COMM": "agent-admin", "AGENT_EVENT": r.Event}
+			for k, v := range r.Fields {
+				m["AGENT_"+k] = v
+			}
+			b, _ := json.Marshal(m)
+			out = append(out, string(b))
+		}
+		return []byte(strings.Join(out, "\n")), nil
+	}
+}
+
+// The seal covers the state, not when it was written, nor itself: show
+// reports an earlier signed state put back, and a seal removed from a
+// host agent-admin sealed (security review M5).
+func TestShowReplayAndRemovedSeal(t *testing.T) {
+	a, mem := diagnosticsHost(t)
+	a.JournalJSON = rootJournal(mem)
+	f := a.p(GatewayEnablement)
+	earlier, _ := os.ReadFile(f)                           // diagnostics-only, signed
+	a.Secret = func() string { return "fedcba9876543210" } // the next record's id
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := a.Show(); p.Enablement.Tampered != "" || p.Enablement.State != SomeCategories {
+		t.Fatalf("after enable: %+v", p.Enablement)
+	}
+	// The earlier state put back: its signature verifies, its record is not
+	// the latest.
+	os.WriteFile(f, earlier, 0o644)
+	p, _ := a.Show()
+	if !p.Enablement.Sealed || !strings.Contains(p.Enablement.Tampered, "an earlier state was put back") {
+		t.Errorf("replayed: %+v", p.Enablement)
+	}
+	// The seal removed: the gateway counts the state as it is.
+	os.Remove(a.p(GatewaySeal))
+	p, _ = a.Show()
+	if p.Enablement == nil || !strings.Contains(p.Enablement.Tampered, "was removed, though agent-admin sealed this host") {
+		t.Errorf("seal removed: %+v", p.Enablement)
+	}
+	// And the state too: every category, and said so.
+	os.Remove(f)
+	p, _ = a.Show()
+	if p.Enablement == nil || p.Enablement.State != SomeCategories || !slices.Contains(p.Enablement.Enabled, "patch-errata") ||
+		!strings.Contains(p.Enablement.Tampered, "no state: every category") {
+		t.Errorf("seal and state removed: %+v", p.Enablement)
+	}
+	// A host never sealed (no SEALED record) without a seal: nothing to say.
+	b, _ := newAdmin(t)
+	b.JournalJSON = func(...string) ([]byte, error) { return nil, nil }
+	if p, err := b.Show(); err != nil || p.Enablement != nil {
+		t.Errorf("never sealed: %+v %v", p, err)
+	}
+}
+
+// A diagnostics permission names its tool: a pattern would allow what
+// changes the system on a diagnostics-only host too (security review M5).
+func TestDiagnosticsNamesEachTool(t *testing.T) {
+	a, _ := diagnosticsHost(t)
+	for _, bad := range []string{
+		"- {server: '*', tool: '*', category: diagnostics, read_only: true}\n",
+		"- {server: zypp, tool: '*', category: diagnostics, read_only: true}\n",
+		"- {server: zypp, tool: 'list_*', category: diagnostics, read_only: true}\n",
+		"- {server: zypp, category: diagnostics, read_only: true}\n",
+	} {
+		if err := a.SetPermissions("patch-pilot", strings.NewReader(bad)); err == nil || !strings.Contains(err.Error(), "names each tool") {
+			t.Errorf("%s: %v", bad, err)
+		}
 	}
 }

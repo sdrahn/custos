@@ -9,6 +9,15 @@ removed.
 
 ### Fixed
 
+- Security (review M5, #125): the seal covered less than CONTRACT.md
+  §6b said. `agent-admin show` now reports a seal removed from a host
+  `agent-admin` sealed, and an earlier signed state put back (it
+  verifies; the journal has a later record); `agent-admin permissions`
+  refuses a pattern for the server or tool of a permission in
+  `diagnostics`, which would allow every tool on a diagnostics-only
+  host. §6b says what the seal does not cover. Records of enablement
+  changes carry `AGENT_SEALED`; a host sealed before reports a removed
+  seal from its next change on.
 - Security (review M4, #125): a systemd agent could connect to any host
   on an HTTP port (SELinux limited the ports, not the hosts), the cloud
   metadata service included, although CONTRACT.md §3a allows only the

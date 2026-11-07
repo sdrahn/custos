@@ -696,6 +696,22 @@ root can still decrypt the key and sign a state of its own: the seal
 turns a change past `agent-admin` into a deliberate forgery; it cannot
 stop root, which only an outside party could (the fleet, O13).
 
+What the seal does not cover (security review M5): it covers the
+enablement state, not the agents' data (their modes, permissions and
+categories), and not itself. Removing `_seal.yaml` makes the host
+unsealed: its state counts as it is again, edited or removed. A state
+signed earlier still verifies: the seal has no freshness. Each change
+needs root. `agent-admin show` reports both: a host without a seal whose
+journal has a sealed record (`AGENT_SEALED`, §10) is `tampered` ("the
+seal was removed"), and so is a state whose record is not the latest
+enablement record ("an earlier state was put back"). A permission in
+`diagnostics` names its server and tool (no pattern): on a
+diagnostics-only host, `{server: "*", tool: "*", category: diagnostics,
+read_only: true}` would allow what changes the system too, since the
+gateway cannot tell a tool that only reads from its `read_only` flag.
+`agent-admin permissions` refuses it; a hand edit is not sealed. Sealing
+the agents' data is for a later release (accepted for 0.5.0).
+
 **Trust evidence.** What the diagnostics agent did before another
 category was enabled is that category's starting evidence: the readiness
 view (§6a) also shows, per agent, over its window: the activities with a
@@ -990,6 +1006,7 @@ for `categories.enabled` and `categories.disabled`, which are the host's) and th
 | `AGENT_BY` | the person |
 | `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`, `categories.disabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
 | `AGENT_ENABLEMENT_SHA256` | `categories.enabled`, `categories.disabled`: the digest of the state after (§6b) |
+| `AGENT_SEALED` | `categories.enabled`, `categories.disabled`: `1`, the host is sealed from this change on (§6b) |
 | `AGENT_ENABLEMENT` | `categories.enabled`, `categories.disabled`: the record's id (`n-…`), also in the data's `record` |
 | `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
 | `AGENT_ORIGIN_EVENT`, `AGENT_ORIGIN_BY`, `AGENT_REASON` | `event.skipped`: an event (§14) that started no activity: the event, `unit-failure:<unit>`, and why (its activity for the unit still runs, the minimum interval, or the agent refused) |
