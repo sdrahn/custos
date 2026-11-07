@@ -16,6 +16,15 @@ removed.
   for overrides. The proposals are now the gateway's decisions, by the
   tool its `mcp-approval` record names; the agent's records add only
   what the gateway does not know (arguments, results, cancels).
+- Security (review M2, #125): an agent could count as an approver.
+  CONTRACT.md recommended `group:agent-clients` in the gateway's
+  approver rules, a group every agent's user is in, and `agent-admin
+  owners` accepted `group:agent-clients`, `group:mcp-users` and
+  `remote-user:agent-*`. The owner rules (`owners.rego`) now grant
+  nothing to an approver named `agent-*`; `agent-admin owners` refuses
+  those rules; the documentation names a group of people instead. Check
+  the gateway's approver rules (`/etc/mcp-gateway/policy/rbac/data.yaml`) for
+  `agent-clients` and `mcp-users`.
 - Security (review M1, #125): what an approver read in Cockpit could
   differ from what would run. Bidi overrides and isolates, zero-width
   characters and line separators in a call's arguments, the agent's
