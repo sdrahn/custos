@@ -47,8 +47,11 @@ agent-admin owners web-doctor                             # none: the servers' a
 ```
 
 Owners take the gateway's approver forms (`user:`, `group:`, `role:`,
-`remote-user:`, `remote-group:`); `self` and an agent's own account are
-refused. In Cockpit: the agent's view, *Owners*. Owners decide in
+`remote-user:`, `remote-group:`); `self`, agents' accounts and groups
+(`agent-*`, `agent-clients`) and `mcp-users` are refused: every agent's
+user is in `agent-clients` and `mcp-users`, and an agent never approves.
+The same goes for the gateway's own approver rules: name people's
+groups there, never those two. In Cockpit: the agent's view, *Owners*. Owners decide in
 Cockpit, on the gateway's page or with `mcp-gateway-admin approvals`,
 and are recorded as the approver like anyone else. Like any approver,
 an owner who decides on this host needs access to the gateway's control

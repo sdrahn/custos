@@ -9,6 +9,15 @@ removed.
 
 ### Fixed
 
+- Security (review M2, #125): an agent could count as an approver.
+  CONTRACT.md recommended `group:agent-clients` in the gateway's
+  approver rules, a group every agent's user is in, and `agent-admin
+  owners` accepted `group:agent-clients`, `group:mcp-users` and
+  `remote-user:agent-*`. The owner rules (`owners.rego`) now grant
+  nothing to an approver named `agent-*`; `agent-admin owners` refuses
+  those rules; the documentation names a group of people instead. Check
+  the gateway's approver rules (`/etc/mcp-gateway/policy/rbac/data.yaml`) for
+  `agent-clients` and `mcp-users`.
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with

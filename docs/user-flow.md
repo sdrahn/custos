@@ -33,7 +33,7 @@ Not for logging in:
 | Role | Account needs | Can |
 |---|---|---|
 | **Viewer / chat user** | membership in `agent-clients` | see agents and activities, chat with an agent (as themselves) |
-| **Approver** | the above, and a binding in mcp-gateway's approver rules (a role or a group, e.g. `approvers: {zypp: ['role:admin', 'group:agent-clients']}`) | decide pending calls, revoke grants |
+| **Approver** | the above, and a binding in mcp-gateway's approver rules (a role or a group of people, e.g. `approvers: {zypp: ['role:admin', 'group:patch-approvers']}`; never `agent-clients` or `mcp-users`, which every agent is in) | decide pending calls, revoke grants |
 | **Administrator** | the above, and sudo rights (e.g. `wheel`), for Cockpit's *Administrative access* | create and remove agents, set modes and permissions, pause, cancel, stop all |
 
 An approver need not be an administrator, and an administrator decides

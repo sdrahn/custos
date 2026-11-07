@@ -739,11 +739,19 @@ the agent nor its host can grant or forge one.
    never lets an agent approve its own call (gateway roadmap step 40),
    and an agent cannot reach the control socket anyway (§1). Name the
    approvers of servers that agents use explicitly, e.g.
-   `approvers: {zypp: ['role:admin', 'group:agent-clients']}`.
+   `approvers: {zypp: ['role:admin', 'group:patch-approvers']}`, with
+   people's groups only: never `agent-clients` or `mcp-users`, which
+   every agent's user is in (§2), nor `agent-*` accounts; an agent never
+   approves. Custos cannot narrow the gateway's own rules: its owner
+   rules grant nothing to an approver named `agent-*`, and
+   `agent-admin owners` refuses those groups and accounts.
    An agent's **owners** may decide its calls too, whatever the server's
    rules: `owners` in its agent data (§6), rules of the gateway's
    approver forms (`user:`, `group:`, `role:`, `remote-user:`,
-   `remote-group:`; never `self`, nor an agent's own account), which the
+   `remote-group:`; never `self`, an agent's account (`user:agent-*`,
+   `group:agent-*`, `remote-user:agent-*`, `remote-group:agent-*`) or
+   `group:mcp-users`, which every agent is in; an approver named
+   `agent-*` is never an owner), which the
    policy module `owners.rego` adds to the gateway's approver rules
    (`mcp.approvals`: `allow`, `allow_without_self`, and `notify`, so they
    are mailed as the server's approvers are). They also see and may end
