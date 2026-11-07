@@ -28,7 +28,18 @@ the reason). Findings of severity *low* and *info* may stay open.
 | 5. Data at rest, records | every file the packages and `agent-admin` create (owner, mode, contents, who can read it); every credential flow; the journal fields |
 | 6. OpenShell, HTTPS | the relay, the forward, the sandbox's creation, egress, the issuer (#111), TLS verification |
 | 7. Supply chain, build | `go mod verify` (all verified); `go vet` (clean); `staticcheck` 2025.1.1 (3 findings, below); the release workflow; the spec's scriptlets, `%files` and rpmlint filters. `govulncheck` needs vuln.go.dev, which the review's environment cannot reach: it runs in CI instead (S2) |
-| 8. Network | egress of both backends; chapter 14; the air-gapped gate runs on this review's pull request (its branch name contains `airgap`) |
+| 8. Network | egress of both backends; chapter 14; the air-gapped gate on this review's pull request (its branch name contains `airgap`) |
+
+**The air-gapped gate** (Leap 16.0, no network, SELinux enforcing; #134,
+commit `c163061`): 454 checks, 0 failed, 1 skipped (`custos-docs` is not
+installed in the gate). The evaluation suite of injection attempts
+(`test/vm/testsrv`): a scripted model that obeys every injection
+followed 7 of 7, and each attempt still met the boundary (an approval,
+or a denial), its approval item marked as a suspected injection with
+what the model read; the tested model, `qwen3:0.6b`, followed 0 of 7.
+No SELinux denial for Custos's domains. The egress log counted 28
+attempts by other processes to leave the host (#115, closed: not
+Custos's).
 
 ## Threat model
 
