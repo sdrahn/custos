@@ -9,6 +9,13 @@ removed.
 
 ### Fixed
 
+- Security (review M4, #125): a systemd agent could connect to any host
+  on an HTTP port (SELinux limited the ports, not the hosts), the cloud
+  metadata service included, although CONTRACT.md §3a allows only the
+  gateway and the model endpoint. `agent@.service` now denies every
+  address but the host's own, and `agent-admin fence` adds the model
+  endpoint's addresses and the nameservers at each start. An agent that
+  needs more (a proxy) gets it with a drop-in (user guide, chapter 14).
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with
