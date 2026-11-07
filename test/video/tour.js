@@ -57,6 +57,8 @@ function vm(cmd) {
     }
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* vmEventually waits until cmd succeeds in the VM: its output ("" for
+ * none), or null if it never did. */
 async function vmEventually(seconds, cmd) {
     for (let i = 0; i < seconds; i++) {
         const o = vm(cmd);
@@ -64,6 +66,14 @@ async function vmEventually(seconds, cmd) {
         await sleep(1000);
     }
     return null;
+}
+/* finished waits until patch-pilot's activity id has finished. */
+async function finished(id, what) {
+    const done = await vmEventually(60, `[ "$(${api("patch-pilot", "/v1/activities/" + id)} | jq -r .state)" = finished ]`);
+    if (done === null) {
+        const state = vm(`${api("patch-pilot", "/v1/activities/" + id)} | jq -c '{state, error, calls: [.calls[] | {tool, approval_id, error}]}'`);
+        throw new Error(what + " did not finish: " + (state || "").trim());
+    }
 }
 const api = (agent, p) => `curl -s --max-time 30 --unix-socket /run/agents/${agent}/api.sock http://a${p}`;
 
@@ -136,6 +146,7 @@ const pointer = () => {
     await context.addInitScript(u => { try { localStorage.setItem("superuser:" + u, "any") } catch { /* none */ } }, user);
     const page = await context.newPage();
     t0 = Date.now();
+    let keeper = null;
 
     const custos = () => page.frameLocator('iframe[name="cockpit1:localhost/custos"]');
     const gw = () => page.frameLocator('iframe[name="cockpit1:localhost/mcp-gateway"]');
@@ -215,6 +226,13 @@ const pointer = () => {
         await type(page.locator("#login-password-input"), password);
         await click(page.locator("#login-button"));
         await page.waitForSelector("iframe[name^='cockpit1:']", { timeout: 90000 });
+        // Cockpit ends a session some seconds after its last connection
+        // closed: while the recorded page is on the gateway's approval
+        // page or the identity provider, a second page (not in the
+        // videos) keeps carol's session open.
+        keeper = await context.newPage();
+        await keeper.goto(url + "/system");
+        await page.bringToFront();
         await sleep(1500);
     };
     const approveInCustos = async (change, texts) => {
@@ -239,8 +257,7 @@ const pointer = () => {
         await approve.click();
         await item.waitFor({ state: "detached", timeout: 30000 });
         await sleep(1000);
-        if (!await vmEventually(60, `[ "$(${api("patch-pilot", "/v1/activities/" + change.id)} | jq -r .state)" = finished ]`))
-            throw new Error("the approved change did not finish");
+        await finished(change.id, "the approved change " + change.id);
         return change;
     };
     const auditInCustos = async (change, text) => {
@@ -271,8 +288,7 @@ const pointer = () => {
         await click(page.locator("button[name=decision][value=approve]"));
         await sleep(1500);
         await caption(texts.done);
-        if (!await vmEventually(60, `[ "$(${api("patch-pilot", "/v1/activities/" + change.id)} | jq -r .state)" = finished ]`))
-            throw new Error("the change approved on the gateway's page did not finish");
+        await finished(change.id, "the change approved on the gateway's page, " + change.id + ",");
     };
     const emergencyStop = async texts => {
         await openCustos();
@@ -496,9 +512,11 @@ const pointer = () => {
 
     endCaption();
     const video = page.video();
+    const keeperVideo = keeper && keeper.video();
     await context.close();
     await video.saveAs(path.join(out, version + ".webm"));
     await video.delete().catch(() => {});
+    if (keeperVideo) await keeperVideo.delete().catch(() => {});
     writeSubtitles(version);
     await browser.close();
     console.log(`${version}: ${(clock() / 1000).toFixed(0)} s, ${subs.cues.length} captions, ${failed} scenes failed`);
