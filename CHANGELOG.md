@@ -16,6 +16,15 @@ removed.
   address but the host's own, and `agent-admin fence` adds the model
   endpoint's addresses and the nameservers at each start. An agent that
   needs more (a proxy) gets it with a drop-in (user guide, chapter 14).
+- Security (review M2, #125): an agent could count as an approver.
+  CONTRACT.md recommended `group:agent-clients` in the gateway's
+  approver rules, a group every agent's user is in, and `agent-admin
+  owners` accepted `group:agent-clients`, `group:mcp-users` and
+  `remote-user:agent-*`. The owner rules (`owners.rego`) now grant
+  nothing to an approver named `agent-*`; `agent-admin owners` refuses
+  those rules; the documentation names a group of people instead. Check
+  the gateway's approver rules (`/etc/mcp-gateway/policy/rbac/data.yaml`) for
+  `agent-clients` and `mcp-users`.
 - Security (review M1, #125): what an approver read in Cockpit could
   differ from what would run. Bidi overrides and isolates, zero-width
   characters and line separators in a call's arguments, the agent's
