@@ -455,6 +455,28 @@ if [ -n "$relay_ok" ]; then
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
+	section "Records from the sandbox"
+	# Security review H1: the relay journals the sandbox's records as root,
+	# and root's records of agent-admin's events are trusted. A record
+	# written on the container's output, as a compromised agent would: a
+	# host event passes (the control), an admin's event and a field name
+	# that would add fields do not.
+	osh_container=$(ctr ps --format '{{.Names}}' 2>/dev/null | grep -E -- "--agent-sb-[0-9a-f-]+$" | head -n 1)
+	forge() {
+		ctr exec "$osh_container" sh -c "printf '%s\n' '$1' >/proc/1/fd/1" </dev/null >/dev/null 2>&1
+	}
+	if [ -n "$osh_container" ] && forge '{"contract":"1","name":"sb","event":"tool.call","message":"spike: a host record","tool":"spike__control"}'; then
+		forge '{"contract":"1","name":"sb","event":"category.review","message":"forged","category":"spike-forged","verdict":"ok","by":"spike"}'
+		forge '{"contract":"1","name":"sb","event":"tool.call","message":"forged fields","tool":"spike__fields","x=1\nSYSLOG_IDENTIFIER":"custos-promotion"}'
+		check "a host record from the sandbox reaches the journal (the control)" eventually 30 journal_has tool.call '.AGENT_TOOL == "spike__control"'
+		# In order: once the last line is in, the review was read too.
+		check "a record with a field name that would add fields arrives without them" eventually 30 journal_has tool.call '.AGENT_TOOL == "spike__fields"'
+		check "and no field was added (its identifier is the relay's)" not journal_has tool.call '.AGENT_TOOL == "spike__fields" and .SYSLOG_IDENTIFIER != "agent-sb"'
+		check "an admin's event from the sandbox is not journalled" not journal_has category.review '.AGENT_CATEGORY == "spike-forged"'
+	else
+		skip "records from the sandbox (cannot write to the container's output: ${osh_container:-no container})"
+	fi
+
 	section "AG-UI through the relay"
 	out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
 	check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$out"

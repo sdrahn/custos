@@ -27,6 +27,7 @@ func (j *fakeJournal) rec(at time.Time, event string, f map[string]string) {
 	}
 	if rootsEvent(event) {
 		m["_UID"] = "0" // agent-admin's records are root's (journald's trusted field)
+		m["_COMM"] = "agent-admin"
 	} else {
 		m["_UID"] = "981" // the agent's
 	}
@@ -82,7 +83,7 @@ func (j *fakeJournal) autonomous(at time.Time, inv, outcome string) {
 
 func (j *fakeJournal) read(args ...string) ([]byte, error) {
 	for _, a := range args {
-		if a == "mcp-gateway.service" {
+		if a == "_SYSTEMD_UNIT=mcp-gateway.service" {
 			return []byte(strings.Join(j.gw, "\n")), nil
 		}
 	}

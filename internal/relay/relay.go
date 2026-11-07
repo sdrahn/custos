@@ -66,8 +66,11 @@ func Bridge(r io.Reader, name string, log journal.Logger) (int, error) {
 		if m["contract"] != "1" || m["name"] != name {
 			continue
 		}
+		// Only what an agent host writes: the relay writes as root, and
+		// root's records of agent-admin's events (reviews, feedback,
+		// permissions, stops) are trusted (security review H1).
 		event, _ := m["event"].(string)
-		if _, known := journal.MessageIDs[event]; !known {
+		if !journal.HostEvents[event] {
 			continue
 		}
 		msg, _ := m["message"].(string)
@@ -78,7 +81,7 @@ func Bridge(r io.Reader, name string, log journal.Logger) (int, error) {
 				continue
 			}
 			s, ok := v.(string)
-			if !ok {
+			if !ok || !journal.ValidField(strings.ToUpper(k)) || k != strings.ToLower(k) {
 				continue
 			}
 			f[strings.ToUpper(k)] = s

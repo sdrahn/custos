@@ -33,6 +33,7 @@ func (l *log) rec(at time.Time, event string, f map[string]string) {
 	r["_UID"] = "981" // the agent's
 	if event == "category.review" {
 		r["_UID"] = "0" // agent-admin's, as root
+		r["_COMM"] = "agent-admin"
 	}
 	l.recs = append(l.recs, r)
 }
@@ -283,7 +284,10 @@ func TestForgedReviewsIgnored(t *testing.T) {
 	if r := Reviews("patch-errata", l.recs); len(r) != 0 {
 		t.Errorf("forged reviews counted: %v", r)
 	}
-	if !ByRoot(Record{"_UID": "0"}) || ByRoot(Record{"_UID": "981"}) || ByRoot(Record{}) {
+	// Root's own program only: the OpenShell relay writes as root too, the
+	// agent's records it passes on (security review H1).
+	if !ByRoot(Record{"_UID": "0", "_COMM": "agent-admin"}) || ByRoot(Record{"_UID": "0"}) ||
+		ByRoot(Record{"_UID": "0", "_COMM": "agent-openshel"}) || ByRoot(Record{"_UID": "981", "_COMM": "agent-admin"}) || ByRoot(Record{}) {
 		t.Error("ByRoot")
 	}
 }
@@ -318,11 +322,11 @@ func TestDiagnosticsOf(t *testing.T) {
 		rec(3, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-2", "AGENT_REPORT": report(1, 1, 0)}),
 		rec(4, map[string]string{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": "e-3", "AGENT_REPORT": report(1, 0, 1)}),
 		// Feedback on e-1, replaced by a later one.
-		rec(5, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0",
+		rec(5, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0", "_COMM": "agent-admin",
 			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"rejected","h1":"rejected"}}`}),
-		rec(6, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0",
+		rec(6, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-1", "_UID": "0", "_COMM": "agent-admin",
 			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"confirmed","h1":"unsure"},"plan":"useful","executed":true}`}),
-		rec(7, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-2", "_UID": "0",
+		rec(7, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-2", "_UID": "0", "_COMM": "agent-admin",
 			"AGENT_FEEDBACK": `{"hypotheses":{"h0":"rejected"},"plan":"not_useful"}`}),
 		// Written by the agent itself (its own uid): not feedback.
 		rec(8, map[string]string{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": "e-3", "_UID": "461",
@@ -484,13 +488,13 @@ func TestOneReviewPerCall(t *testing.T) {
 func TestEmergencyStopIsAnIncident(t *testing.T) {
 	var l log
 	inv, _ := l.proposal(t0, "zypp__patch", "a", true, true)
-	stop := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(90*time.Second).UnixMicro(), 10)}
+	stop := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "_COMM": "agent-admin", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(90*time.Second).UnixMicro(), 10)}
 	l.recs = append(l.recs, stop)
 	l.result(t0.Add(3*time.Minute), inv, "ok")
 	// After its activity ended: none.
 	inv, _ = l.proposal(t0.Add(time.Hour), "zypp__patch", "b", true, true)
 	l.result(t0.Add(time.Hour+2*time.Minute), inv, "ok")
-	late := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(2*time.Hour).UnixMicro(), 10)}
+	late := Record{"AGENT_EVENT": AgentsStopped, "_UID": "0", "_COMM": "agent-admin", "__REALTIME_TIMESTAMP": strconv.FormatInt(t0.Add(2*time.Hour).UnixMicro(), 10)}
 	l.recs = append(l.recs, late)
 	// The agent's own record of a stop: none.
 	inv, _ = l.proposal(t0.Add(3*time.Hour), "zypp__patch", "c", true, true)
@@ -507,7 +511,7 @@ func TestEmergencyStopIsAnIncident(t *testing.T) {
 func changed(at time.Time, from, to []map[string]any, uid string) Record {
 	f, _ := json.Marshal(from)
 	t, _ := json.Marshal(to)
-	return Record{"AGENT_EVENT": PermissionsChanged, "_UID": uid, "AGENT_PERMISSIONS_FROM": string(f), "AGENT_PERMISSIONS_TO": string(t),
+	return Record{"AGENT_EVENT": PermissionsChanged, "_UID": uid, "_COMM": "agent-admin", "AGENT_PERMISSIONS_FROM": string(f), "AGENT_PERMISSIONS_TO": string(t),
 		"__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)}
 }
 
