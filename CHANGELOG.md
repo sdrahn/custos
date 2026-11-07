@@ -9,6 +9,13 @@ removed.
 
 ### Fixed
 
+- Security (review M6, #125): readiness and the evaluator counted a
+  category's proposals from the agent's own `approval.pending` records,
+  so a compromised agent that left one out for a declined call, or named
+  another tool there, kept its override rate at 0 and was never demoted
+  for overrides. The proposals are now the gateway's decisions, by the
+  tool its `mcp-approval` record names; the agent's records add only
+  what the gateway does not know (arguments, results, cancels).
 - Security (review H1, #125): an OpenShell agent could write records
   that counted as root's. Its relay, which runs as root, passed every
   event from the sandbox to the journal, `agent-admin`'s too (reviews,

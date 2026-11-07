@@ -141,6 +141,14 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 		}
 	}
 	gw.Reviews = reviews
+	// The decisions since then: they are the proposals now (review M6).
+	decisions := map[string]readiness.Decision{}
+	for id, dc := range gw.Decisions {
+		if !dc.At.Before(since) {
+			decisions[id] = dc
+		}
+	}
+	gw.Decisions = decisions
 	// The permissions in force at each call's time (O11), from root's
 	// records of their changes.
 	perms := readiness.NewHistory(d.Permissions, recs)

@@ -457,7 +457,13 @@ Before promotion, a category runs supervised for an **observation
 period**. Each proposal of the category is an approval item (§7), so the
 record already holds what readiness needs: the agent's records (§10)
 and the gateway's decision for each approval id (its `mcp-approval`
-audit record: `id`, `ok`, `by`, `principal`). A call belongs to a
+audit record: `id`, `ok`, `by`, `principal`, and the call's `server` and
+`target`). The proposals are the gateway's decisions, by the tool they
+name: an agent that leaves out its `approval.pending`, or names another
+tool there, changes no count (security review M6). The agent's records,
+matched by the approval id, add what only it knows (the arguments'
+digest, the result, a cancel, a limit, a pause); a decision without one
+counts by what the gateway saw. A call belongs to a
 category when a permission of that category that is not `read_only`
 matches its tool (`server__tool`, the permission's `server` and `tool`
 as globs), among the permissions **in force at the call's time**: those
@@ -470,7 +476,7 @@ category of their own.
 
 | Measure | Definition, over the last `window_days` |
 |---|---|
-| proposals | `approval.pending` records of the category whose approval id has a decision of the gateway (approved or declined). An approval without one (expired, or still pending) is no proposal |
+| proposals | the gateway's decisions (approved or declined) on the principal's calls of the category, by the tool `mcp-approval` names (`server__target`; with a gateway that names none, the agent's `approval.pending` for the id). An approval without a decision (expired, or still pending) is no proposal |
 | approved, declined | by the gateway's decision, never by the agent's `approval.resolved` (which also reports a tool's error after an approval as declined) |
 | cancelled | approved, then an `activity.cancel` for its activity after the decision and before the call's `tool.result` |
 | **override rate** | (declined + cancelled) / proposals |

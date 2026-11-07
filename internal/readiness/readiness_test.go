@@ -165,7 +165,7 @@ not json
 		return string(o)
 	}
 	gw := strings.Join([]string{
-		msg(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": "a-1", "ok": true, "by": "alice", "principal": "agent-pp"}),
+		msg(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": "a-1", "ok": true, "by": "alice", "principal": "agent-pp", "server": "zypp", "target": "patch"}),
 		msg(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": "a-2", "ok": false, "by": "bob", "principal": "agent-pp"}),
 		msg(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": "a-3", "ok": true, "by": "bob", "principal": "agent-other"}),
 		msg(map[string]any{"msg": "mcp", "event": "mcp-grant-revoke", "id": "g-1", "ok": true, "principal": "agent-pp"}),
@@ -174,6 +174,10 @@ not json
 	d := ParseDecisions([]byte(gw), "agent-pp")
 	if len(d) != 2 || !d["a-1"].OK || d["a-1"].By != "alice" || d["a-2"].OK || d["a-1"].At.IsZero() {
 		t.Errorf("%v", d)
+	}
+	// The tool, as the gateway names it (review M6); none where it gives none.
+	if d["a-1"].Tool != "zypp__patch" || d["a-2"].Tool != "" {
+		t.Errorf("tools: %q %q", d["a-1"].Tool, d["a-2"].Tool)
 	}
 }
 
