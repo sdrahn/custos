@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, "release-*"]
   pull_request:
+  # Run by hand (Actions → CI → Run workflow), e.g. for the demonstration
+  # videos (job video).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -149,7 +152,7 @@ jobs:
           zypper -n --gpg-auto-import-keys in --allow-unsigned-rpm ~/rpmbuild/RPMS/noarch/mcp-gateway-selinux-*.rpm
           semodule -l | grep -x mcp_gateway
           mkdir -p "$GITHUB_WORKSPACE/rpms"
-          cp ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-selinux-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-exec-server-*.rpm "$GITHUB_WORKSPACE/rpms/"
+          cp ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-selinux-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-exec-server-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-cockpit-*.rpm "$GITHUB_WORKSPACE/rpms/"
           rm -rf ~/rpmbuild/SOURCES/vendor.tar.gz
       - name: Install build dependencies (from the spec, as OBS does)
         run: |
@@ -482,6 +485,89 @@ jobs:
             echo '### Cockpit page in a real Cockpit (Leap 16.0, SELinux enforcing)'
             tail -1 "$f"
             echo
+            grep -E '^FAIL:' "$f" | sed 's/^/- /' || true
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # The demonstration videos of mcp-gateway and Custos (test/video): a
+  # scripted tour of the real pages in the Leap 16 VM (Custos's and
+  # mcp-gateway's Cockpit pages, mcp-gateway's own approval page with a
+  # sign-in at the test identity provider, Cockpit's terminal), recorded
+  # without audio, in a business and a technical version, with subtitles
+  # burned in and as files. Kept as the artifact demo-videos only. On
+  # release branches, when run by hand, and on branches that change the
+  # videos (their name contains "video").
+  video:
+    needs: [opensuse]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release-') || contains(github.head_ref, 'video')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+          static: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The browser records with Playwright's ffmpeg; render.sh encodes
+      # with the system's (libass, for the subtitles).
+      - run: npm install --no-save --no-package-lock playwright-core@1 && npx playwright-core install ffmpeg
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpms-leap16
+          path: rpms
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils ffmpeg fonts-dejavu-core
+      - name: Image cache key
+        id: image
+        run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vm/base.qcow2
+          key: vm-image-leap16-${{ steps.image.outputs.week }}
+      - name: Record the videos (openSUSE Leap 16.0, SELinux enforcing)
+        env:
+          WORK: ${{ runner.temp }}/vm
+          SUITE: video
+          CHROME: /usr/bin/google-chrome
+          VIDEOS: ${{ runner.temp }}/vm/videos
+          NODE_PATH: ${{ github.workspace }}/node_modules
+        run: test/vm/run-vm.sh rpms "$(command -v opa)"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-videos
+          path: |
+            ${{ runner.temp }}/vm/videos/*.mp4
+            ${{ runner.temp }}/vm/videos/*.srt
+            ${{ runner.temp }}/vm/videos/*.vtt
+          if-no-files-found: ignore
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-logs-leap16
+          path: |
+            ${{ runner.temp }}/vm/console.log
+            ${{ runner.temp }}/vm/prepare.log
+            ${{ runner.temp }}/vm/video-setup.log
+            ${{ runner.temp }}/vm/test.log
+            ${{ runner.temp }}/vm/journal.txt
+            ${{ runner.temp }}/vm/videos/*-failed-*.png
+          if-no-files-found: ignore
+      - if: always()
+        name: Summary
+        run: |
+          f="$RUNNER_TEMP/vm/test.log"
+          [ -f "$f" ] || exit 0
+          {
+            echo '### Demonstration videos (artifact demo-videos)'
+            grep -E '^(business|technical): |^render: ' "$f" | sed 's/^/- /' || true
             grep -E '^FAIL:' "$f" | sed 's/^/- /' || true
           } >>"$GITHUB_STEP_SUMMARY"
 

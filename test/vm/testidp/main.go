@@ -10,13 +10,26 @@
 // client credentials grant (RFC 6749 §4.4). For tests only: GET /token
 // hands out a token to whoever asks.
 //
+// With --login, it is also the sign-in of people for mcp-gateway's own
+// approval page (the demonstration videos, test/video): the
+// authorization code flow with PKCE (OpenID Connect Core 3.1), whose
+// sign-in form takes any name and password and makes the name the ID
+// token's subject. For tests only.
+//
 //	GET  /.well-known/openid-configuration
 //	GET  /jwks
 //	GET  /token?sub=agent-sb&aud=https://...&exp=3600   → the JWT
 //	POST /token  grant_type=client_credentials&client_id=…&client_secret=…
 //	             → {"access_token", "token_type": "Bearer", "expires_in"}
+//	GET  /authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…&nonce=…
+//	             → the sign-in form; POST /authorize → redirect_uri?code=…&state=…
+//	POST /token  grant_type=authorization_code&code=…&code_verifier=…&client_id=…&redirect_uri=…
+//	             → {"id_token", "access_token", "token_type": "Bearer", "expires_in"}
+//	GET  /logout?post_logout_redirect_uri=…   → back to the client
 //
-// Usage: testidp [--listen 127.0.0.1:18445] [--client ID:SECRET:SUBJECT:AUDIENCE]... [--ttl 3600]
+// Usage: testidp [--listen 127.0.0.1:18445] [--issuer URL] [--client ID:SECRET:SUBJECT:AUDIENCE]...
+//
+//	[--login CLIENT_ID=REDIRECT_URI]... [--ttl 3600]
 package main
 
 import (
@@ -39,15 +52,22 @@ import (
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:18445", "address (the issuer is http://ADDRESS)")
+	issuer := flag.String("issuer", "", "the issuer, when clients reach it by another address than --listen")
 	ttl := flag.Int("ttl", 3600, "lifetime of client credentials tokens, seconds")
 	var clients clientFlags
 	flag.Var(&clients, "client", "an OAuth client, ID:SECRET:SUBJECT:AUDIENCE (repeatable)")
+	var logins loginFlags
+	flag.Var(&logins, "login", "a client people sign in to, CLIENT_ID=REDIRECT_URI (repeatable)")
 	flag.Parse()
-	idp, err := New("http://" + *listen)
+	if *issuer == "" {
+		*issuer = "http://" + *listen
+	}
+	idp, err := New(*issuer)
 	if err != nil {
 		log.Fatal(err)
 	}
 	idp.Clients = clients
+	idp.Logins = logins
 	idp.TTL = time.Duration(*ttl) * time.Second
 	log.Fatal(http.ListenAndServe(*listen, idp))
 }
@@ -59,10 +79,36 @@ type IDP struct {
 	// lifetime. Minted counts the tokens issued to each.
 	Clients map[string]Client
 	TTL     time.Duration
-	key     *ecdsa.PrivateKey
-	now     func() time.Time
-	mu      sync.Mutex
-	minted  map[string]int
+	// Logins are the clients people sign in to (authorization code flow),
+	// by id: their redirect URI.
+	Logins map[string]string
+	key    *ecdsa.PrivateKey
+	now    func() time.Time
+	mu     sync.Mutex
+	minted map[string]int
+	codes  map[string]grant
+}
+
+// grant is an authorization code's: who signed in, for which client and
+// redirect URI, with which PKCE challenge and nonce, until when.
+type grant struct {
+	user, client, redirect, challenge, nonce string
+	expires                                  time.Time
+}
+
+type loginFlags map[string]string
+
+func (l *loginFlags) String() string { return fmt.Sprint(len(*l)) }
+func (l *loginFlags) Set(v string) error {
+	id, uri, ok := strings.Cut(v, "=")
+	if !ok || id == "" || !strings.HasPrefix(uri, "http") {
+		return fmt.Errorf("want CLIENT_ID=REDIRECT_URI")
+	}
+	if *l == nil {
+		*l = loginFlags{}
+	}
+	(*l)[id] = uri
+	return nil
 }
 
 // Client is an OAuth client: its secret, and its tokens' subject and
@@ -90,20 +136,35 @@ func New(issuer string) (*IDP, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &IDP{Issuer: issuer, key: k, now: time.Now, TTL: time.Hour, minted: map[string]int{}}, nil
+	return &IDP{Issuer: issuer, key: k, now: time.Now, TTL: time.Hour, minted: map[string]int{}, codes: map[string]grant{}}, nil
 }
 
 func (i *IDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/.well-known/openid-configuration":
-		writeJSON(w, map[string]any{
-			"issuer": i.Issuer, "jwks_uri": i.Issuer + "/jwks",
+		d := map[string]any{
+			"issuer": i.Issuer, "jwks_uri": i.Issuer + "/jwks", "token_endpoint": i.Issuer + "/token",
 			"id_token_signing_alg_values_supported": []string{"ES256"},
-		})
+		}
+		if len(i.Logins) > 0 {
+			d["authorization_endpoint"] = i.Issuer + "/authorize"
+			d["end_session_endpoint"] = i.Issuer + "/logout"
+			d["response_types_supported"] = []string{"code"}
+			d["code_challenge_methods_supported"] = []string{"S256"}
+		}
+		writeJSON(w, d)
+	case "/authorize":
+		i.authorize(w, r)
+	case "/logout":
+		i.logout(w, r)
 	case "/jwks":
 		writeJSON(w, map[string]any{"keys": []any{i.JWK()}})
 	case "/token":
 		if r.Method == http.MethodPost {
+			if r.PostFormValue("grant_type") == "authorization_code" {
+				i.authorizationCode(w, r)
+				return
+			}
 			i.clientCredentials(w, r)
 			return
 		}
@@ -174,10 +235,19 @@ func (i *IDP) JWK() map[string]any {
 
 // Token signs a JWT for sub and aud, valid for ttl.
 func (i *IDP) Token(sub, aud string, ttl time.Duration) (string, error) {
+	return i.sign(sub, aud, ttl, nil)
+}
+
+// sign signs a JWT for sub and aud, valid for ttl, with extra claims.
+func (i *IDP) sign(sub, aud string, ttl time.Duration, extra map[string]any) (string, error) {
 	now := i.now()
 	h, _ := json.Marshal(map[string]any{"alg": "ES256", "typ": "JWT", "kid": "k1"})
-	c, _ := json.Marshal(map[string]any{"iss": i.Issuer, "sub": sub, "aud": aud,
-		"iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(ttl).Unix()})
+	claims := map[string]any{"iss": i.Issuer, "sub": sub, "aud": aud,
+		"iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(ttl).Unix()}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	c, _ := json.Marshal(claims)
 	in := b64(h) + "." + b64(c)
 	d := sha256.Sum256([]byte(in))
 	r, s, err := ecdsa.Sign(rand.Reader, i.key, d[:])

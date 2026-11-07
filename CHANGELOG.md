@@ -7,6 +7,21 @@ removed.
 
 ## Unreleased
 
+### Added
+
+- Demonstration videos of mcp-gateway and Custos, without audio and with
+  English subtitles, in a business and a technical version: CI's job
+  `video` records a scripted tour (`test/video/tour.js`) of the real
+  pages in the Leap 16 test VM: Custos's and mcp-gateway's Cockpit
+  pages, mcp-gateway's own approval page with a sign-in at the identity
+  provider, and Cockpit's terminal. Each version comes as an MP4 with
+  the subtitles burned in, an MP4 with a subtitle track, and `.srt` and
+  `.vtt` files, in the job's artifact `demo-videos` only. The job runs
+  on release branches, by hand (Actions, CI, Run workflow) and on
+  branches whose name contains `video`. custos-tests' `testidp` gained
+  the authorization code flow with PKCE (`--login`, `--issuer`), for
+  the approval page's sign-in.
+
 ## v0.5.0 — 2026-11-07
 
 A host whose trust holds against its own agents. The full security
