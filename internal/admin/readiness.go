@@ -117,11 +117,14 @@ func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record
 	}
 	// The emergency stops (every agent's, so no AGENT_NAME): an approved
 	// call whose activity one stopped is an incident (O11).
-	stops, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+readiness.AgentsStopped)
+	stops, err := read("_UID=0", "_COMM="+readiness.RootWriter, "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+readiness.AgentsStopped)
 	if err != nil {
 		return nil, readiness.Audit{}, fmt.Errorf("reading the emergency stops' records: %w", err)
 	}
-	gwLog, err := read("-u", "mcp-gateway.service")
+	// The gateway's own records (journald's trusted _SYSTEMD_UNIT): -u
+	// would also return root's records about the unit, which a root
+	// process could write with OBJECT_SYSTEMD_UNIT (security review H1).
+	gwLog, err := read("_SYSTEMD_UNIT=mcp-gateway.service")
 	if err != nil {
 		return nil, readiness.Audit{}, fmt.Errorf("reading mcp-gateway's journal: %w", err)
 	}

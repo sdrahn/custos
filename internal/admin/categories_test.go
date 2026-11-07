@@ -322,7 +322,7 @@ func readinessJournal(n int, declined int, start time.Time) func(args ...string)
 	}
 	return func(args ...string) ([]byte, error) {
 		for _, a := range args {
-			if a == "mcp-gateway.service" {
+			if a == "_SYSTEMD_UNIT=mcp-gateway.service" {
 				return []byte(strings.Join(gw, "\n")), nil
 			}
 		}
@@ -400,13 +400,13 @@ func withDiagnostics(read func(...string) ([]byte, error), at time.Time, n, conf
 		lines = append(lines,
 			line(map[string]any{"AGENT_EVENT": "diagnosis.report", "AGENT_INVOCATION": inv, "_UID": "981", "__REALTIME_TIMESTAMP": us,
 				"AGENT_REPORT": `{"hypotheses":[{"id":"h1"}],"evidence":[{"verified":true}]}`}),
-			line(map[string]any{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": inv, "_UID": "0", "__REALTIME_TIMESTAMP": us,
+			line(map[string]any{"AGENT_EVENT": "diagnosis.feedback", "AGENT_INVOCATION": inv, "_UID": "0", "_COMM": "agent-admin", "__REALTIME_TIMESTAMP": us,
 				"AGENT_FEEDBACK": `{"hypotheses":{"h1":"` + verdict + `"}}`}))
 	}
 	return func(args ...string) ([]byte, error) {
 		b, err := read(args...)
 		for _, a := range args {
-			if a == "mcp-gateway.service" {
+			if a == "_SYSTEMD_UNIT=mcp-gateway.service" {
 				return b, err
 			}
 		}
@@ -467,7 +467,7 @@ func TestReadinessCountsTheEmergencyStop(t *testing.T) {
 	start := a.Now().AddDate(0, 0, -20)
 	read := readinessJournal(60, 0, start)
 	stop := func(at time.Time, uid string) string {
-		b, _ := json.Marshal(map[string]any{"AGENT_EVENT": "agents.stopped", "SYSLOG_IDENTIFIER": "custos-promotion", "_UID": uid,
+		b, _ := json.Marshal(map[string]any{"AGENT_EVENT": "agents.stopped", "SYSLOG_IDENTIFIER": "custos-promotion", "_UID": uid, "_COMM": "agent-admin",
 			"__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
 		return string(b)
 	}

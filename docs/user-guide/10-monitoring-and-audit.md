@@ -117,9 +117,11 @@ the past ([chapter 6](06-permissions-and-modes.md#readiness)):
 | `permissions.changed` | each change of an agent's permissions (`agent-admin permissions`, `create --template`): `AGENT_PERMISSIONS_FROM`, `AGENT_PERMISSIONS_TO` (JSON), `AGENT_BY` |
 | `agents.stopped`, `agents.released` | `stop-all` and `release-all`: `AGENT_BY`, with no `AGENT_NAME` (they concern every agent) |
 
-Readiness takes these, as the reviews, only as root wrote them
-(journald's `_UID=0`): an agent can write records of its own, never
-root's.
+Readiness takes these, as the reviews, only as `agent-admin` wrote
+them as root (journald's `_UID=0` and `_COMM=agent-admin`): an agent
+can write records of its own, never root's. An OpenShell agent's
+records reach the journal through its relay, which runs as root; the
+relay passes on only the events an agent writes, never these.
 
 ```bash
 journalctl -t custos-promotion -o json | jq -r '[.__REALTIME_TIMESTAMP, .AGENT_EVENT, .AGENT_NAME, .AGENT_CATEGORY, .AGENT_BY, .AGENT_REASON] | @tsv'

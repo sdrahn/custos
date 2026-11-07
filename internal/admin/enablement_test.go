@@ -185,7 +185,7 @@ func TestShowEnablementTampered(t *testing.T) {
 	journalOf := func(...string) ([]byte, error) {
 		var out []string
 		for _, r := range records(mem, journal.CategoriesEnabled) {
-			b, _ := json.Marshal(map[string]string{"_UID": "0", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
+			b, _ := json.Marshal(map[string]string{"_UID": "0", "_COMM": "agent-admin", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
 			out = append(out, string(b))
 		}
 		return []byte(strings.Join(append(out, forged...), "\n")), nil
@@ -359,7 +359,7 @@ func TestDisableRecordNotTampered(t *testing.T) {
 		var out []string
 		for _, ev := range []string{journal.CategoriesEnabled, journal.CategoriesDisabled} {
 			for _, r := range records(mem, ev) {
-				b, _ := json.Marshal(map[string]string{"_UID": "0", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
+				b, _ := json.Marshal(map[string]string{"_UID": "0", "_COMM": "agent-admin", "AGENT_ENABLEMENT": r.Fields["ENABLEMENT"], "AGENT_ENABLEMENT_SHA256": r.Fields["ENABLEMENT_SHA256"]})
 				out = append(out, string(b))
 			}
 		}
