@@ -387,8 +387,9 @@ it needs a reason, counts as an override in the
 [readiness](#readiness) (`reviewed`, `review_overrides`), and demotes
 the category at once. Each verdict is a `category.review` record with
 who reviewed it. Only verdicts `agent-admin` recorded as root count:
-Custos checks journald's `_UID` and `_COMM` of each record, which an
-agent cannot fake, so an agent cannot review its own actions. In Cockpit, the agent's *Task categories* card lists
+Custos checks journald's `_UID` of each record (and that it is not an
+OpenShell relay's), which an agent cannot fake, so an agent cannot
+review its own actions. In Cockpit, the agent's *Task categories* card lists
 them under *To review*, with **Fine** and **Should not have run**.
 Listing the actions to review needs root or the group
 `systemd-journal`; a verdict needs root (or Cockpit's administrative
