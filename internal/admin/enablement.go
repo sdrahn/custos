@@ -446,7 +446,7 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 		return "the state has no record: it was not written by agent-admin"
 	}
 	// Both kinds of change: journalctl ORs matches of the same field.
-	out, err := read("_UID=0", "_COMM="+readiness.RootWriter, "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
+	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
 		"AGENT_EVENT="+journal.CategoriesDisabled, "AGENT_ENABLEMENT="+e.Record)
 	if err != nil {
 		return ""
@@ -456,7 +456,7 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 		var r map[string]any
 		// agent-admin's records as root only: an agent could write one
 		// with any other field (readiness.ByRoot).
-		if json.Unmarshal(line, &r) == nil && r["_UID"] == "0" && r["_COMM"] == readiness.RootWriter {
+		if json.Unmarshal(line, &r) == nil && readiness.ByRoot(stringsOf(r)) {
 			if d, ok := r["AGENT_ENABLEMENT_SHA256"].(string); ok {
 				digest = d
 			}
@@ -469,4 +469,15 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 		return "the state differs from its record " + e.Record
 	}
 	return ""
+}
+
+// stringsOf is a journal record's string fields.
+func stringsOf(r map[string]any) readiness.Record {
+	out := readiness.Record{}
+	for k, v := range r {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
 }
