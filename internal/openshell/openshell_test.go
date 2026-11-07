@@ -2,6 +2,7 @@ package openshell
 
 import (
 	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,19 +74,29 @@ func TestProfile(t *testing.T) {
 }
 
 func TestCreateArgs(t *testing.T) {
-	args, err := CreateArgs(cfg(t), "registry.example/agent:1", "/etc/p.yaml", "sec", 47123)
+	const secret = "s3cret-0123456789abcdef0123456789"
+	args, env, err := CreateArgs(cfg(t), "registry.example/agent:1", "/etc/p.yaml", secret, 47123)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := strings.Join(args, " ")
 	for _, want := range []string{"sandbox create --name agent-pp --from registry.example/agent:1", "--policy /etc/p.yaml", "--provider agent-pp-gateway",
-		"--env CUSTOS_RELAY_SECRET=sec", "--detach -- " + Launcher + " serve --config-env CUSTOS_CONFIG --listen-tcp 127.0.0.1:47123"} {
+		"--env-from CUSTOS_RELAY_SECRET --env-from CUSTOS_CONFIG", "--detach -- " + Launcher + " serve --config-env CUSTOS_CONFIG --listen-tcp 127.0.0.1:47123"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("args lack %q: %s", want, s)
 		}
 	}
+	// The secret and the configuration never on the command line, which
+	// any local user reads in /proc (security review H2): in the
+	// environment the CLI passes on with --env-from.
+	if strings.Contains(s, secret) || strings.Contains(s, ConfigEnv+"=") || strings.Contains(s, SecretEnv+"=") {
+		t.Errorf("a secret or the configuration on the command line: %s", s)
+	}
+	if !slices.Contains(env, SecretEnv+"="+secret) {
+		t.Errorf("env %v", env)
+	}
 	var enc string
-	for _, a := range args {
+	for _, a := range env {
 		if v, ok := strings.CutPrefix(a, ConfigEnv+"="); ok {
 			enc = v
 		}

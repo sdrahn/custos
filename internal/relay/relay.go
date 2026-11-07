@@ -34,6 +34,8 @@ func Handler(upstream *url.URL, secret string) http.Handler {
 			pr.Out.Header.Set(peercred.HeaderSecret, secret)
 		},
 		FlushInterval: -1, // AG-UI and run_sse stream
+		// Only to the forward: the secret goes with each request (peer.go).
+		Transport: transport(),
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := peercred.From(r.Context()); !ok {

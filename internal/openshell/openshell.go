@@ -183,21 +183,28 @@ func SandboxConfig(cfg *config.Config) ([]byte, error) {
 	return yaml.Marshal(&c)
 }
 
-// CreateArgs are the arguments of `openshell` that create the sandbox.
-func CreateArgs(cfg *config.Config, image, policyFile, secret string, port int) ([]string, error) {
+// CreateArgs are the arguments of `openshell` that create the sandbox,
+// and the environment to run it with: the relay secret and the
+// configuration go into the sandbox with --env-from, from the CLI's
+// environment, never on its command line, which any local user can read
+// in /proc (security review H2).
+func CreateArgs(cfg *config.Config, image, policyFile, secret string, port int) (args, env []string, err error) {
 	sc, err := SandboxConfig(cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return []string{
-		"sandbox", "create", "--name", SandboxName(cfg.Name), "--from", image,
-		"--policy", policyFile, "--provider", ProviderName(cfg.Name),
-		"--env", SecretEnv + "=" + secret,
-		"--env", ConfigEnv + "=" + base64.StdEncoding.EncodeToString(sc),
-		"--env", "STATE_DIRECTORY=" + StateDir,
-		"--detach", "--",
-		Launcher, "serve", "--config-env", ConfigEnv, "--listen-tcp", fmt.Sprintf("127.0.0.1:%d", port), "--idle-exit", "0",
-	}, nil
+			"sandbox", "create", "--name", SandboxName(cfg.Name), "--from", image,
+			"--policy", policyFile, "--provider", ProviderName(cfg.Name),
+			"--env-from", SecretEnv,
+			"--env-from", ConfigEnv,
+			"--env", "STATE_DIRECTORY=" + StateDir,
+			"--detach", "--",
+			Launcher, "serve", "--config-env", ConfigEnv, "--listen-tcp", fmt.Sprintf("127.0.0.1:%d", port), "--idle-exit", "0",
+		}, []string{
+			SecretEnv + "=" + secret,
+			ConfigEnv + "=" + base64.StdEncoding.EncodeToString(sc),
+		}, nil
 }
 
 // hostURL replaces a loopback host by the sandbox's name for the host.

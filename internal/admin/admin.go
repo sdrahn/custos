@@ -241,6 +241,9 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	if err := a.checkModelCredential(cfg); err != nil {
 		return err
 	}
+	if err := a.checkForwardPort(cfg); err != nil {
+		return err
+	}
 	defer func() {
 		if err == nil {
 			a.noteModelCredential(cfg)
@@ -282,6 +285,26 @@ func (a *Admin) create(name string, b []byte) (err error) {
 		return a.createOpenShell(cfg)
 	}
 	return a.Run(nil, "systemctl", "enable", "--now", "agent@"+name+".socket")
+}
+
+// checkForwardPort refuses an OpenShell agent whose forward port (from
+// its name) another OpenShell agent has: the second forward would fail
+// and its relay would reach the first agent (security review E5, H3).
+func (a *Admin) checkForwardPort(cfg *config.Config) error {
+	if cfg.Sandbox.Kind != "openshell" {
+		return nil
+	}
+	port := openshell.Port(cfg.Name)
+	names, _ := a.List()
+	for _, n := range names {
+		if n == cfg.Name || openshell.Port(n) != port {
+			continue
+		}
+		if other, err := config.Load(a.agentDir(n)); err == nil && other.Sandbox.Kind == "openshell" {
+			return fmt.Errorf("agent %s would use OpenShell agent %s's forward port %d (both names hash to it): choose another name", cfg.Name, n, port)
+		}
+	}
+	return nil
 }
 
 var userRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -423,11 +446,11 @@ func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 	if err := a.waitSandboxGone(cfg); err != nil {
 		return err
 	}
-	args, err := openshell.CreateArgs(cfg, image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
+	args, env, err := openshell.CreateArgs(cfg, image, filepath.Join(dir, "openshell-policy.yaml"), strings.TrimSpace(string(secret)), openshell.Port(cfg.Name))
 	if err != nil {
 		return err
 	}
-	if err := a.Run(nil, "openshell", append([]string{"-g", g}, args...)...); err != nil {
+	if err := a.RunEnv(env, "openshell", append([]string{"-g", g}, args...)...); err != nil {
 		return fmt.Errorf("creating the sandbox: %w", err)
 	}
 	return nil

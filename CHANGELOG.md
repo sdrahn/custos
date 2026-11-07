@@ -18,6 +18,19 @@ removed.
   those rules; the documentation names a group of people instead. Check
   the gateway's approver rules (`/etc/mcp-gateway/policy/rbac/data.yaml`) for
   `agent-clients` and `mcp-users`.
+- Security (review H2, H3, #125): an OpenShell agent's relay secret
+  could reach a local user, who could then act as root on the agent's
+  control API (start activities as anyone, read every response, pause).
+  `agent-admin` put the secret, and the agent's configuration, on
+  `openshell sandbox create`'s command line: they now go in with
+  `--env-from`. The relay sent the secret to whatever listened on the
+  forward's port, and a failed forward was ignored: the unit now stops
+  an old forward and fails if its own does not start, and the relay
+  sends nothing to a socket root does not own. `agent-admin create`
+  refuses an OpenShell agent whose forward port another one has.
+  Rebuild nothing; an OpenShell agent gets the change when its sandbox
+  is next created (`agent-admin set-credential`, or an `edit` that
+  reaches it).
 - Security (review H1, #125): an OpenShell agent could write records
   that counted as root's. Its relay, which runs as root, passed every
   event from the sandbox to the journal, `agent-admin`'s too (reviews,
