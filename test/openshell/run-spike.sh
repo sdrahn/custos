@@ -455,6 +455,14 @@ if [ -n "$relay_ok" ]; then
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 
+	# Security review H1: the relay journals the agent's records as root,
+	# so it passes only the events an agent host writes, with field names
+	# that cannot add fields (internal/relay's and internal/journal's
+	# tests). Only the agent process itself writes on its output: a
+	# process the spike runs in the sandbox (openshell sandbox exec) may
+	# not (/proc/<launcher>/fd/1: permission denied), nor can docker or
+	# podman exec reach it, so this is not tried here.
+
 	section "AG-UI through the relay"
 	out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
 	check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$out"

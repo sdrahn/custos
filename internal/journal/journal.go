@@ -88,6 +88,33 @@ var MessageIDs = map[string]string{
 	CategoriesDisabled: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a675",
 }
 
+// HostEvents are the events an agent host writes itself (CONTRACT.md
+// §10); the others are agent-admin's, as root. The OpenShell relay
+// passes only these on from the sandbox (security review H1).
+var HostEvents = map[string]bool{
+	AgentStart: true, AgentStop: true, ConfigInvalid: true,
+	InvocationStart: true, InvocationEnd: true, ModelCall: true,
+	ToolCall: true, ToolResult: true, ToolDeniedLocal: true,
+	ApprovalPending: true, ApprovalResolved: true, LimitExceeded: true,
+	AgentPaused: true, AgentResumed: true, ActivityCancel: true,
+	DiagnosisReport: true,
+}
+
+// ValidField reports whether k is a field name a record may carry,
+// without the AGENT_ prefix: upper-case letters, digits and "_", at most
+// 64 (journald's field names; a newline in one would add fields).
+func ValidField(k string) bool {
+	if k == "" || len(k) > 64 || k[0] == '_' {
+		return false
+	}
+	for _, c := range k {
+		if !(c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // Fields of a record, without the AGENT_ prefix: "SESSION", "TOOL", ….
 type Fields map[string]string
 
@@ -143,7 +170,9 @@ func (n *native) Log(event, message string, f Fields) {
 	put("AGENT_NAME", n.name)
 	put("AGENT_EVENT", event)
 	for _, k := range sortedKeys(f) {
-		if f[k] != "" {
+		// A name journald would read otherwise (a newline, "=") never
+		// becomes fields of the caller's choosing.
+		if f[k] != "" && ValidField(k) {
 			put("AGENT_"+k, f[k])
 		}
 	}
