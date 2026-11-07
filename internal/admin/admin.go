@@ -41,6 +41,8 @@ type Admin struct {
 	// GatewayConfig, when set, is the gateway configuration idp-client and
 	// check-token read instead of the installed one (--gateway-config).
 	GatewayConfig string
+	// LookupHost resolves a host name (net.LookupHost when nil).
+	LookupHost func(host string) ([]string, error)
 	// Output runs a command and returns its output (systemd-creds
 	// decrypt, the seal's key); nil: run it.
 	Output func(stdin io.Reader, name string, args ...string) ([]byte, error)
@@ -189,7 +191,11 @@ func (a *Admin) Check(target string) error {
 	if err != nil {
 		return err
 	}
-	return a.checkModelCredential(cfg)
+	if err := a.checkModelCredential(cfg); err != nil {
+		return err
+	}
+	a.noteGatewayHost(cfg)
+	return nil
 }
 
 // readFrom reads a configuration from a file, or from In for "-" (as a
@@ -238,6 +244,7 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	defer func() {
 		if err == nil {
 			a.noteModelCredential(cfg)
+			a.noteGatewayHost(cfg)
 		}
 	}()
 	user := "agent-" + name
@@ -455,6 +462,7 @@ func (a *Admin) Edit(name, from string) (err error) {
 	defer func() {
 		if err == nil {
 			a.noteModelCredential(cfg)
+			a.noteGatewayHost(cfg)
 		}
 	}()
 	if old != nil && old.Sandbox.Kind != cfg.Sandbox.Kind {

@@ -93,10 +93,15 @@ function withName(yaml, name) {
     return /^name:.*$/m.test(yaml) ? yaml.replace(/^name:.*$/m, "name: " + (name || "NAME")) : "name: " + name + "\n" + yaml;
 }
 
+/* checkConfig checks a configuration and says so: "valid", with what
+ * agent-admin notes about it (e.g. the name an OpenShell agent reaches
+ * the gateway by, #131). */
 async function checkConfig(yaml) {
     const proc = cockpit.spawn(["agent-admin", "check", "-"], { err: "message" });
     proc.input(yaml);
-    await native(proc).catch(ex => { throw new Error(((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim()) });
+    const out = await native(proc).catch(ex => { throw new Error(((ex && ex.message) || String(ex)).replace(/^agent-admin: /, "").trim()) });
+    const notes = String(out || "").split("\n").map(l => l.replace(/^agent [a-z0-9-]+: note: /, "Note: ").trim()).filter(l => l.startsWith("Note: "));
+    return ["The configuration is valid."].concat(notes).join(" ");
 }
 
 /* draft is a new agent's starting configuration from agent-admin draft
@@ -244,8 +249,7 @@ function initCreate() {
     form.elements.check.addEventListener("click", async () => {
         setCreateNote("Checking…");
         try {
-            await checkConfig(yaml.value);
-            setCreateNote("The configuration is valid.", "ok-text");
+            setCreateNote(await checkConfig(yaml.value), "ok-text");
         } catch (ex) {
             setCreateNote(ex.message, "error-text", serverFix(ex.message, yaml, () => form.elements.check.click()));
         }
@@ -376,8 +380,7 @@ function configEditor(a) {
     check.addEventListener("click", async () => {
         say("Checking…");
         try {
-            await checkConfig(text.value);
-            say("The configuration is valid.", "ok-text");
+            say(await checkConfig(text.value), "ok-text");
         } catch (ex) {
             say(ex.message, "error-text", serverFix(ex.message, text, () => check.click()));
         }

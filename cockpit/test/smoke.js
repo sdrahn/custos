@@ -479,6 +479,15 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#create-agent button[name=check]");
     await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("valid"));
     if (shots) await page.screenshot({ path: path.join(shots, "create.png"), fullPage: true });
+    // An OpenShell agent by host.openshell.internal (#131): valid, with
+    // agent-admin's note on the certificate.
+    const plain = await page.inputValue("#create-agent textarea");
+    await page.fill("#create-agent textarea", plain + "  url: https://host.openshell.internal:8443/mcp\nsandbox: {kind: openshell}\n");
+    await page.click("#create-agent button[name=check]");
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("Note:"));
+    check(/^The configuration is valid\. Note: gateway\.url .*official certificate/.test(await page.textContent("#create-note")),
+          "check shows agent-admin's notes: an OpenShell agent's gateway name and its certificate");
+    await page.fill("#create-agent textarea", plain);
     // A tool whose server gateway.servers lacks (#116): the message names the
     // fix, and a button adds the server and checks again.
     await page.fill("#create-agent textarea", (await page.inputValue("#create-agent textarea"))

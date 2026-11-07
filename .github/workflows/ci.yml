@@ -487,10 +487,16 @@ jobs:
 
   # The OpenShell backend (CONTRACT.md §3a, §16a) with a real NVIDIA
   # OpenShell on Docker: an agent in a sandbox, its gateway token held by
-  # the supervisor, supervised through the relayed socket.
+  # the supervisor, supervised through the relayed socket. The agent reaches
+  # the gateway by a host name of its own (as with an official certificate)
+  # and by host.openshell.internal (#131).
   openshell:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        gateway_host: [name, alias]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -511,6 +517,9 @@ jobs:
         with:
           version: latest
           static: true
+      # The spike's gateway name in DNS (--gateway-host name, #131).
+      - name: dnsmasq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsmasq-base
       # The release in test/openshell/openshell-version, not the newest:
       # looking that up or downloading it failed now and then.
       - name: Install OpenShell
@@ -537,10 +546,10 @@ jobs:
           sudo openshell gateway list
           sudo openshell status
       - name: Run the OpenShell tests
-        run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" OPENSHELL_GATEWAY_USER="$USER" test/openshell/run-spike.sh --disposable --results "$RUNNER_TEMP/osh"
+        run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" OPENSHELL_GATEWAY_USER="$USER" test/openshell/run-spike.sh --disposable --gateway-host ${{ matrix.gateway_host }} --results "$RUNNER_TEMP/osh"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openshell-logs
+          name: openshell-logs-${{ matrix.gateway_host }}
           path: ${{ runner.temp }}/osh/
           if-no-files-found: ignore

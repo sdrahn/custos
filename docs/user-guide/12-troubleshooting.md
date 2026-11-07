@@ -46,7 +46,7 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `gateway.tools: "…": want <server>__<tool>` | fix the tool name: `<server>__<tool>`, as the gateway names it |
 | `gateway.tools: "agents__delegate": its server "agents" is not in gateway.servers: add agents to gateway.servers` | an agent is shown a tool only from a server it names: add the server to `gateway.servers`. In Cockpit, **Add agents to gateway.servers** next to the message does it and checks again |
 | `gateway: set socket or url, not both` | `url` for OpenShell agents, `socket` (or nothing) otherwise |
-| `gateway.url: "…": want an https URL (http only on the host's loopback, for tests)` | `https://host.openshell.internal:8443/mcp` |
+| `gateway.url: "…": want an https URL (http only on the host's loopback, for tests)` | the gateway's `http.audience`, e.g. `https://gw.example.com:8443/mcp` |
 | `gateway.url: an openshell agent reaches the gateway over HTTPS (CONTRACT.md §3a)` | add `gateway.url` |
 | `gateway.oauth: only with sandbox kind openshell (OpenShell's gateway mints the tokens)` | remove `oauth`, or use the `openshell` backend |
 | `gateway.oauth.token_url: …`, `gateway.oauth.client_id: …`, `gateway.oauth.scopes: …`, `gateway.oauth.refresh_before_seconds: want 0 or more` | the agent's OAuth client ([chapter 11](11-openshell.md#configuration)) |
@@ -236,6 +236,10 @@ anyway. Check in this order:
 | `configuring the token's renewal: …` | OpenShell refused the renewal settings for the provider | the text after the colon is OpenShell's; check `gateway.oauth` and the OpenShell version ([chapter 11](11-openshell.md#oauth)) |
 | `minting the first token (the issuer refused the client?): …` | wrong client id or secret, or the client lacks the client credentials grant | fix the client at the identity provider; `set-credential` again |
 | a certificate error from the agent's calls | OpenShell does not trust the gateway's CA | `additional_ca_bundle` ([chapter 11](11-openshell.md#trust)) |
+| `agent-admin check`: `gateway.url …: … resolves to 127.0.0.2 on this host, which OpenShell's proxy never connects to`; the agent's calls are refused by OpenShell's proxy | the name's DNS answer is a loopback address | make DNS answer the host's network address ([chapter 11](11-openshell.md#listener)) |
+| `agent-admin check`: `gateway.url …: …: not in DNS …; OpenShell resolves the name by DNS, not /etc/hosts`; with Podman the agent's calls fail with `connect: permission denied` | the name is only in `/etc/hosts` (or a nameserver that does not know it is first in `/etc/resolv.conf`) | put the name into DNS, or use a name that is ([chapter 11](11-openshell.md#listener)) |
+| `agent-admin check`: `gateway.url …: the sandbox reaches the gateway as host.openshell.internal, a name only a private CA's certificate can carry` | the agent's `gateway.url` is the loopback alias | fine on a test system with a private CA; otherwise use the host's name, with the gateway's official certificate ([chapter 11](11-openshell.md#listener)) |
+| `agent-admin check`: `gateway.url … is not the gateway's http.audience …` | the agent's URL and the gateway's audience differ | make them the same: the URL the agent uses, whose host the certificate names |
 | `401 invalid token` in the gateway's journal (`token rejected`) | wrong issuer or audience, expired, bad signature | the token's `iss` and `aud` must be `http.issuer` and `http.audience`; check with `mcp-gateway-admin setup http --token` |
 | `403 insufficient scope` | the token lacks a scope of `http.scopes` | add the scope to the client (as *Default* in Keycloak) and to `gateway.oauth.scopes` |
 | every call denied, the audit shows the agent's subject | its issuer is not in `_http.yaml`, or `sub` is not `agent-NAME` | [chapter 11](11-openshell.md#issuers), [step 5](11-openshell.md#idp) |

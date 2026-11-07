@@ -28,8 +28,8 @@ not yet verified by this project's tests ([below](#idp-status)).
   proxy replaces it with the real token on the way out. With
   `gateway.oauth`, OpenShell's gateway gets and renews the token itself
   with the client credentials grant.
-- **mcp-gateway's HTTPS listener** at `host.openshell.internal` (the
-  host, seen from the sandbox) checks the token. The token's subject
+- **mcp-gateway's HTTPS listener**, reached by the host's own name as
+  people reach it (`gw.example.com`), checks the token. The token's subject
   `agent-<name>` is the principal, under the same mode, permissions and
   approvals as an agent on the socket.
 - **The relay** `agent-openshell@<name>.service` owns the agent's socket
@@ -103,10 +103,25 @@ reaches it ([below](#edit)), from the image it was created with.
 
 ## Step 3: mcp-gateway's HTTPS listener {#listener}
 
-The sandbox reaches the host as `host.openshell.internal`. Give the
-gateway a certificate for that name, a port and the listener. As root,
-with `gw.crt` and `gw.key` from your CA (subject alternative name
-`DNS:host.openshell.internal`):
+The agents reach the gateway by the host's own DNS name, the one people
+use, for example `gw.example.com`: so an official certificate (from a
+public CA or your organization's) covers them. OpenShell's proxy, which
+makes the connection for the agent, runs in the host's network: it
+resolves the name and connects as the host would, and the connection to
+the host's own address stays on the host. Three conditions:
+
+- **The name is in DNS**: with Podman, the sandbox resolves it through
+  OpenShell's own DNS, which asks the first nameserver of the host's
+  `/etc/resolv.conf` and never reads `/etc/hosts`. A name only in
+  `/etc/hosts` resolves for the host, not for the agent.
+- **It resolves to the host's network address**, not to a loopback
+  address: OpenShell never connects to `127.0.0.0/8`, `::1` or a
+  link-local address.
+- **The gateway listens on that address**: `listen: ":8443"` listens on
+  every address.
+
+Give the gateway the certificate for that name, a port and the listener.
+As root, with `gw.crt` (the chain, server certificate first) and `gw.key`:
 
 ```bash
 install -d -m0750 -o root -g mcp-gateway /etc/mcp-gateway/tls
@@ -123,7 +138,7 @@ http:
   cert_file: /etc/mcp-gateway/tls/cert.pem
   key_file: /etc/mcp-gateway/tls/key.pem
   issuer: https://idp.example.com/realms/mcp           # your identity provider (step 5)
-  audience: https://host.openshell.internal:8443/mcp   # = the agents' gateway.url
+  audience: https://gw.example.com:8443/mcp            # = the agents' gateway.url
   scopes: [mcp-agents]                                 # optional: a scope every token must have
 ```
 
@@ -135,15 +150,30 @@ mcp-gateway-admin doctor                                       # TLS, identity p
 The gateway fetches the identity provider's keys from
 `<issuer>/.well-known/openid-configuration`. Its HTTPS chapter
 (mcp-gateway user guide, chapter 5, "Remote agents (HTTPS)") explains
-every key. With firewalld, allow the port from the network the sandboxes
-use.
+every key. The agents' connections stay on the host; with firewalld,
+open the port only for people or remote agents that use it.
+
+**Without a name for the host** (a test system): the sandbox also
+reaches the host as `host.openshell.internal`, OpenShell's name for the
+host's loopback. Only a private CA can issue a certificate for it
+(`DNS:host.openshell.internal`), which OpenShell must then trust
+([step 4](#trust)), and it becomes the gateway's `http.audience` and the
+agents' `gateway.url`.
+
+`agent-admin check NAME` (and `create`, `edit`) notes an OpenShell
+agent by `host.openshell.internal`, and one whose name is not in DNS (it
+asks the nameserver as OpenShell does) or resolves to a loopback
+address.
 
 ## Step 4: OpenShell trusts the gateway's certificate {#trust}
 
 OpenShell's proxy terminates the agent's TLS to swap the token in, then
 connects to the gateway itself. It checks the gateway's certificate in
-each sandbox's supervisor, not with the image's trust store. A CA that
-no public root signs goes into OpenShell's gateway configuration
+each sandbox's supervisor, not with the image's trust store: against the
+public root CAs and the host's own trust store. A certificate from a
+public CA needs nothing here. A CA that no public root signs (your
+organization's, or a test system's for `host.openshell.internal`) goes
+into OpenShell's gateway configuration
 (`~osh/.config/openshell/gateway.toml`), which needs its format version:
 
 ```toml
@@ -173,7 +203,7 @@ agent must have:
 |---|---|
 | `iss` | the gateway's `http.issuer` |
 | `sub` | `agent-<name>`: the principal the gateway uses. The gateway takes the principal from `sub` only |
-| `aud` | the gateway's `http.audience`, e.g. `https://host.openshell.internal:8443/mcp` (the grant sends no audience: the provider must add it) |
+| `aud` | the gateway's `http.audience`, e.g. `https://gw.example.com:8443/mcp` (the grant sends no audience: the provider must add it) |
 | `scope` | every scope of `http.scopes`, if the gateway requires any |
 | `exp` | a short lifetime (minutes): OpenShell renews the token before it expires |
 
@@ -235,7 +265,7 @@ with a real token before giving OpenShell its secret:
 ok   iss https://idp.example.com/realms/mcp
 ok   the issuer is listed for agents (/etc/mcp-gateway/policy/agents/_http.yaml)
 ok   sub agent-patch-pilot
-ok   aud includes https://host.openshell.internal:8443/mcp
+ok   aud includes https://gw.example.com:8443/mcp
 ok   scope mcp-agents
 ok   exp in 4m59s
 ok   no preferred_username (the gateway's local_user_claim)
@@ -307,7 +337,7 @@ model:
   endpoint: http://host.openshell.internal:8000/v1   # the host's model server, seen from the sandbox
 instruction: You keep this host patched. Look before you change anything.
 gateway:
-  url: https://host.openshell.internal:8443/mcp      # = the gateway's http.audience
+  url: https://gw.example.com:8443/mcp               # the host's name; = the gateway's http.audience
   servers: [zypp, systemd]
   oauth:
     token_url: https://idp.example.com/realms/mcp/protocol/openid-connect/token
@@ -319,7 +349,8 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
 
 - `gateway.url` must be `https://` (only the host's loopback may be
   `http://`, for tests). `gateway.socket` and `gateway.url` exclude each
-  other.
+  other. A loopback URL (`localhost`, `127.0.0.1`) becomes
+  `host.openshell.internal` in the sandbox ([step 3](#listener)).
 - `gateway.oauth` is only for OpenShell agents: OpenShell's gateway gets
   the tokens. Without it, the agent uses a static token
   ([above](#other-idp)).

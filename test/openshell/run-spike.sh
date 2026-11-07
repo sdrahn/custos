@@ -9,8 +9,14 @@
 # mcp-gateway checkout built with `make build` (MCPGW_SRC), and the user
 # whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
-# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--results DIR]
-#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--results DIR]
+# Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--gateway-host name|alias] [--results DIR]
+#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--gateway-host name|alias] [--results DIR]
+#
+# --gateway-host: the name the agent reaches the gateway by (#131). name
+# (the default): a host name of its own, custos-gw.test, which a local
+# dnsmasq resolves to the host's network address, as a host's DNS name
+# does in a deployment with an official certificate (needs dnsmasq). alias: host.openshell.internal,
+# the sandbox's name for the host's loopback.
 #
 # --system: on a system with the packages installed (custos, custos-selinux,
 # custos-tests, mcp-gateway), e.g. the Leap 16 VM with SELinux enforcing
@@ -28,18 +34,20 @@
 # credentials grant and renews them while the agent runs.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
-disposable= results= system=
+disposable= results= system= gateway_host=name
 while [ $# -gt 0 ]; do
 	case $1 in
 	--disposable) disposable=1 ;;
 	--results) results=${2:?}; shift ;;
 	--system) system=1 ;;
-	*) echo "usage: $0 [--system] --disposable [--results DIR]" >&2; exit 2 ;;
+	--gateway-host) gateway_host=${2:?}; shift ;;
+	*) echo "usage: $0 [--system] --disposable [--gateway-host name|alias] [--results DIR]" >&2; exit 2 ;;
 	esac
 	shift
 done
 [ -n "$disposable" ] || { echo "$0: installs agents, units and users on this system; use --disposable" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || { echo "$0: runs as root" >&2; exit 2; }
+case $gateway_host in name | alias) ;; *) echo "$0: --gateway-host name or alias" >&2; exit 2 ;; esac
 work=$(mktemp -d)
 t0=$(date +%s)
 failed=0
@@ -129,21 +137,45 @@ section "Model on the host"
 systemd-run --unit=osh-fakemodel /usr/libexec/custos/tests/fakemodel --listen 0.0.0.0:8008 >/dev/null
 
 section "mcp-gateway on the host (HTTPS)"
-# The agent reaches the host as host.openshell.internal (OpenShell's
-# Docker driver: the host's loopback), so that is the certificate's name
-# and the gateway's audience.
-aud=https://host.openshell.internal:18443/mcp
+# The name the agent reaches the gateway by, the certificate's name and
+# the gateway's audience (#131). By name: a host name of its own for the
+# host's network address, which OpenShell's proxy (in the host's network)
+# resolves and connects to; the gateway listens on every address. By the
+# alias: host.openshell.internal, which OpenShell maps to the host.
+if [ "$gateway_host" = name ]; then
+	# The name in DNS, as a deployment's is: OpenShell's policy DNS asks the
+	# nameserver of the host's resolv.conf and never reads /etc/hosts. A
+	# local dnsmasq answers custos-gw.test and forwards the rest to the
+	# host's nameserver; resolv.conf points at it for the run.
+	gw_host=custos-gw.test
+	host_ip=$(ip -4 route get 192.0.2.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+	upstream=$(sed -n 's/^nameserver[[:space:]]*\([0-9.]*\).*/\1/p' /etc/resolv.conf | head -n1)
+	check "dnsmasq is installed" command -v dnsmasq
+	systemd-run --unit=osh-dnsmasq dnsmasq --keep-in-foreground --no-resolv --no-hosts --bind-interfaces \
+		--listen-address=127.0.0.1 --port=53 --local="/$gw_host/" --address="/$gw_host/$host_ip" --server="${upstream:-127.0.0.53}" >/dev/null
+	mv /etc/resolv.conf "$work/resolv.conf.orig"
+	printf 'nameserver 127.0.0.1\n' >/etc/resolv.conf
+	restore_resolv() { if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi; }
+	trap restore_resolv EXIT
+	check "$gw_host resolves by DNS to the host's network address ($host_ip)" eventually 10 bash -c \
+		"[ -n '$host_ip' ] && getent ahostsv4 $gw_host | grep -q '^$host_ip '"
+	check "and other names still resolve (dnsmasq forwards to $upstream)" eventually 10 getent ahosts registry.opensuse.org
+else
+	gw_host=host.openshell.internal
+	restore_resolv() { :; }
+fi
+aud=https://$gw_host:18443/mcp
 issuer=http://127.0.0.1:18445
 mkdir -p "$work/gw/servers.d" "$work/gw/rbac" "$work/tls" /run/mcp-gateway
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=custos-test-ca \
 	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign \
 	-keyout "$work/tls/ca.key" -out "$work/tls/ca.pem" 2>/dev/null
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj /CN=host.openshell.internal \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=$gw_host" \
 	-keyout "$work/tls/key.pem" -out "$work/tls/req.pem" 2>/dev/null
-printf 'subjectAltName=DNS:host.openshell.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$work/tls/ext.cnf"
+printf 'subjectAltName=DNS:%s,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' "$gw_host" >"$work/tls/ext.cnf"
 openssl x509 -req -in "$work/tls/req.pem" -CA "$work/tls/ca.pem" -CAkey "$work/tls/ca.key" -CAcreateserial -days 2 \
 	-extfile "$work/tls/ext.cnf" -out "$work/tls/cert.pem" 2>/dev/null
-check "the gateway's certificate names host.openshell.internal" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q DNS:host.openshell.internal"
+check "the gateway's certificate names $gw_host (no other name)" bash -c "openssl x509 -in '$work/tls/cert.pem' -noout -ext subjectAltName | grep -q 'DNS:$gw_host, IP'"
 
 # agent-sb's OAuth client; its tokens live 90 s, so the agent outlives one.
 head -c 24 /dev/urandom | base64 | tr -d '/+=' >"$work/client-secret"
@@ -206,7 +238,7 @@ else
 	systemd-run --unit=osh-mcp-gateway "$gw_bin" --config "$work/gw/gateway.yaml" >/dev/null
 fi
 check "the gateway's HTTPS listener refuses a request without a token (401)" eventually 30 bash -c \
-	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve host.openshell.internal:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
+	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve $gw_host:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
 	journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers | grep -q custos-test"
 check "the issuer gives agent-sb's client a token" bash -c \
@@ -257,6 +289,9 @@ else
 	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 fi
 
+check "the image resolves names by DNS first (hosts: dns files)" bash -c \
+	"$(declare -f ctr); ctr run --rm --entrypoint /bin/sh '$img' -c 'grep -x \"hosts: dns files\" /etc/nsswitch.conf' >/dev/null"
+
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
 version: 1
@@ -277,6 +312,17 @@ export CUSTOS_OPENSHELL_IMAGE=$img
 # Rootless Podman: the relay's log source reads the user's containers.
 [ "$runtime" = podman ] && export CUSTOS_OPENSHELL_USER=$osh_user
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
+# #131: no note by the host's name (it resolves to a network address and
+# is the gateway's audience); the alias's note says what an official
+# certificate needs.
+gwcfg=()
+[ -n "$system" ] || gwcfg=(--gateway-config "$work/gw/gateway.yaml")
+if [ "$gateway_host" = name ]; then
+	check "agent-admin check sb: no note on the gateway's name" bash -c "! agent-admin check sb | grep -q 'note: gateway.url'"
+else
+	check "agent-admin check sb: the note on host.openshell.internal and the certificate" bash -c \
+		"agent-admin check sb | grep -q 'note: gateway.url $aud: the sandbox reaches the gateway as host.openshell.internal'"
+fi
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
@@ -284,8 +330,6 @@ check "the provider profile is imported" eventually 10 bash -c 'openshell -g ope
 # #111: the client's tokens checked before OpenShell gets the secret. The
 # installed gateway's settings as the gateway reads them (its listener is
 # a gateway.d drop-in), else the spike's own gateway's file.
-gwcfg=()
-[ -n "$system" ] || gwcfg=(--gateway-config "$work/gw/gateway.yaml")
 idp=$(agent-admin idp-client sb "${gwcfg[@]}")
 check "agent-admin idp-client sb: its client id" grep -qF 'client id     agent-sb' <<<"$idp"
 check "agent-admin idp-client sb: the gateway's audience" grep -qF "$aud" <<<"$idp"
@@ -465,7 +509,8 @@ if [ -n "$system" ]; then
 	echo "    | all denials since the start: $(grep -c 'denied' <<<"$avc")"
 	grep 'denied' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 15 | sed 's/^/    | /'
 fi
-systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp >/dev/null 2>&1
+systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp osh-dnsmasq >/dev/null 2>&1
+restore_resolv
 
 if [ -n "$results" ]; then
 	mkdir -p "$results"

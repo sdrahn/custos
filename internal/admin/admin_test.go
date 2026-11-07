@@ -62,8 +62,10 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 			r.cmds = append(r.cmds, strings.Join(env, " ")+" "+name+" "+strings.Join(args, " "))
 			return nil
 		},
-		Image:  "localhost/agent:test",
-		Secret: func() string { return "0123456789abcdef0123456789abcdef" },
+		// No DNS in tests: names the test resolves are the test's.
+		LookupHost: func(h string) ([]string, error) { return nil, errors.New("no such host") },
+		Image:      "localhost/agent:test",
+		Secret:     func() string { return "0123456789abcdef0123456789abcdef" },
 		// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
 		Probe: func(name string, args ...string) error {
 			c := name + " " + strings.Join(args, " ")

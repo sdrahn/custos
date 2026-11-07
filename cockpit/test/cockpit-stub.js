@@ -456,6 +456,11 @@
                                      ? "agent-admin: the configuration names another agent" : null) ||
                                      (cmd === "create" && posture.agents[name] && "agent-admin: agent " + name + " exists");
                                  if (why) return Promise.reject(new Error(why)).then(ok, bad);
+                                 // An OpenShell agent reaching the gateway as host.openshell.internal: a note (#131).
+                                 if (cmd === "check" && /kind: openshell/.test(input) && /host\.openshell\.internal/.test(input))
+                                     return Promise.resolve("agent " + name + ": note: gateway.url https://host.openshell.internal:8443/mcp: the sandbox reaches the gateway as " +
+                                         "host.openshell.internal, a name only a private CA's certificate can carry; with the gateway's own host name an official certificate does " +
+                                         "(user guide, chapter 11, step 3)\n").then(ok, bad);
                                  const tmpl = cmd === "create" && args.includes("--template") && args[args.indexOf("--template") + 1];
                                  if (tmpl && !TEMPLATES.templates[tmpl]) return Promise.reject(new Error("agent-admin: no template \"" + tmpl + "\"")).then(ok, bad);
                                  if (cmd === "create") posture.agents[name] = tmpl
