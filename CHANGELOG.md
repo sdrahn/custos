@@ -9,6 +9,12 @@ removed.
 
 ### Fixed
 
+- Security (review M3, #125): `agent-admin stop-all` stopped nothing
+  when the gateway's OPA did not load the stop within 20 s: it waited
+  for the policy first and returned its error before stopping any unit.
+  It now writes the flag, stops every unit and sandbox (and the event
+  units), then waits for the policy and reports it; `pause` tells the
+  agent's host before it writes the gateway's data.
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with
