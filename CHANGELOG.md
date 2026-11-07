@@ -7,6 +7,115 @@ removed.
 
 ## Unreleased
 
+## v0.5.0 — 2026-11-07
+
+A host whose trust holds against its own agents. The full security
+review (`docs/security-review-0.5.md`, #125) found that a compromised
+agent could pass for root in the journal, reach root's relay secret,
+count as an approver, reach any host, or hide its declined calls from
+the override rate; each of these is fixed, and the stop works without
+the gateway's policy. The task categories' state is sealed, and there
+is a way back from enabling them. Agents can start on a unit's failure,
+read the product documentation through the gateway, and, in OpenShell,
+get their tokens from the site's identity provider and reach the
+gateway by the host's own name. A second agent host, built from the
+contract alone, keeps the contract honest.
+
+Upgrading from 0.4.x needs no change to configurations: contract
+version 1 only gained names. To know:
+
+- mcp-gateway 1.15 is still the minimum. Update `custos-selinux` in
+  the same transaction as `custos`: it has the relay's new rule.
+- Check the gateway's approver rules
+  (`/etc/mcp-gateway/policy/rbac/data.yaml`) for `group:agent-clients`
+  and `group:mcp-users`, which earlier documentation recommended: every
+  agent is in them. The owner rules no longer grant anything to an
+  approver named `agent-*`; name a group of people instead (review M2).
+- A systemd agent reaches only the host itself, its model endpoint and
+  the nameservers from its next start (`systemctl restart
+  agent@NAME.service`, or idle exit). An agent that needs more, such as a
+  proxy, gets it with a drop-in (user guide, chapter 14).
+- The task categories' state is sealed by the first `agent-admin
+  enable` or `disable` with this version; until then it counts as it is.
+- OpenShell agents: rebuild an image built before (it resolves names by
+  DNS first), and recreate each sandbox (`agent-admin set-credential`)
+  so the relay secret no longer reaches its command line. Two OpenShell
+  agents whose names share a forward port: the second's unit now fails
+  to start instead of reaching the first; recreate it under another
+  name (`agent-admin create` names the port).
+- For the documentation in the templates, install mcp-docs with its
+  gateway definition (`mcp-docs-gateway`, the server `suse-docs`) and
+  the documentation packages. Agents created before keep their
+  configuration and permissions; take the template's again to use it.
+- Running agents keep the old launcher until they next start.
+
+### Added
+
+- The agent templates read the product documentation through the
+  gateway (#130): mcp-docs as the server `suse-docs`, with SUSE's
+  documentation packages, Custos's and the others installed. Each
+  template is shown and allowed its reading tools (`find_sections`,
+  `search`, `outline`, `read_section`; in `diagnostics` for
+  `health-check`), and its instruction says to check findings and
+  proposed steps against the documentation and to name the sections
+  used. Without the server, nothing changes. Agents created before keep
+  their configuration and permissions.
+- OpenShell agents reach mcp-gateway by the host's own name, so an
+  official TLS certificate covers them (#131). The user guide (chapter
+  11) recommends it; `host.openshell.internal` with a private CA remains
+  for test systems. `agent-admin check`, `create` and `edit` note an
+  OpenShell agent by that alias, a gateway name that is not in DNS
+  (OpenShell resolves it by DNS, never `/etc/hosts`) or resolves to a
+  loopback address (which OpenShell never connects to), and a `gateway.url` other than the gateway's `http.audience`;
+  Cockpit's **Check** shows the notes. The agent image resolves names by
+  DNS first (OpenShell's policy DNS): with Podman, a name in the host's
+  `/etc/hosts` gave the agent an address OpenShell refused. Rebuild an
+  image built before.
+- The site's identity provider issues OpenShell agents' tokens (#111):
+  `agent-admin idp-client NAME` says what the agent's OAuth client must
+  be, from the gateway's own settings, and with `--keycloak` prints a
+  `kcadm.sh` script that creates it (subject `agent-<name>`, the
+  gateway's audience and scopes, 5-minute tokens, without the realm's
+  default client scopes). `agent-admin check-token NAME < secret` gets a
+  token with the client and checks each claim the gateway relies on,
+  before `set-credential`. CI runs both against a real Keycloak.
+- A second agent host for tests (#112): `test/vm/secondhost`, built from
+  the contract alone, and conformance checks (`test/contract`) that it
+  and the launcher pass; the functional and Cockpit tests use it as an
+  agent of its own. In `custos-tests`.
+- The way back from enabling task categories (#110): `agent-admin
+  disable CATEGORY…` disables them again, and `disable --all` returns the
+  host to diagnostics-only; Cockpit's **Disable…** does the same. It is
+  refused, naming what is in the way, while an agent has a permission in
+  the category or has it promoted, and recorded as `categories.disabled`.
+- The task categories' state is sealed (#109): `agent-admin` signs it
+  with a key kept as a systemd credential (the TPM's, where there is
+  one), and the gateway counts it only with a valid signature. A state
+  edited by hand, unsigned or deleted counts as diagnostics-only, and
+  the denials say why; `agent-admin show` reports it (`sealed`,
+  `tampered`). A host set up before is sealed by its next change.
+- Events: an agent's `events:` start its activities when a systemd unit
+  fails (`on_unit_failure`). `agent-admin` puts an `OnFailure=` drop-in
+  on each unit, which starts `agent-event@<agent>_<event>_<unit>.service`;
+  the activity has origin `event` (`origin.event`, `AGENT_ORIGIN_EVENT`),
+  its prompt names the unit and systemd's account of the failure. Damped
+  per unit: none while its activity runs, nor within
+  `min_interval_seconds` (default 600); each skip is recorded
+  (`event.skipped`). Cockpit shows an agent's events (#118).
+
+### Changed
+
+- A tool in `gateway.tools` whose server is not in `gateway.servers`:
+  the check's message says the fix ("add agents to gateway.servers"),
+  and Cockpit's create form and configuration editor offer a button that
+  adds the server and checks again (#116).
+- A delegation (`agents__delegate`) answers with the other agent's full
+  response (up to 32 KiB), its diagnosis report if it wrote one, and why
+  its activity did not finish, instead of the first 500 characters of
+  its last text. The delegating agent can judge from it whether the task
+  was done; the answer is still checked for signs of a prompt injection
+  (#119).
+
 ### Fixed
 
 - Security (review M6, #125): readiness and the evaluator counted a
@@ -89,73 +198,6 @@ removed.
   host whose lifecycle names only its service (§3).
 - `agent-admin pause` and `resume` refused an agent the gateway has no
   data for; they now tell its host (§8).
-
-### Changed
-
-- A tool in `gateway.tools` whose server is not in `gateway.servers`:
-  the check's message says the fix ("add agents to gateway.servers"),
-  and Cockpit's create form and configuration editor offer a button that
-  adds the server and checks again (#116).
-- A delegation (`agents__delegate`) answers with the other agent's full
-  response (up to 32 KiB), its diagnosis report if it wrote one, and why
-  its activity did not finish, instead of the first 500 characters of
-  its last text. The delegating agent can judge from it whether the task
-  was done; the answer is still checked for signs of a prompt injection
-  (#119).
-
-### Added
-
-- The agent templates read the product documentation through the
-  gateway (#130): mcp-docs as the server `suse-docs`, with SUSE's
-  documentation packages, Custos's and the others installed. Each
-  template is shown and allowed its reading tools (`find_sections`,
-  `search`, `outline`, `read_section`; in `diagnostics` for
-  `health-check`), and its instruction says to check findings and
-  proposed steps against the documentation and to name the sections
-  used. Without the server, nothing changes. Agents created before keep
-  their configuration and permissions.
-- OpenShell agents reach mcp-gateway by the host's own name, so an
-  official TLS certificate covers them (#131). The user guide (chapter
-  11) recommends it; `host.openshell.internal` with a private CA remains
-  for test systems. `agent-admin check`, `create` and `edit` note an
-  OpenShell agent by that alias, a gateway name that is not in DNS
-  (OpenShell resolves it by DNS, never `/etc/hosts`) or resolves to a
-  loopback address (which OpenShell never connects to), and a `gateway.url` other than the gateway's `http.audience`;
-  Cockpit's **Check** shows the notes. The agent image resolves names by
-  DNS first (OpenShell's policy DNS): with Podman, a name in the host's
-  `/etc/hosts` gave the agent an address OpenShell refused. Rebuild an
-  image built before.
-- The site's identity provider issues OpenShell agents' tokens (#111):
-  `agent-admin idp-client NAME` says what the agent's OAuth client must
-  be, from the gateway's own settings, and with `--keycloak` prints a
-  `kcadm.sh` script that creates it (subject `agent-<name>`, the
-  gateway's audience and scopes, 5-minute tokens, without the realm's
-  default client scopes). `agent-admin check-token NAME < secret` gets a
-  token with the client and checks each claim the gateway relies on,
-  before `set-credential`. CI runs both against a real Keycloak.
-- A second agent host for tests (#112): `test/vm/secondhost`, built from
-  the contract alone, and conformance checks (`test/contract`) that it
-  and the launcher pass; the functional and Cockpit tests use it as an
-  agent of its own. In `custos-tests`.
-- The way back from enabling task categories (#110): `agent-admin
-  disable CATEGORY…` disables them again, and `disable --all` returns the
-  host to diagnostics-only; Cockpit's **Disable…** does the same. It is
-  refused, naming what is in the way, while an agent has a permission in
-  the category or has it promoted, and recorded as `categories.disabled`.
-- The task categories' state is sealed (#109): `agent-admin` signs it
-  with a key kept as a systemd credential (the TPM's, where there is
-  one), and the gateway counts it only with a valid signature. A state
-  edited by hand, unsigned or deleted counts as diagnostics-only, and
-  the denials say why; `agent-admin show` reports it (`sealed`,
-  `tampered`). A host set up before is sealed by its next change.
-- Events: an agent's `events:` start its activities when a systemd unit
-  fails (`on_unit_failure`). `agent-admin` puts an `OnFailure=` drop-in
-  on each unit, which starts `agent-event@<agent>_<event>_<unit>.service`;
-  the activity has origin `event` (`origin.event`, `AGENT_ORIGIN_EVENT`),
-  its prompt names the unit and systemd's account of the failure. Damped
-  per unit: none while its activity runs, nor within
-  `min_interval_seconds` (default 600); each skip is recorded
-  (`event.skipped`). Cockpit shows an agent's events (#118).
 
 ## v0.4.2 — 2026-11-06
 
