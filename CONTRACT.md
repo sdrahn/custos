@@ -116,7 +116,13 @@ Rules for every backend:
 
 - **The gateway stays the only source of tools.** Network policy of
   the backend must allow the gateway and the model endpoint, and nothing
-  else, unless an administrator adds it.
+  else, unless an administrator adds it. `systemd`: `agent@.service`
+  denies every address but the host's own (`IPAddressDeny=any`,
+  `IPAddressAllow=localhost`), and each start `agent-admin fence NAME`
+  (as root, `ExecStartPre=+-`) adds the model endpoint's addresses as
+  the host resolves them and the nameservers (`systemctl set-property
+  --runtime`); a failed fence leaves the denial. `openshell`: the
+  sandbox's network policy (§16a).
 - **Approvals stay the gateway's.** A backend's own review of policy
   changes (OpenShell's policy prover) is not an approval of an action.
 - **The control API stays a Unix socket on the host**

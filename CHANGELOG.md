@@ -9,6 +9,13 @@ removed.
 
 ### Fixed
 
+- Security (review M4, #125): a systemd agent could connect to any host
+  on an HTTP port (SELinux limited the ports, not the hosts), the cloud
+  metadata service included, although CONTRACT.md §3a allows only the
+  gateway and the model endpoint. `agent@.service` now denies every
+  address but the host's own, and `agent-admin fence` adds the model
+  endpoint's addresses and the nameservers at each start. An agent that
+  needs more (a proxy) gets it with a drop-in (user guide, chapter 14).
 - Security (review M2, #125): an agent could count as an approver.
   CONTRACT.md recommended `group:agent-clients` in the gateway's
   approver rules, a group every agent's user is in, and `agent-admin
