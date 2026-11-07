@@ -48,6 +48,14 @@ ProtectHostname=yes
 ProtectProc=invisible
 ProcSubset=pid
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# The network: the gateway (a Unix socket) and the model endpoint, nothing
+# else (CONTRACT.md §3a). Every address but the host's own is denied; each
+# start, agent-admin fence adds the model endpoint's addresses and the
+# nameservers, as root ("+"), for that start. Should it fail ("-"), the
+# denial stands. More: a drop-in with IPAddressAllow=.
+IPAddressDeny=any
+IPAddressAllow=localhost
+ExecStartPre=+-/usr/sbin/agent-admin fence %i
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes

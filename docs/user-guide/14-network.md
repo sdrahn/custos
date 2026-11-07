@@ -57,25 +57,36 @@ What Custos never does:
 - **Approval notifications** are mcp-gateway's: they go where its
   notification settings send them ([chapter 7](07-approvals.md#notifications)).
 
-## Fencing a systemd agent to its model {#fence}
+## A systemd agent reaches its model, nothing else {#fence}
 
-`agent@.service` lets an agent open TCP connections (to its model);
-SELinux limits them to HTTP ports, not to hosts. To allow only the
-model's address, add a drop-in:
+`agent@.service` denies every address but the host's own
+(`IPAddressDeny=any`, `IPAddressAllow=localhost`). Each time the agent
+starts, `agent-admin fence NAME` adds, for that start, the addresses of
+its model endpoint's host (as the host resolves it now) and the
+nameservers in `/etc/resolv.conf`. The gateway's socket is a Unix
+socket and stays reachable. SELinux limits the agent's connections to
+HTTP ports besides.
+
+```bash
+systemctl show -p IPAddressAllow agent@NAME.service   # what this start allows
+```
+
+A model endpoint whose addresses change while the agent runs (a cloud
+service) gets its new addresses at the agent's next start; the agent
+stops itself when idle. To allow more (a proxy, a network), add a
+drop-in; it adds to what the unit allows:
 
 ```bash
 systemctl edit agent@NAME.service
 #   [Service]
-#   IPAddressDeny=any
-#   IPAddressAllow=localhost 10.0.5.20
+#   IPAddressAllow=10.0.5.0/24
 systemctl restart agent@NAME.service
 ```
 
-`10.0.5.20` stands for the model server's address. The gateway's
-socket is a Unix socket and stays reachable. If `model.endpoint` names
-the server by its name, allow the DNS server's address too, or put the
-name in `/etc/hosts`. A connection the drop-in blocks fails, and the
-agent's journal shows the model call's error.
+A connection the unit blocks fails with *operation not permitted*, and
+the agent's journal shows the model call's error. Should `agent-admin
+fence` fail (the endpoint's name does not resolve), the agent reaches
+only this host.
 
 ## Installing without a network {#offline}
 

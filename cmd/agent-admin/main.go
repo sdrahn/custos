@@ -32,6 +32,8 @@ const usage = `usage: agent-admin COMMAND …
   set-credential NAME CRED               encrypt a secret read from stdin
   idp-client NAME [--keycloak]           the OAuth client an OpenShell agent needs at the gateway's identity
                                          provider; --keycloak: a script that creates it there (kcadm.sh)
+  fence NAME                             let a systemd agent's unit reach its model endpoint, for this start
+                                         (agent@.service runs it; the unit denies every other address)
   check-token NAME < secret              mint a token with the agent's OAuth client and check its claims
                                          as the gateway will (iss, sub, aud, scope, lifetime)
                                          (both: --gateway-config FILE instead of the installed gateway's)
@@ -368,6 +370,11 @@ func run(a *admin.Admin, args []string) error {
 		}
 		a.GatewayConfig, _ = flag("--gateway-config")
 		return a.IDPClient(args[0], has("--keycloak"))
+	case "fence":
+		if err := need(1); err != nil {
+			return err
+		}
+		return a.Fence(args[0])
 	case "check-token":
 		if err := need(1); err != nil {
 			return err
