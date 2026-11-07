@@ -7,3 +7,4 @@ needs:
   - mcp-gateway-exec-server with exec.d-diagnostics.yaml and exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/
   - Custos's server custos-net (mcp-gateway 1.15) with /usr/share/custos/gateway/servers.d/custos-net.yaml in /etc/mcp-gateway/servers.d/
   - mcp-server-zypp and mcp-server-snapper, or on a transactional system mcp-server-tukit, as far as they are installed
+  - for checking against the product documentation (optional), mcp-docs at the gateway as the server suse-docs, with documentation such as suse-docs-mcp-sles-16.0 and custos-docs

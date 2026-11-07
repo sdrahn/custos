@@ -42,6 +42,10 @@ var knownTools = map[string]struct{ read, change []string }{
 		change: []string{"refresh_repositories", "pkg_install", "pkg_remove", "update_system", "rollback",
 			"delete_snapshot", "cleanup_snapshots", "apply", "reboot", "run_in_snapshot"},
 	},
+	// mcp-docs (0.1) as the gateway's server suse-docs (#130): it only reads.
+	"suse-docs": {
+		read: []string{"list_docs", "outline", "search", "find_sections", "read_section", "read_lines"},
+	},
 	"exec":       {}, // from the shipped exec.d files (init)
 	"custos-net": {}, // from gateway/custos-net.d (init)
 }

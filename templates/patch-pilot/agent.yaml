@@ -22,8 +22,13 @@ instruction: |
   install and why before you ask. Afterwards check which services need
   a restart (check_restart_reload) and report them; restart one only
   when asked to.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [zypp, snapper, systemd]
+  servers: [zypp, snapper, systemd, suse-docs]
   tools:
     - zypp__check_updates
     - zypp__search_packages
@@ -35,6 +40,10 @@ gateway:
     - systemd__list_loaded_units
     - systemd__check_restart_reload
     - systemd__change_unit_state
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 40
   max_tool_calls: 60

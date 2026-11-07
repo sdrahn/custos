@@ -26,8 +26,13 @@ instruction: |
     administrator to carry out.
   If everything is healthy, say so in one sentence. If a tool fails or
   is not offered, say what you could not check.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [systemd, exec, custos-net, zypp, snapper, tukit]
+  servers: [systemd, exec, custos-net, zypp, snapper, tukit, suse-docs]
   tools:
     - systemd__list_loaded_units
     - systemd__list_log
@@ -50,6 +55,10 @@ gateway:
     - tukit__get_status
     - tukit__list_snapshots
     - tukit__list_updates
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 30
   max_tool_calls: 40

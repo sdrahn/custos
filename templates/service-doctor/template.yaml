@@ -5,3 +5,4 @@ mode: supervised
 needs:
   - systemd-mcp
   - mcp-gateway-exec-server with exec.d-disk-usage.yaml in /etc/mcp-gateway/exec.d/ (disk_usage)
+  - for checking against the product documentation (optional), mcp-docs at the gateway as the server suse-docs, with documentation such as suse-docs-mcp-sles-16.0 and custos-docs

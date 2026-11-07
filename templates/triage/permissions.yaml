@@ -23,3 +23,9 @@
 - {server: tukit, tool: get_status, read_only: true}
 - {server: tukit, tool: list_snapshots, read_only: true}
 - {server: tukit, tool: list_updates, read_only: true}
+# The product documentation through the gateway (mcp-docs as the server
+# suse-docs): reading only. Without it, these are never asked.
+- {server: suse-docs, tool: find_sections, read_only: true}
+- {server: suse-docs, tool: search, read_only: true}
+- {server: suse-docs, tool: outline, read_only: true}
+- {server: suse-docs, tool: read_section, read_only: true}

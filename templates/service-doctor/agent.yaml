@@ -20,8 +20,13 @@ instruction: |
   config-lifecycle is promoted; stopping or disabling a unit always
   does. After a change check the unit's state and log again and report
   whether it helped.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [systemd, exec]
+  servers: [systemd, exec, suse-docs]
   tools:
     - systemd__list_loaded_units
     - systemd__list_unit_files
@@ -31,6 +36,10 @@ gateway:
     - systemd__check_restart_reload
     - systemd__change_unit_state
     - exec__disk_usage
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 30
   max_tool_calls: 40

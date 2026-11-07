@@ -135,6 +135,16 @@ Before you create one, check:
   `mcp-server-tukit-gateway` and link its definition
   `/usr/share/mcp-gateway/profiles/tukit.yaml` into
   `/etc/mcp-gateway/servers.d/` (mcp-gateway 1.8 or later);
+- **the product documentation** (optional). Every template may read
+  the documentation through the gateway's server `suse-docs`, mcp-docs
+  serving its collections: SUSE's (`suse-docs-mcp-sles-16.0` and the
+  other `suse-docs-mcp-*` packages), Custos's (`custos-docs`) and the
+  others installed. The agent checks its findings and proposed steps
+  against it and names the sections it used. Its permissions allow the
+  reading tools `find_sections`, `search`, `outline` and
+  `read_section`; in `health-check` they are in `diagnostics`. Without
+  the server the agent works as before and says the documentation was
+  not offered;
 - **free disk space.** `triage`, `service-doctor` and the disk-watch
   templates read it through mcp-gateway-exec-server's `disk_usage`,
   a command you allow:

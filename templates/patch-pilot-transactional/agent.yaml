@@ -21,8 +21,13 @@ instruction: |
   call reboot, apply or rollback only when a person asks you to; they
   need an approval each time. Remove old snapshots only with
   cleanup_snapshots, never one by one.
+  Check what you found and the steps you propose against the product
+  documentation (the suse-docs tools: find_sections for a question in
+  words, search for an exact setting or message, then read_section) and
+  name the documents and sections you relied on. If the documentation
+  is not offered, say so and go on without it.
 gateway:
-  servers: [tukit]
+  servers: [tukit, suse-docs]
   tools:
     - tukit__get_status
     - tukit__list_snapshots
@@ -33,6 +38,10 @@ gateway:
     - tukit__reboot
     - tukit__apply
     - tukit__rollback
+    - suse-docs__find_sections
+    - suse-docs__search
+    - suse-docs__outline
+    - suse-docs__read_section
 limits:
   max_llm_calls: 30
   max_tool_calls: 40
