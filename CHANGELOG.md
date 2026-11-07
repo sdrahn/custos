@@ -15,6 +15,16 @@ removed.
   It now writes the flag, stops every unit and sandbox (and the event
   units), then waits for the policy and reports it; `pause` tells the
   agent's host before it writes the gateway's data.
+- Security (review H1, #125): an OpenShell agent could write records
+  that counted as root's. Its relay, which runs as root, passed every
+  event from the sandbox to the journal, `agent-admin`'s too (reviews,
+  feedback, permission changes, emergency stops), and copied any field
+  name, so a name with a newline added fields of the agent's choosing.
+  The relay now passes only the events an agent host writes, and a
+  record never carries a field name outside `[A-Z0-9_]`; readiness and
+  the evaluator take a record as root's only from `agent-admin`
+  (journald's `_UID=0` and `_COMM=agent-admin`), and the gateway's
+  records only from `mcp-gateway.service` itself (`_SYSTEMD_UNIT`).
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with
