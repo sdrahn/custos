@@ -61,8 +61,9 @@ check: fmt-check vet test
 # (needs node and playwright-core or playwright; CHROME=path if not
 # Playwright's own Chromium).
 cockpit-test:
-	for f in cockpit/custos/*.js cockpit/test/*.js; do node --check "$$f" || exit 1; done
+	for f in cockpit/custos/*.js cockpit/test/*.js test/cockpit/*.js test/video/*.js; do node --check "$$f" || exit 1; done
 	node cockpit/test/smoke.js
+	node test/video/subtitles_test.js
 
 # Needs selinux-policy-devel and mcp_gateway.if (mcp-gateway-selinux).
 selinux: selinux/custos.pp

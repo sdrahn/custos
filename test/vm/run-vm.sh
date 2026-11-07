@@ -16,6 +16,11 @@
 #              the VM, then test/cockpit/vm-test.js here, with node and
 #              playwright-core; Cockpit's port 9090 is forwarded to
 #              127.0.0.1:19090; SHOTS=DIR saves the page's screenshots);
+#              video: the demonstration videos (test/video/vm-setup.sh in
+#              the VM, then test/video/tour.js here for each version and
+#              test/video/render.sh; also forwards the gateway's HTTPS
+#              port 18443 and the test identity provider's 18445; the
+#              videos and subtitles go to VIDEOS, default $WORK/videos);
 #              airgap: the air-gapped release gate (CONTRACT.md O15): the
 #              first boot installs the dependencies, the second has no
 #              network (QEMU's restrict=on: only the forwarded ssh) and
@@ -113,6 +118,10 @@ ssh_opts=(-i "$work/key" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHost
 	-o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=15)
 vm() { ssh "${ssh_opts[@]}" root@127.0.0.1 "$@"; }
 
+# The videos' browser reaches the gateway's approval page and the
+# identity provider by the same 127.0.0.1 address as the VM does.
+extra_fwd=
+[ "${SUITE:-functional}" = video ] && extra_fwd=,hostfwd=tcp:127.0.0.1:18443-:18443,hostfwd=tcp:127.0.0.1:18445-:18445
 # boot [restrict]: starts the VM; with restrict, it has no network but
 # the forwarded ports (QEMU user networking's restrict=on).
 boot() {
@@ -121,7 +130,7 @@ boot() {
 	qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 \
 		-drive file="$work/disk.qcow2",if=virtio \
 		-drive file="$work/seed.img",if=virtio,format=raw \
-		-nic user,model=virtio-net-pci$restrict,hostfwd=tcp:127.0.0.1:$port-:22,hostfwd=tcp:127.0.0.1:19090-:9090 \
+		-nic user,model=virtio-net-pci$restrict,hostfwd=tcp:127.0.0.1:$port-:22,hostfwd=tcp:127.0.0.1:19090-:9090$extra_fwd \
 		-display none -serial file:"$work/console.log" \
 		-pidfile "$work/qemu.pid" -daemonize
 }
@@ -245,6 +254,39 @@ elif [ "${SUITE:-functional}" = cockpit ]; then
 	status=${PIPESTATUS[0]}
 	vm 'journalctl -b --no-pager -o short-precise -u cockpit.service -u mcp-gateway.service -t agent-patch-pilot -t agent-triage -t agent-disk-watch' >"$work/journal.txt" 2>&1
 	log "tests exited with $status"
+	exit "$status"
+elif [ "${SUITE:-functional}" = video ]; then
+	password=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
+	videos=${VIDEOS:-$work/videos}
+	mkdir -p "$videos"
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		"$here/../video/vm-setup.sh" root@127.0.0.1:/root/custos-vm/
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		"$here/../cockpit/vm-setup.sh" root@127.0.0.1:/root/custos-vm/cockpit-vm-setup.sh
+	vm "bash /root/custos-vm/vm-setup.sh /root/custos-vm/rpms '$password'" >"$work/video-setup.env" 2>"$work/video-setup.log"
+	setup=$?
+	cat "$work/video-setup.log"
+	if [ "$setup" != 0 ]; then
+		log "setting up the videos' system failed"
+		exit 1
+	fi
+	ssh_json=$(printf '%s\n' ssh "${ssh_opts[@]}" root@127.0.0.1 | jq -R . | jq -sc .)
+	status=0
+	for version in business technical; do
+		log "recording the $version video"
+		(set -a; . "$work/video-setup.env"; set +a
+			COCKPIT_URL=https://127.0.0.1:19090 COCKPIT_USER=carol COCKPIT_PASSWORD=$password SSH=$ssh_json \
+				GATEWAY_URL=https://127.0.0.1:18443 node "$here/../video/tour.js" "$version" "$videos") 2>&1 | tee -a "$work/test.log"
+		[ "${PIPESTATUS[0]}" = 0 ] || status=1
+		if [ -s "$videos/$version.webm" ]; then
+			"$here/../video/render.sh" "$videos" "$version" 2>&1 | tee -a "$work/test.log"
+			[ "${PIPESTATUS[0]}" = 0 ] || status=1
+		else
+			status=1
+		fi
+	done
+	vm 'journalctl -b --no-pager -o short-precise -u cockpit.service -u mcp-gateway.service -u custos-video-idp.service -t agent-patch-pilot -t agent-triage' >"$work/journal.txt" 2>&1
+	log "recording exited with $status"
 	exit "$status"
 else
 	vm "/usr/libexec/custos/tests/run-tests.sh $args" 2>&1 | tee "$work/test.log"
