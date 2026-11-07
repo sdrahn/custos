@@ -835,6 +835,28 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForSelector("#approval-a-42");
     check(await page.isHidden("#reviews"), "a gateway without reviews: no section");
 
+    // Characters that change how text shows (security review M1): the
+    // approval shows them as \uXXXX and says so; so do the plan's
+    // commands, each line on its own, and Copy gives what is shown.
+    await page.goto(url + "?hidden#/approvals/a-42");
+    await page.waitForSelector("#approval-a-42 .hidden-chars");
+    const shownArgs = await page.textContent("#approval-a-42 pre.args");
+    check(shownArgs.includes("echo cleanup\\u202E\\u2066; rm -rf /srv\\u2069\\u2066 #\\u2069") && !/[\u202E\u2066\u2069]/.test(shownArgs) &&
+          (await page.textContent("#approval-a-42 .hidden-chars")).includes("5 hidden characters"),
+          "an approval's arguments: hidden characters shown as \\uXXXX, and counted");
+    check((await page.textContent("#approval-a-42")).includes("Clean up\\u200B the cache."), "and in the agent's rationale");
+    await page.goto(url + "?hidden&report#/activity/patch-pilot/e-33b0cafe");
+    await page.waitForSelector("#report .plan .hidden-chars");
+    const planCodes = await page.$$eval("#report .plan code", cs => cs.map(c => ({ text: c.textContent, ws: getComputedStyle(c).whiteSpace })));
+    check(planCodes[0].text.includes("\\u202E") && !/[\u202E\u2066]/.test(planCodes[0].text), "a plan's command: hidden characters shown");
+    check(planCodes[1].text.includes("\ncurl") && planCodes[1].ws === "pre-wrap" &&
+          (await page.textContent("#report .plan li:nth-child(2)")).includes("2 lines"), "a command of two lines shows both, and says so");
+    check((await page.textContent("#report .evidence")).includes("\\u202E"), "a quote's hidden characters shown");
+    await page.evaluate(() => { window.copied = null; navigator.clipboard.writeText = t => { window.copied = t; return Promise.resolve() } });
+    await page.click("#report .plan li:nth-child(1) button:has-text('Copy')");
+    check(await page.evaluate(() => window.copied && window.copied.includes("\\u202E") && !/[\u202E\u2066]/.test(window.copied)),
+          "Copy gives what is shown, never the hidden text");
+
     // A suspected prompt injection (§7, O14): the approval item marks it,
     // with the signs and the output the model read before the call.
     await page.goto(url + "?injected#/approvals/a-42");

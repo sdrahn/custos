@@ -46,6 +46,13 @@ async function decide(id, decision, scope, buttons) {
     tabs.approvals.refresh();
 }
 
+/* args are the call's arguments, as the gateway gave them, with any
+ * hidden characters shown (visibleText). */
+function args(a) {
+    const v = visibleText(JSON.stringify(a || {}, null, 2));
+    return nodes(hiddenMark(v), el("pre", { class: "args" }, v.text));
+}
+
 function principalText(p) {
     let t = p.sub;
     if (p.uid !== undefined) t += " (uid " + p.uid + ", by SO_PEERCRED)";
@@ -61,7 +68,7 @@ function gatewayHalf(p) {
            p.prompt ? [el("dt", null, "Policy"), el("dd", null, p.prompt)] : null,
            p.approvers ? [el("dt", null, "Who may decide"), el("dd", { class: "mono" }, p.approvers.join(", "))] : null,
            el("dt", null, "Asked via"), el("dd", null, p.channel)),
-        el("pre", null, JSON.stringify(p.args || {}, null, 2)),
+        args(p.args),
         p.waiting === false
             ? el("p", { class: "note" }, "The agent is no longer waiting (its call ended, or the gateway restarted). " +
                  "Approving lets its next identical call through.")
@@ -101,7 +108,7 @@ function agentHalf(p, found) {
     const earlier = (a.calls || []).slice(0, (a.calls || []).indexOf(c));
     return el("div", { class: "half" }, head,
         el("p", null, el("span", { class: "muted" }, "Stated reason and impact: "),
-           c.rationale || el("span", { class: "muted" }, "none given")),
+           c.rationale ? [visibleText(c.rationale).text, " ", hiddenMark(visibleText(c.rationale))] : el("span", { class: "muted" }, "none given")),
         suspicionView(c),
         el("div", { class: "muted" }, "Started by"),
         chainView(chainOf(a)),
