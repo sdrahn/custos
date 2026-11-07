@@ -17,6 +17,25 @@ Status of each finding: **open** (to be fixed before `release-0.5`),
 **fixed in #N**, or **accepted** (in writing, by the maintainer, with
 the reason). Findings of severity *low* and *info* may stay open.
 
+**Where it stands.** Every finding above *low* is fixed or accepted, as
+#125 requires before `release-0.5`:
+
+| Finding | Status |
+|---|---|
+| H1 | fixed in #135 and #142 |
+| H2, H3 (and E5) | fixed in #136 |
+| M1 | fixed in #137 (Cockpit) |
+| M2 | fixed in #139 |
+| M3 | fixed in #138 |
+| M4 | fixed in #140 |
+| M5 | fixed in #141; sealing the agents' data accepted for a later release |
+| M6 | fixed in #143 |
+| L14 (low) | accepted by design |
+
+The maintainer's decisions (2026-11-07): M5 as proposed, M6 fixed
+rather than accepted, L14 kept as it is. The other low findings and the
+notes stay open for later releases.
+
 ## How it was reviewed
 
 | Area (#125) | How |
@@ -117,7 +136,7 @@ and only keys matching `^[a-z][a-z0-9_]{0,63}$`; (2) `native.Log`
 refuses a field name outside `[A-Z0-9_]`; (3) root's records count only
 with `_COMM=agent-admin` (or `custos-demote`'s unit), not `_UID=0`
 alone; (4) the gateway's records are read by
-`_SYSTEMD_UNIT=mcp-gateway.service`, not `-u`. Status: **open**.
+`_SYSTEMD_UNIT=mcp-gateway.service`, not `-u`. Status: **fixed in #135**; #142 then made (3) refuse the relay's records by their `_COMM` and `_SYSTEMD_UNIT` instead of requiring `agent-admin`'s `_COMM`, which journald does not always have for a short-lived process.
 
 ### H2 — high — The relay secret and the configuration on `openshell`'s command line
 
@@ -142,7 +161,7 @@ reach the agent's socket must not [know the secret]".
 *Fix.* OpenShell 0.1.7's `sandbox create --env-from KEY[=ENVVAR]` takes
 a value from the CLI's environment ("the value does not appear in the
 CLI process arguments"): pass both that way, as the OAuth client secret
-already is; a test that no argument holds the secret. Status: **open**.
+already is; a test that no argument holds the secret. Status: **fixed in #136**.
 
 ### H3 — high — The relay hands its secret to whatever listens on the forward port
 
@@ -169,7 +188,7 @@ sends anything that the listener on the port belongs to the forward
 secret is no longer a bearer value: each request carries an HMAC over
 its method, path, caller and a timestamp, which a listener cannot
 replay elsewhere. `agent-admin create` refuses a port another agent
-has (E5). Status: **open**.
+has (E5). Status: **fixed in #136**, with E5.
 
 ### M1 — medium — What an approver reads can differ from what runs
 
@@ -189,7 +208,7 @@ root by hand. *Fix.* Show format and control characters as visible
 `\uXXXX` with a "hidden characters" mark in approval arguments, plan
 commands and quoted evidence; `white-space: pre-wrap` for commands and a
 "several lines" mark. mcp-gateway's own approval page and CLI have the
-same issue (reported there). Status: **open**.
+same issue (reported there). Status: **fixed in #137** (Cockpit); mcp-gateway's own page and CLI are mcp-gateway's to change.
 
 ### M2 — medium — An agent counts as an approver
 
@@ -207,7 +226,7 @@ an agent to decide calls, its own included; as the grant is not by
 control socket (`InaccessiblePaths=`, SELinux): the policy adds
 nothing. *Fix.* Correct the example; `owners` refuses those rules;
 `owners.rego` grants nothing to an approver named `agent-*`; ask
-mcp-gateway for a way to deny an approver. Status: **open**.
+mcp-gateway for a way to deny an approver. Status: **fixed in #139**.
 
 ### M3 — medium — The emergency stop stops nothing when OPA is slow
 
@@ -217,7 +236,7 @@ loaded the flag within 20 s: no `systemctl stop`, no sandbox stop, no
 `agents.stopped` record. Exactly when the gateway may serve stale
 policy, the processes keep running. *Fix.* Stop the units and sandboxes
 first, then write and wait for the policy, and report its error; the
-same for pause's host part. Status: **open**.
+same for pause's host part. Status: **fixed in #138**.
 
 ### M4 — medium — A systemd agent's network is not fenced to its model
 
@@ -231,7 +250,7 @@ endpoint, and nothing else". Chapter 14 documents a drop-in, by hand.
 *Fix.* `IPAddressDeny=link-local multicast` in the template, and
 `agent-admin` writes `IPAddressDeny=any` with `IPAddressAllow=` the
 model endpoint's addresses (and localhost) for each agent, refreshed by
-`edit`. Status: **open**.
+`edit`. Status: **fixed in #140**, as `agent-admin fence` at each start (the endpoint's addresses as the host resolves them then).
 
 ### M5 — medium (needs root) — The seal covers less than §6b says
 
@@ -245,8 +264,8 @@ root. *Fix.* Say so in §6b; `agent-admin show` and Cockpit report a
 missing seal on a host whose journal has one, and a state older than
 the latest record; refuse permissions with a wildcard server or tool in
 `diagnostics`. Sealing the agents' data is for a later release. Status:
-**open** (the documentation and the checks); the rest proposed to be
-**accepted**.
+**fixed in #141** (the documentation and the checks); sealing the agents'
+data is **accepted** for 0.5.0 by the maintainer, for a later release.
 
 ### M6 — medium — The override rate depends on the agent's own records
 
@@ -257,8 +276,10 @@ declined call keeps its override rate at 0, so the evaluator never
 demotes it for overrides (rate caps, tool errors and incident reviews
 still work). §6a documents the join. *Fix.* mcp-gateway names the
 server and tool in `mcp-approval`, and the count comes from the
-gateway's records alone: a gateway change. Proposed: **accepted** for
-0.5.0, with a note in §6a and an issue for mcp-gateway.
+gateway's records alone. The review took this for a gateway change; it
+is not: `mcp-approval` names the call's `server` and `target` in every
+gateway Custos supports (since 1.12). Status: **fixed in #143** (the
+maintainer chose a fix over the acceptance first proposed).
 
 ### Low
 
@@ -277,7 +298,7 @@ gateway's records alone: a gateway change. Proposed: **accepted** for
 | L11 (C5) | `agent_relay_t` has rules it does not need, and can run container runtimes | `selinux/custos.te:164-232` | remove the unneeded rules; the log source as the OpenShell user |
 | L12 (C6) | CI's denial check misses later sections, and the spike checks only source contexts | `test/vm/run-tests.sh:864-875`, `test/openshell/run-spike.sh:507` | check again at the end; source or target |
 | L13 (S1) | In `--listen-tcp` mode a failed listen is ignored (`err` shadowed) and the launcher panics instead of saying why | `cmd/agent-launcher/main.go:88-103` | do not shadow `err` |
-| L14 (E6) | Every supervisor reads every chat answer and tool excerpt | `internal/launcher/launcher.go:405-416` | by design (§4); proposed: chat responses only for their user and root |
+| L14 (E6) | Every supervisor reads every chat answer and tool excerpt | `internal/launcher/launcher.go:405-416` | by design (§4): **accepted** by the maintainer, unchanged |
 
 ### Info
 
