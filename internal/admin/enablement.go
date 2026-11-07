@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/readiness"
 )
 
 // GatewayEnablement is the enablement state (CONTRACT.md §6b), gateway
@@ -445,7 +446,7 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 		return "the state has no record: it was not written by agent-admin"
 	}
 	// Both kinds of change: journalctl ORs matches of the same field.
-	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
+	out, err := read("_UID=0", "_COMM="+readiness.RootWriter, "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
 		"AGENT_EVENT="+journal.CategoriesDisabled, "AGENT_ENABLEMENT="+e.Record)
 	if err != nil {
 		return ""
@@ -453,9 +454,9 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 	digest := ""
 	for _, line := range bytes.Split(out, []byte("\n")) {
 		var r map[string]any
-		// Root's records only: an agent could write one with any other
-		// field (readiness.ByRoot).
-		if json.Unmarshal(line, &r) == nil && r["_UID"] == "0" {
+		// agent-admin's records as root only: an agent could write one
+		// with any other field (readiness.ByRoot).
+		if json.Unmarshal(line, &r) == nil && r["_UID"] == "0" && r["_COMM"] == readiness.RootWriter {
 			if d, ok := r["AGENT_ENABLEMENT_SHA256"].(string); ok {
 				digest = d
 			}
