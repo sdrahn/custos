@@ -704,7 +704,7 @@ quotes and how many the host verified; the reports with feedback (the
 last feedback of each), the hypotheses confirmed, rejected and unsure and
 the share confirmed of those decided; and the plans marked useful, not
 useful and carried out. Feedback counts only from records journald gives
-the trusted `_UID` 0 and `_COMM` `agent-admin` (`agent-admin feedback` as root; §10, trusted records): an agent writes
+the trusted `_UID` 0, not the relay's (`agent-admin feedback` as root; §10, trusted records): an agent writes
 its own records to the journal, with any identifier it likes, never with
 another `_UID`. On a host that started diagnostics-only (it has an
 enablement state), they are part of every category's readiness but
@@ -917,10 +917,14 @@ it can set any field there, `SYSLOG_IDENTIFIER=custos-promotion` and
 `AGENT_EVENT` included, but never journald's trusted fields. A reader
 that bases a decision on a record `agent-admin` writes (a review verdict,
 feedback, an enablement change) takes it only when journald gives it
-`_UID=0` and `_COMM=agent-admin`: `agent-admin` runs as root, agents
-never do. `_UID` alone is not enough: an OpenShell agent's records
-reach the journal through its relay, which runs as root (§16a). The
-relay passes on only the events an agent host writes (`agent.*`,
+`_UID=0`, and not from the OpenShell relay: `agent-admin` runs as root,
+agents never do. An OpenShell agent's records reach the journal through
+its relay, which runs as root (§16a), so a record with the relay's
+trusted `_COMM` (`agent-openshell`) or `_SYSTEMD_UNIT`
+(`agent-openshell@*`) is never root's; journald reads those when a
+record arrives, so a short-lived `agent-admin`'s record may lack them,
+the long-running relay's never does. The relay passes on only the
+events an agent host writes (`agent.*`,
 `config.invalid`, `invocation.*`, `model.call`, `tool.*`, `approval.*`,
 `limit.exceeded`, `activity.cancel`, `diagnosis.report`), and a record
 never carries a field name outside `[A-Z0-9_]` (after `AGENT_`). The
@@ -954,7 +958,7 @@ readiness reads them as such, next to the gateway's decisions.
 | `agents.released` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a665` (`release-all`; `AGENT_NAME` empty) |
 
 Readiness reads `permissions.changed` and `agents.stopped` only as
-root's (`_UID=0`, `_COMM=agent-admin`, as every trusted record): an agent that wrote a
+root's (`_UID=0`, not the relay's, as every trusted record): an agent that wrote a
 change of its own permissions or a stop into the journal would move its
 calls between categories or add incidents.
 
@@ -1352,11 +1356,11 @@ instead of `agent@.service`:
 | Piece | What |
 |---|---|
 | image | `packaging/openshell/Containerfile`: Leap 16 with `agent-launcher` (`CUSTOS_OPENSHELL_IMAGE`, default `localhost/custos-agent:latest`). It resolves names by DNS first (`hosts: dns files`): the sandbox's DNS is OpenShell's policy DNS, and Podman copies the host's `/etc/hosts` into the sandbox, whose real addresses OpenShell's network fence refuses (#131) |
-| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`CUSTOS_CONFIG`, base64), the relay secret (`CUSTOS_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name) |
+| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`CUSTOS_CONFIG`, base64), the relay secret (`CUSTOS_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The configuration and the relay secret go in with `--env-from`, from the CLI's environment, never on its command line, which any local user can read. The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name; `agent-admin create` refuses an OpenShell agent whose port another one has) |
 | sandbox policy | `/etc/custos/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to the model endpoint, for `agent-launcher` only (the gateway's rule comes with the provider). The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
 | provider profile | `custos-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only, which attaching the provider adds to the sandbox's network policy (`protocol: mcp`, every known MCP method: the tools are the gateway's decision; the protocol revisions `2025-06-18` and `2025-11-25`, since OpenShell refuses the others; for `agent-launcher` only). The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
-| relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600) |
-| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox (`agent-openshell-start`: until OpenShell has it Ready, waiting out a stop still in progress, or the unit fails after 120 s and `Restart=` tries again) and `openshell forward`, and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Custos-Caller` with `X-Custos-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else); and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
+| relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600). The OpenShell user (rootless Podman) can read it, and can enter every sandbox: it is trusted as far as the OpenShell agents go |
+| relay | `agent-openshell@<name>.socket` owns `/run/agents/<name>/api.sock`; `agent-openshell@<name>.service` starts the sandbox (`agent-openshell-start`: until OpenShell has it Ready, waiting out a stop still in progress, or the unit fails after 120 s and `Restart=` tries again) and `openshell forward` (as root; a forward left from before is stopped first, and a failed start fails the unit), and runs `agent-openshell-relay` (SELinux `agent_relay_t`): callers by `SO_PEERCRED`, passed on as `X-Custos-Caller` with `X-Custos-Relay-Secret` (the agent's `--listen-tcp` mode believes nothing else), only to a socket root owns (the forward's; the kernel's socket table says whose, before anything is sent), so a local user who holds the port gets nothing; and the agent's records from its container's output (`agent-openshell-logs`: `docker logs` or `podman logs` of the sandbox's container; `openshell logs` has only the supervisor's lines), written to the journal with their `AGENT_*` fields |
 | openshell CLI | `agent-admin` and the relay unit run it as root with `HOME=/root`: the OpenShell gateway named in `sandbox.openshell_gateway` is registered for root (`openshell gateway add ... --name <gateway>`), and the CLI keeps its forwards there |
 | gateway | mcp-gateway's HTTPS listener (`http:` in its configuration): the agent's `gateway.url` is its audience, by the host's own name, e.g. `https://gw.example.com:8443/mcp`, which the certificate names, an official one included (#131). OpenShell's proxy runs in the host's network (OpenShell 0.1.7, Docker and Podman) and resolves and connects to that name as the host does; it allows a private address for a host the policy names exactly, never a loopback or link-local one, so the name must resolve to a network address of the host. With Podman the sandbox resolves it through OpenShell's policy DNS, which asks the first nameserver of the host's `/etc/resolv.conf` and never reads `/etc/hosts`: the name must be in DNS. A loopback URL becomes `host.openshell.internal` in the sandbox, OpenShell's name for the host's loopback, which only a private CA's certificate can name. `agent-admin check`, `create` and `edit` note an agent by the alias, a name that is not in DNS (asked as policy DNS does) or resolves to a loopback address, and a URL other than the gateway's `http.audience`. OpenShell's proxy terminates the agent's TLS (to inspect MCP and swap the token in) and verifies the gateway itself, in the sandbox's supervisor, not with the image's trust store: a CA no public root signs goes into the OpenShell gateway's configuration (`[openshell.supervisor.network] additional_ca_bundle = "<ca.pem>"` in its `gateway.toml`, OpenShell 0.1.7 or later), which hands it to every sandbox's supervisor |
 | container runtime | Docker, or rootless Podman (OpenShell's RPM default: the OpenShell gateway is a `systemctl --user` service of an ordinary user, whose Podman holds the sandboxes' containers). With rootless Podman, `CUSTOS_OPENSHELL_USER` names that user for `agent-admin`: it goes to `openshell.env` (`OPENSHELL_USER`), the log source runs `podman logs` as that user (`setpriv`; SELinux: `agent_relay_t` → `container_runtime_t`), and a drop-in `agent-openshell@<name>.service.d/openshell-user.conf` makes only the user's container storage and runtime directory writable for it. The OpenShell gateway is registered for root as well (§16a, openshell CLI). The system delegates the cgroup controllers to user sessions (a `user@.service` drop-in with `Delegate=cpu cpuset io memory pids`), without which rootless Podman cannot set the sandboxes' limits, and the user has subordinate IDs and lingering |

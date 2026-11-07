@@ -117,9 +117,9 @@ the past ([chapter 6](06-permissions-and-modes.md#readiness)):
 | `permissions.changed` | each change of an agent's permissions (`agent-admin permissions`, `create --template`): `AGENT_PERMISSIONS_FROM`, `AGENT_PERMISSIONS_TO` (JSON), `AGENT_BY` |
 | `agents.stopped`, `agents.released` | `stop-all` and `release-all`: `AGENT_BY`, with no `AGENT_NAME` (they concern every agent) |
 
-Readiness takes these, as the reviews, only as `agent-admin` wrote
-them as root (journald's `_UID=0` and `_COMM=agent-admin`): an agent
-can write records of its own, never root's. An OpenShell agent's
+Readiness takes these, as the reviews, only as root wrote them
+(journald's `_UID=0`, and not an OpenShell relay's `_COMM` or unit): an
+agent can write records of its own, never root's. An OpenShell agent's
 records reach the journal through its relay, which runs as root; the
 relay passes on only the events an agent writes, never these.
 

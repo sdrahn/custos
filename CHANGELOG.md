@@ -16,6 +16,19 @@ removed.
   address but the host's own, and `agent-admin fence` adds the model
   endpoint's addresses and the nameservers at each start. An agent that
   needs more (a proxy) gets it with a drop-in (user guide, chapter 14).
+- Security (review H2, H3, #125): an OpenShell agent's relay secret
+  could reach a local user, who could then act as root on the agent's
+  control API (start activities as anyone, read every response, pause).
+  `agent-admin` put the secret, and the agent's configuration, on
+  `openshell sandbox create`'s command line: they now go in with
+  `--env-from`. The relay sent the secret to whatever listened on the
+  forward's port, and a failed forward was ignored: the unit now stops
+  an old forward and fails if its own does not start, and the relay
+  sends nothing to a socket root does not own. `agent-admin create`
+  refuses an OpenShell agent whose forward port another one has.
+  Rebuild nothing; an OpenShell agent gets the change when its sandbox
+  is next created (`agent-admin set-credential`, or an `edit` that
+  reaches it).
 - Security (review H1, #125): an OpenShell agent could write records
   that counted as root's. Its relay, which runs as root, passed every
   event from the sandbox to the journal, `agent-admin`'s too (reviews,
@@ -23,9 +36,9 @@ removed.
   name, so a name with a newline added fields of the agent's choosing.
   The relay now passes only the events an agent host writes, and a
   record never carries a field name outside `[A-Z0-9_]`; readiness and
-  the evaluator take a record as root's only from `agent-admin`
-  (journald's `_UID=0` and `_COMM=agent-admin`), and the gateway's
-  records only from `mcp-gateway.service` itself (`_SYSTEMD_UNIT`).
+  the evaluator take no record of the relay's as root's (journald's
+  `_COMM` and `_SYSTEMD_UNIT`), and the gateway's records only from
+  `mcp-gateway.service` itself (`_SYSTEMD_UNIT`).
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with
