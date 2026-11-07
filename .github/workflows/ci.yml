@@ -539,6 +539,20 @@ jobs:
           VIDEOS: ${{ runner.temp }}/vm/videos
           NODE_PATH: ${{ github.workspace }}/node_modules
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
+      # The failed scenes' screenshots also in the log, base64 between
+      # markers (test/cockpit/screenshots-from-log.py decodes them).
+      - if: failure()
+        name: Failed scenes' screenshots in the log (base64)
+        run: |
+          for f in "$RUNNER_TEMP"/vm/videos/*-failed-*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            echo "::group::screenshot $n"
+            echo "SHOT-BEGIN $n"
+            base64 -w 76 "$f"
+            echo "SHOT-END $n"
+            echo "::endgroup::"
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with:

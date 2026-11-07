@@ -149,6 +149,19 @@ const pointer = () => {
             failed++;
             console.log("FAIL: " + name + "\n    | " + e.message.split("\n").slice(0, 3).join("\n    | "));
             await page.screenshot({ path: path.join(out, `${version}-failed-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
+            // What the job's log needs to tell why: where the browser was,
+            // what it showed, patch-pilot's latest activities, the gateway.
+            const shown = await page.evaluate(() => document.body ? document.body.innerText.slice(0, 400) : "").catch(() => "");
+            const frames = page.frames().map(f => f.name() || f.url()).join(", ");
+            const acts = vm(`${api("patch-pilot", "/v1/activities")} | jq -c '[.activities[:3][] | {id, state, error, prompt}]'`) || "";
+            const last = (acts.match(/"id":"([^"]+)"/) || [])[1];
+            const calls = last ? vm(`${api("patch-pilot", "/v1/activities/" + last)} | jq -c '[.calls[] | {tool, approval_id, outcome, error}]'`) || "" : "";
+            const gwlog = vm("journalctl -u mcp-gateway.service -o cat --no-pager --since -3min | grep -v '\"audit\":true' | tail -n 12") || "";
+            const audit = vm("journalctl -u mcp-gateway.service -o cat --no-pager --since -3min | grep '\"audit\":true' | " +
+                "jq -c '{event, id, ok, by, via, error, reason}' 2>/dev/null | tail -n 8") || "";
+            for (const [k, v] of [["url", page.url()], ["frames", frames], ["page", shown], ["activities", acts], ["calls", calls],
+                                  ["gateway", gwlog], ["audit", audit]])
+                for (const l of String(v).trim().split("\n").filter(Boolean)) console.log(`    | ${k}: ${l}`);
         }
     };
     /* point moves the pointer to the element, visibly, and outlines it. */
