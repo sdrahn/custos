@@ -25,9 +25,9 @@ removed.
   name, so a name with a newline added fields of the agent's choosing.
   The relay now passes only the events an agent host writes, and a
   record never carries a field name outside `[A-Z0-9_]`; readiness and
-  the evaluator take a record as root's only from `agent-admin`
-  (journald's `_UID=0` and `_COMM=agent-admin`), and the gateway's
-  records only from `mcp-gateway.service` itself (`_SYSTEMD_UNIT`).
+  the evaluator take no record of the relay's as root's (journald's
+  `_COMM` and `_SYSTEMD_UNIT`), and the gateway's records only from
+  `mcp-gateway.service` itself (`_SYSTEMD_UNIT`).
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with

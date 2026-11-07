@@ -714,7 +714,7 @@ quotes and how many the host verified; the reports with feedback (the
 last feedback of each), the hypotheses confirmed, rejected and unsure and
 the share confirmed of those decided; and the plans marked useful, not
 useful and carried out. Feedback counts only from records journald gives
-the trusted `_UID` 0 and `_COMM` `agent-admin` (`agent-admin feedback` as root; §10, trusted records): an agent writes
+the trusted `_UID` 0, not the relay's (`agent-admin feedback` as root; §10, trusted records): an agent writes
 its own records to the journal, with any identifier it likes, never with
 another `_UID`. On a host that started diagnostics-only (it has an
 enablement state), they are part of every category's readiness but
@@ -927,10 +927,14 @@ it can set any field there, `SYSLOG_IDENTIFIER=custos-promotion` and
 `AGENT_EVENT` included, but never journald's trusted fields. A reader
 that bases a decision on a record `agent-admin` writes (a review verdict,
 feedback, an enablement change) takes it only when journald gives it
-`_UID=0` and `_COMM=agent-admin`: `agent-admin` runs as root, agents
-never do. `_UID` alone is not enough: an OpenShell agent's records
-reach the journal through its relay, which runs as root (§16a). The
-relay passes on only the events an agent host writes (`agent.*`,
+`_UID=0`, and not from the OpenShell relay: `agent-admin` runs as root,
+agents never do. An OpenShell agent's records reach the journal through
+its relay, which runs as root (§16a), so a record with the relay's
+trusted `_COMM` (`agent-openshell`) or `_SYSTEMD_UNIT`
+(`agent-openshell@*`) is never root's; journald reads those when a
+record arrives, so a short-lived `agent-admin`'s record may lack them,
+the long-running relay's never does. The relay passes on only the
+events an agent host writes (`agent.*`,
 `config.invalid`, `invocation.*`, `model.call`, `tool.*`, `approval.*`,
 `limit.exceeded`, `activity.cancel`, `diagnosis.report`), and a record
 never carries a field name outside `[A-Z0-9_]` (after `AGENT_`). The
@@ -964,7 +968,7 @@ readiness reads them as such, next to the gateway's decisions.
 | `agents.released` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a665` (`release-all`; `AGENT_NAME` empty) |
 
 Readiness reads `permissions.changed` and `agents.stopped` only as
-root's (`_UID=0`, `_COMM=agent-admin`, as every trusted record): an agent that wrote a
+root's (`_UID=0`, not the relay's, as every trusted record): an agent that wrote a
 change of its own permissions or a stop into the journal would move its
 calls between categories or add incidents.
 

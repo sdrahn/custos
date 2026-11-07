@@ -500,7 +500,7 @@ printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server
 # Readiness judges a call by the permissions at its time (O11), from
 # root's record of each change.
 check "journal: permissions.changed by root, with the permissions after" eventually 10 journal_has t1 permissions.changed \
-	'._UID == "0" and ._COMM == "agent-admin" and (.AGENT_PERMISSIONS_TO | fromjson | any(.category == "patch-errata" and .tool == "change"))'
+	'._UID == "0" and ((._COMM // "agent-admin") | startswith("agent-openshell") | not) and (.AGENT_PERMISSIONS_TO | fromjson | any(.category == "patch-errata" and .tool == "change"))'
 check "a category starts supervised: its change waits for an approval" asks_and_deny
 # Readiness (§6a) from the agent's records and the gateway's decision.
 check "readiness counts the declined proposal, from the gateway's decision" eventually 30 bash -c \
@@ -569,7 +569,7 @@ check "readiness counts the review as an override" bash -c "agent-admin readines
 # incident into "ok" and lower its override rate: one written into the
 # journal as the agent's user, with agent-admin's identifier, is none
 # (journald's trusted _UID).
-check "journal: the review is agent-admin's as root (_UID 0, _COMM)" journal_has t1 category.review '._UID == "0" and ._COMM == "agent-admin" and .AGENT_VERDICT == "incident"'
+check "journal: the review is root's (_UID 0), not the relay's" journal_has t1 category.review '._UID == "0" and ((._COMM // "agent-admin") | startswith("agent-openshell") | not) and .AGENT_VERDICT == "incident"'
 overrides() { agent-admin readiness t1 patch-errata | jq '.categories["patch-errata"].review_overrides'; }
 o0=$(overrides)
 read -r act_id act_call <<<"$act"

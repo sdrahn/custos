@@ -480,7 +480,7 @@ func (a *Admin) enablementTampered(e *Enablement) string {
 // enablementRecords are agent-admin's enablement records as root, oldest
 // first (journalctl's order). journalctl ORs matches of the same field.
 func (a *Admin) enablementRecords(read func(...string) ([]byte, error)) ([]map[string]any, error) {
-	out, err := read("_UID=0", "_COMM="+readiness.RootWriter, "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
+	out, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.CategoriesEnabled,
 		"AGENT_EVENT="+journal.CategoriesDisabled)
 	if err != nil {
 		return nil, err
@@ -490,9 +490,20 @@ func (a *Admin) enablementRecords(read func(...string) ([]byte, error)) ([]map[s
 		var r map[string]any
 		// agent-admin's records as root only: an agent could write one
 		// with any other field (readiness.ByRoot).
-		if json.Unmarshal(line, &r) == nil && r["_UID"] == "0" && r["_COMM"] == readiness.RootWriter {
+		if json.Unmarshal(line, &r) == nil && readiness.ByRoot(stringsOf(r)) {
 			recs = append(recs, r)
 		}
 	}
 	return recs, nil
+}
+
+// stringsOf is a journal record's string fields.
+func stringsOf(r map[string]any) readiness.Record {
+	out := readiness.Record{}
+	for k, v := range r {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
 }
