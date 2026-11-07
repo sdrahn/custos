@@ -33,7 +33,14 @@ custos_owners contains rule if {
 	rule != "self"
 }
 
+# An agent never approves (CONTRACT.md §7): an approver whose name is an
+# agent's (agent-<name>, a local user or a token's subject) is no owner,
+# whatever group or role a rule names. Every agent's user is in
+# agent-clients and mcp-users (security review M2).
+custos_agent_approver if startswith(object.get(input.approver, "name", ""), "agent-")
+
 custos_owner if {
+	not custos_agent_approver
 	some rule in custos_owners
 	grants(rule, input.request.principal)
 }
@@ -68,6 +75,7 @@ owned_agent(subject) := substring(subject.sub, 6, -1) if {
 }
 
 owner_of(subject) if {
+	not custos_agent_approver
 	name := owned_agent(subject)
 	some rule in object.get(object.get(data.mcp.agents, name, {}), "owners", [])
 	is_string(rule)
