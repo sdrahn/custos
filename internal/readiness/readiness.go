@@ -685,18 +685,24 @@ func Autonomous(category string, perms History, recs []Record, since time.Time) 
 	return out
 }
 
-// ByRoot reports whether journald says agent-admin wrote the record as
-// root (its trusted fields _UID and _COMM): agent-admin's records
+// ByRoot reports whether journald says root wrote the record (its
+// trusted field _UID), and not the OpenShell relay: agent-admin's records
 // (SYSLOG_IDENTIFIER custos-promotion; custos-demote runs agent-admin
 // evaluate) are root's. An agent writes its own records to the journal
 // and may set any other field, an identifier and AGENT_EVENT included,
-// but never a trusted one. _UID alone is not enough: an OpenShell
-// agent's records reach the journal through its relay, which runs as
-// root (security review H1).
-func ByRoot(r Record) bool { return r["_UID"] == "0" && r["_COMM"] == RootWriter }
+// but never a trusted one. An OpenShell agent's records reach the
+// journal through its relay, which runs as root (security review H1):
+// the relay passes only the host's own events (relay.Bridge), and its
+// records count as root's nowhere, by its trusted _COMM or _SYSTEMD_UNIT.
+// journald reads those from /proc when a record arrives, so a short-lived
+// agent-admin may have neither; the relay, which runs on, always has them.
+func ByRoot(r Record) bool {
+	return r["_UID"] == "0" && !strings.HasPrefix(r["_COMM"], RelayComm) && !strings.HasPrefix(r["_SYSTEMD_UNIT"], "agent-openshell@")
+}
 
-// RootWriter is the program whose root records count (_COMM).
-const RootWriter = "agent-admin"
+// RelayComm is the OpenShell relay's _COMM (its name, cut to 15
+// characters by the kernel).
+const RelayComm = "agent-openshell"
 
 // Reviews are the category's review records, by activity and call; a
 // later verdict on the same action replaces an earlier one. Only root's
