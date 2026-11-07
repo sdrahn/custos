@@ -36,7 +36,8 @@ func (j *fakeJournal) rec(at time.Time, event string, f map[string]string) {
 }
 
 func (j *fakeJournal) decision(at time.Time, id string, ok bool) {
-	msg, _ := json.Marshal(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": id, "ok": ok, "by": "alice", "principal": "agent-patch-pilot"})
+	msg, _ := json.Marshal(map[string]any{"msg": "mcp", "event": "mcp-approval", "id": id, "ok": ok, "by": "alice", "principal": "agent-patch-pilot",
+		"server": "zypp", "target": "install_patches"})
 	b, _ := json.Marshal(map[string]string{"MESSAGE": string(msg), "__REALTIME_TIMESTAMP": strconv.FormatInt(at.UnixMicro(), 10)})
 	j.gw = append(j.gw, string(b))
 }
@@ -367,5 +368,26 @@ func TestRateCapsWithoutAnEnvelopeRate(t *testing.T) {
 	}
 	if d := evaluate(t, a); len(d) != 0 {
 		t.Fatalf("demotions %v", d)
+	}
+}
+
+// The override rate is the gateway's: an agent that leaves out its
+// approval.pending for a declined call, or names another tool there,
+// is demoted all the same (security review M6).
+func TestOverrideRateFromTheGatewayAlone(t *testing.T) {
+	for name, agentSide := range map[string]func(j *fakeJournal, at time.Time){
+		"no record of its own": func(*fakeJournal, time.Time) {},
+		"another tool in its record": func(j *fakeJournal, at time.Time) {
+			j.rec(at, "approval.pending", map[string]string{"INVOCATION": "e-1", "CALL_ID": "c1", "TOOL": "systemd__list_units", "APPROVAL_ID": "a-1"})
+		},
+	} {
+		a, _, j, _ := promoted(t, "")
+		at := a.Now().Add(-time.Hour)
+		agentSide(j, at)
+		j.decision(at.Add(time.Minute), "a-1", false)
+		d := evaluate(t, a)
+		if len(d) != 1 || d[0].Category != "patch-errata" || !strings.Contains(d[0].Reason, "override rate 100.0 %") {
+			t.Errorf("%s: demotions %v", name, d)
+		}
 	}
 }

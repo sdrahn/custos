@@ -9,6 +9,13 @@ removed.
 
 ### Fixed
 
+- Security (review M6, #125): readiness and the evaluator counted a
+  category's proposals from the agent's own `approval.pending` records,
+  so a compromised agent that left one out for a declined call, or named
+  another tool there, kept its override rate at 0 and was never demoted
+  for overrides. The proposals are now the gateway's decisions, by the
+  tool its `mcp-approval` record names; the agent's records add only
+  what the gateway does not know (arguments, results, cancels).
 - Security (review M5, #125): the seal covered less than CONTRACT.md
   §6b said. `agent-admin show` now reports a seal removed from a host
   `agent-admin` sealed, and an earlier signed state put back (it

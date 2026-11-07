@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,10 @@ type Decision struct {
 	By      string
 	At      time.Time
 	Outcome string
+	// Tool is the call's, as the gateway names it (server__target): the
+	// category comes from it, never from the agent's records (security
+	// review M6).
+	Tool string
 }
 
 // Result is the gateway's mcp-result record of a call it forwarded: what
@@ -123,7 +128,7 @@ func Measure(category string, perms History, recs []Record, gw Audit, th Thresho
 	type key struct{ inv, call string }
 	calls := map[key]Record{}
 	results := map[key]Record{}
-	var proposals []Record
+	pending := map[string]Record{}      // approval id → the agent's approval.pending
 	cancels := map[string][]time.Time{} // invocation → cancel times
 	limits := map[string]bool{}         // invocations with a limit reached
 	ends := map[string]time.Time{}      // invocation → its end
@@ -136,8 +141,8 @@ func Measure(category string, perms History, recs []Record, gw Audit, th Thresho
 		case "tool.result":
 			results[k] = r
 		case "approval.pending":
-			if r["AGENT_APPROVAL_ID"] != "" && perms.InCategory(category, r["AGENT_TOOL"], At(r)) {
-				proposals = append(proposals, r)
+			if r["AGENT_APPROVAL_ID"] != "" {
+				pending[r["AGENT_APPROVAL_ID"]] = r
 			}
 		case "activity.cancel":
 			cancels[r["AGENT_INVOCATION"]] = append(cancels[r["AGENT_INVOCATION"]], At(r))
@@ -153,28 +158,53 @@ func Measure(category string, perms History, recs []Record, gw Audit, th Thresho
 			}
 		}
 	}
+	// The proposals are the gateway's decisions, its records alone: their
+	// tool (server and target in mcp-approval) puts them in a category,
+	// and a decline counts whatever the agent recorded (security review
+	// M6). The agent's own records add what only it knows, matched by the
+	// approval id: the call's arguments, its result, a cancel, a limit, a
+	// pause. An undecided proposal (expired, still pending) is none.
 	var m Measures
 	tools, distinct := map[string]bool{}, map[string]bool{}
-	seen := map[string]bool{}
-	for _, p := range proposals {
-		id := p["AGENT_APPROVAL_ID"]
-		d, ok := decisions[id]
-		if !ok || seen[id] {
-			continue // expired or still pending; or a second notice
+	ids := make([]string, 0, len(decisions))
+	for id := range decisions {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		d := decisions[id]
+		p, known := pending[id]
+		tool, at := d.Tool, d.At
+		if known {
+			at = At(p)
 		}
-		seen[id] = true
+		if tool == "" && known { // a gateway that names no tool
+			tool = p["AGENT_TOOL"]
+		}
+		if tool == "" || !perms.InCategory(category, tool, at) {
+			continue
+		}
 		k := key{p["AGENT_INVOCATION"], p["AGENT_CALL_ID"]}
 		m.Proposals++
-		if m.First.IsZero() || At(p).Before(m.First) {
-			m.First = At(p)
+		if m.First.IsZero() || at.Before(m.First) {
+			m.First = at
 		}
-		tools[p["AGENT_TOOL"]] = true
-		distinct[p["AGENT_TOOL"]+" "+calls[k]["AGENT_ARGS_SHA256"]] = true
+		tools[tool] = true
+		distinct[tool+" "+calls[k]["AGENT_ARGS_SHA256"]] = true
 		if !d.OK {
 			m.Declined++
 			continue
 		}
 		m.Approved++
+		if !known {
+			// Only what the gateway saw: a failed call is an incident.
+			if Failed(d.Outcome) {
+				m.Incidents++
+			} else if d.Outcome == "cancelled" {
+				m.Cancelled++
+			}
+			continue
+		}
 		res, ran := results[k]
 		if d.Outcome == "cancelled" || cancelledBefore(cancels[k.inv], d.At, res, ran) {
 			m.Cancelled++
@@ -191,9 +221,9 @@ func Measure(category string, perms History, recs []Record, gw Audit, th Thresho
 			m.Incidents++
 		case limits[k.inv]:
 			m.Incidents++
-		case pausedBetween(pauses, At(p), end):
+		case pausedBetween(pauses, at, end):
 			m.Incidents++
-		case pausedBetween(stops, At(p), end): // the emergency stop (O11)
+		case pausedBetween(stops, at, end): // the emergency stop (O11)
 			m.Incidents++
 		}
 	}
@@ -338,6 +368,7 @@ type gatewayRecord struct {
 	Sub           string `json:"sub"`
 	Server        string `json:"server"`
 	Name          string `json:"name"`
+	Target        string `json:"target"`
 	Outcome       string `json:"outcome"`
 	Error         string `json:"error"`
 	ApprovalID    string `json:"approval_id"`
@@ -361,7 +392,11 @@ func ParseDecisions(b []byte, principal string) map[string]Decision {
 		if json.Unmarshal([]byte(r["MESSAGE"]), &msg) != nil || msg.Event != "mcp-approval" || msg.ID == "" || msg.Principal != principal {
 			continue
 		}
-		out[msg.ID] = Decision{OK: msg.OK, By: msg.By, At: At(r)}
+		d := Decision{OK: msg.OK, By: msg.By, At: At(r)}
+		if msg.Server != "" && msg.Target != "" {
+			d.Tool = msg.Server + "__" + msg.Target
+		}
+		out[msg.ID] = d
 	}
 	for _, res := range ParseResults(b, principal) {
 		if d, ok := out[res.ApprovalID]; ok && res.ApprovalID != "" {
