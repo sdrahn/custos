@@ -9,6 +9,15 @@ removed.
 
 ### Fixed
 
+- Security (review M1, #125): what an approver read in Cockpit could
+  differ from what would run. Bidi overrides and isolates, zero-width
+  characters and line separators in a call's arguments, the agent's
+  rationale, a plan's command or a quote were shown as they are, so a
+  model could make `echo cleanup; rm -rf /srv #` read as a harmless
+  command; a plan's command of two lines showed as one. They are now
+  shown as `\uXXXX` with a *hidden characters* badge, every line of a
+  command on its own (with a badge for several), and Copy gives what is
+  shown.
 - Cockpit's permissions editor closed, and lost what was typed, within
   five seconds: the Agents tab rebuilt the agent's view and kept the
   editor only while its text field had the focus. It now stays open with

@@ -121,6 +121,33 @@ function serverFix(message, textarea, recheck) {
 
 /* nodes is children as DOM nodes: arrays flattened, null, undefined and
  * false left out, the rest as text. */
+/* Characters that change or hide what text shows: format and control
+ * characters (bidi overrides and isolates, zero-width ones, the byte
+ * order mark), line and paragraph separators. A model can put them in a
+ * call's arguments or a plan's command, so that what an approver reads
+ * differs from what runs (security review M1). They are shown as \uXXXX;
+ * newlines and tabs stay. */
+const HIDDEN_RE = /[\p{Cf}\p{Cc}\u2028\u2029]/gu;
+
+/* visibleText is the text with those characters shown, and how many. */
+function visibleText(s) {
+    let hidden = 0;
+    const text = String(s == null ? "" : s).replace(HIDDEN_RE, c => {
+        if (c === "\n" || c === "\t") return c;
+        hidden++;
+        return "\\u" + c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+    });
+    return { text, hidden };
+}
+
+/* hiddenMark says that text held such characters (null if none). */
+function hiddenMark(v) {
+    return v.hidden
+        ? el("span", { class: "badge badge-bad hidden-chars", title: "Characters that change how text shows (direction, zero-width), shown as \\uXXXX" },
+             v.hidden + " hidden character" + (v.hidden === 1 ? "" : "s"))
+        : null;
+}
+
 function nodes(...children) {
     return children.flat(Infinity).filter(c => c !== null && c !== undefined && c !== false)
         .map(c => c instanceof Node ? c : document.createTextNode(String(c)));
