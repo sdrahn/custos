@@ -27,7 +27,9 @@ func TestSetOwners(t *testing.T) {
 	if !strings.Contains(string(b), "owners:") {
 		t.Errorf("gateway data:\n%s", b)
 	}
-	for _, bad := range []string{"self", "user:agent-patch-pilot", "group:agent-triage", "alice", "user:", "user:a b", "root:x"} {
+	for _, bad := range []string{"self", "user:agent-patch-pilot", "group:agent-triage", "alice", "user:", "user:a b", "root:x",
+		// Groups every agent is in, and agents as remote approvers (security review M2).
+		"group:agent-clients", "group:mcp-users", "remote-user:agent-triage", "remote-group:agent-x"} {
 		if err := a.SetOwners("patch-pilot", []string{bad}); err == nil {
 			t.Errorf("%q accepted", bad)
 		}

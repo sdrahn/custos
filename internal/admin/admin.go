@@ -921,8 +921,14 @@ func (a *Admin) SetOwners(name string, owners []string) error {
 			return errors.New(`owner "self" would be the agent itself: name a person, a group or a role`)
 		case !ownerRE.MatchString(o):
 			return fmt.Errorf("owner %q: want user:NAME, group:NAME, role:NAME, remote-user:SUBJECT or remote-group:NAME", o)
-		case strings.HasPrefix(o, "user:agent-") || strings.HasPrefix(o, "group:agent-"):
+		case strings.HasPrefix(o, "user:agent-") || strings.HasPrefix(o, "group:agent-") ||
+			strings.HasPrefix(o, "remote-user:agent-") || strings.HasPrefix(o, "remote-group:agent-"):
 			return fmt.Errorf("owner %q is an agent's account: an agent never approves", o)
+		case o == "group:mcp-users":
+			// Every agent's user is in mcp-users (and agent-clients, which
+			// group:agent- refuses): such a rule would name every agent
+			// (security review M2).
+			return fmt.Errorf("owner %q names every agent too (each agent's user is in mcp-users and agent-clients): name the people's own group", o)
 		}
 		if !seen[o] {
 			seen[o] = true

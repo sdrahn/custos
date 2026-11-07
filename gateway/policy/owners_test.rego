@@ -107,3 +107,34 @@ test_owners_manage_their_agents_tasks if {
 test_agent_does_not_manage_its_session_as_owner if {
 	not may("manage_session", {"name": "agent-patch-pilot", "uid": 981, "groups": []}, "session", session("agent-patch-pilot", "unix", ""))
 }
+
+# An agent never approves as an owner, even when a rule names a group it
+# is in (every agent's user is in agent-clients and mcp-users): its own
+# calls, another agent's, or as a remote approver named agent-*
+# (security review M2).
+test_agent_is_never_an_owner if {
+	groupy := {"patch-pilot": {"mode": "supervised", "permissions": [], "owners": ["group:agent-clients", "group:mcp-users", "role:admin", "remote-user:agent-triage"]}}
+	rb := {"approvers": {"default": []}, "bindings": {"users": {"agent-patch-pilot": ["admin"], "agent-triage": ["admin"]}, "groups": {}}}
+	some approver in [
+		{"name": "agent-patch-pilot", "uid": 981, "groups": ["agent-patch-pilot", "mcp-users", "agent-clients"]},
+		{"name": "agent-triage", "uid": 982, "groups": ["agent-triage", "mcp-users", "agent-clients"]},
+		{"name": "agent-triage", "groups": [], "remote": true},
+	]
+	not approvals.allow with input as {"approver": approver, "request": req}
+		with data.mcp.rbac as rb
+		with data.mcp.agents as groupy
+	not approvals.allow_without_self with input as {"approver": approver, "request": req}
+		with data.mcp.rbac as rb
+		with data.mcp.agents as groupy
+	not approvals.manage_session with input as {"approver": approver, "session": {"sub": "agent-patch-pilot", "uid": 981, "transport": "unix", "servers": ["zypp"]}}
+		with data.mcp.rbac as rb
+		with data.mcp.agents as groupy
+}
+
+# A person in such a group still is.
+test_person_in_agents_group_is_owner if {
+	groupy := {"patch-pilot": {"mode": "supervised", "permissions": [], "owners": ["group:web-team"]}}
+	approvals.allow with input as {"approver": bob, "request": req}
+		with data.mcp.rbac as rbac
+		with data.mcp.agents as groupy
+}
