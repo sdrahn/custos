@@ -12,7 +12,8 @@ env:
   # mcp-gateway, which the agents' tools, policy and approvals come from:
   # its packages for the VM test and its policy for the policy tests.
   GATEWAY_REPO: sdrahn/mcp-gateway
-  GATEWAY_REF: main
+  # The release branch builds against the mcp-gateway release it requires.
+  GATEWAY_REF: v1.15.0
   # mcp-docs, which serves custos-docs's guide to agents.
   MCP_DOCS_MODULE: github.com/sdrahn/mcp-docs/cmd/mcp-docs@main
 
