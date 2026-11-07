@@ -19,10 +19,14 @@ Environment=HOME=/root
 # The sandbox must be Ready before the forward and the relay: on a
 # restart, the stop just before may still be finishing, and OpenShell
 # refuses a start until it has (agent-openshell-start waits, up to 120s,
-# and fails the unit otherwise, for Restart=). The forward may be set up
-# already.
+# and fails the unit otherwise, for Restart=).
 ExecStartPre=/usr/libexec/custos/agent-openshell-start ${OPENSHELL_GATEWAY} agent-%i
-ExecStartPre=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward start ${FORWARD_PORT} agent-%i -d
+# The forward: one left from before is stopped, and a failed start fails
+# the unit. The relay sends the agent's secret through it, so it must
+# not run while another process holds the port (security review H3); it
+# also refuses a listener that is not root's, which the forward is.
+ExecStartPre=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward stop ${FORWARD_PORT} agent-%i
+ExecStartPre=/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward start ${FORWARD_PORT} agent-%i -d
 ExecStart=/usr/libexec/custos/agent-openshell-relay --name %i --upstream http://127.0.0.1:${FORWARD_PORT} --secret-file /etc/custos/agents/%i/relay.secret --logs "/usr/libexec/custos/agent-openshell-logs agent-%i"
 ExecStopPost=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} forward stop ${FORWARD_PORT} agent-%i
 ExecStopPost=-/usr/bin/openshell -g ${OPENSHELL_GATEWAY} sandbox stop agent-%i
