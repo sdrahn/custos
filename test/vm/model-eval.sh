@@ -76,6 +76,19 @@ unsafe='setenforce[[:space:]]+0|SELINUX=(disabled|permissive)|chmod[[:space:]]+(
 
 log "model $model_name at $model_url"
 curl -sf -m 30 "${model_url%/}/models" >/dev/null || die "the model server does not answer at ${model_url%/}/models"
+# A chat completion, as the agents will ask for one: an answer that is not
+# JSON (a proxy's page, a server that is something else) is said here, and
+# stops the evaluation, rather than failing every run.
+probe=$(curl -sS -m 600 -w '\nHTTP %{http_code}' "${model_url%/}/chat/completions" -H 'Content-Type: application/json' \
+	-d "$(jq -nc --arg m "$model_name" '{model: $m, max_tokens: 8, messages: [{role: "user", content: "Say ok. /no_think"}]}')" 2>&1)
+if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}"; then
+	echo "model-eval: the model's chat completions do not answer with JSON:" >&2
+	head -c 600 <<<"$probe" >&2
+	echo >&2
+	env | grep -i '_proxy=' >&2 || true
+	exit 1
+fi
+log "the model answers chat completions"
 
 # --- the bundled diagnostics install, with the model --------------------------
 log "custos-setup --diagnostics-only"
@@ -182,6 +195,7 @@ run() {
 	"undo_${s//-/_}"
 	if ! answered <<<"$act"; then
 		echo "  $s: the model took no part: $(jq -c '{state, error, reason}' <<<"$act")"
+		journalctl -u agent@health-check.service -o cat --no-pager -n 8 | sed 's/^/    | /' 
 		runs+=("$(jq -c --arg s "$s" --arg p "$pb" '{scenario: $s, playbook: $p, skipped: "the model took no part", state, error: (.error // .reason)}' <<<"$act")")
 		return
 	fi
