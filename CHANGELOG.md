@@ -9,6 +9,11 @@ removed.
 
 ### Fixed
 
+- A field being typed in on the Agents tab (the promote form's envelope,
+  its reason, a kept editor) lost the keyboard focus at each refresh,
+  every five seconds: what was typed next went nowhere. The refresh now
+  gives the focus back, with the caret where it was.
+
 - Cockpit's form to promote a task category closed within five seconds
   and lost the envelope being written: the Agents tab rebuilt the
   agent's view, form included, at each refresh. So did the reason that

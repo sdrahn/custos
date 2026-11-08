@@ -248,11 +248,23 @@ async function renderAgentDetail() {
     // Rebuilding the view takes the chat out and puts it back, which resets
     // the scroll position of its messages (and can move the page): keep
     // both, so that a refresh every few seconds does not scroll them away.
+    // The kept forms and editors are taken out and put back too, which
+    // takes the keyboard focus from the field being typed in: give it back,
+    // with the caret where it was.
     const chatLogs = [...box.querySelectorAll(".chat-log")].map(l => [l, l.scrollTop]);
     const pageY = window.scrollY;
+    const focused = box.contains(document.activeElement) ? document.activeElement : null;
+    const caret = focused && typeof focused.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd, focused.scrollTop] : null;
     box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
     for (const [l, top] of chatLogs) {
         if (l.isConnected) l.scrollTop = top;
+    }
+    if (focused && focused.isConnected && document.activeElement !== focused) {
+        focused.focus({ preventScroll: true });
+        if (caret) {
+            focused.setSelectionRange(caret[0], caret[1]);
+            focused.scrollTop = caret[2];
+        }
     }
     if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
 }
