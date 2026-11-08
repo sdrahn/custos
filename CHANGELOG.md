@@ -7,6 +7,21 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- The demonstration videos follow one problem through the agentic loop
+  (#149), with a strip below the pages that lights up each stage. A
+  service fails, and its event starts web-doctor (observe). Its report
+  is confirmed (diagnose). It proposes a restart (propose). A person
+  approves it on the gateway's approval page, or on mcp-gateway's
+  Cockpit page in the technical version (decide). It runs, on both
+  records (act). Readiness follows (learn). The category is promoted
+  with an envelope (promote). The next failure is fixed without asking
+  (act). That action is reviewed (review). "Should not have run"
+  demotes it (demote). The demonstration's readiness thresholds are
+  low, and a subtitle says so. custos-tests' scripted model answers
+  that event's prompt with a probe, a report and a restart.
+
 ### Fixed
 
 - A field being typed in on the Agents tab (the promote form's envelope,
