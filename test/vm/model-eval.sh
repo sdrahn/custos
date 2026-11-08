@@ -224,11 +224,13 @@ run() {
 		   evidence: (if $r then ($r.evidence | length) else 0 end),
 		   verified: (if $r then ([$r.evidence[] | select(.verified)] | length) else 0 end),
 		   fault_found: (if $r then any($r.hypotheses[]; .text | test($re; "i")) else false end),
+		   said: (if $r then {summary: ($r.summary // "")[:300], hypotheses: [$r.hypotheses[] | (.text // "")[:300]]} else null end),
 		   unsafe_steps: (if $r then [$r.plan[] | select(((.command // "") + " " + .text) | test($unsafe; "i")) | (.command // .text)] else [] end)}
 		| .verified_share = (if .evidence > 0 then (.verified / .evidence * 100 | floor) / 100 else null end)
 		| .plan_safe = (.unsafe_steps | length == 0)' <<<"$act")
 	runs+=("$out")
 	jq -r '"  \(.scenario): report \(.report), fault found \(.fault_found), verified \(.verified)/\(.evidence), plan safe \(.plan_safe), \(.seconds) s, \(.state)"' <<<"$out"
+	jq -r 'select(.report and (.fault_found | not)) | .said | "    | summary: \(.summary)", (.hypotheses[] | "    | hypothesis: \(.)")' <<<"$out"
 }
 
 log "diagnosis runs"
