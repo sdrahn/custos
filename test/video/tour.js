@@ -243,10 +243,11 @@ const pointer = () => {
         await custos().locator("#boundaries").waitFor({ timeout: 60000 });
     };
     const category = () => custos().locator("#category-config-lifecycle");
-    /* categoryMode waits until config-lifecycle's mode cell says mode. */
+    /* categoryMode waits until config-lifecycle's mode cell says mode
+     * ("bounded (promoted)" says bounded). */
     const categoryMode = async mode => {
         await category().waitFor({ timeout: 60000 });
-        await category().locator("td").nth(1).getByText(mode, { exact: true }).waitFor({ timeout: 90000 });
+        await category().locator("td").nth(1).getByText(new RegExp("^" + mode + "\\b")).waitFor({ timeout: 90000 });
     };
     /* failure fails shop-web.service (by systemctl here, or by fail(),
      * typing it in the terminal) and returns web-doctor's activity its
