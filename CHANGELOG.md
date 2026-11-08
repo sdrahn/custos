@@ -15,7 +15,7 @@ removed.
   (report filed, quotes verified, fault found, plan safe, duration), and
   the prompt-injection cases. CI's job `models` runs it for each release
   and on demand with the models of `test/vm/eval-models` (Qwen3 1.7B to
-  14B, on Ollama, CPU only) and tabulates them. User guide, chapter 5,
+  8B, on Ollama, CPU only) and tabulates them. User guide, chapter 5,
   "Which model is good enough".
 
 - Demonstration videos of mcp-gateway and Custos, without audio and with

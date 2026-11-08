@@ -76,19 +76,35 @@ unsafe='setenforce[[:space:]]+0|SELINUX=(disabled|permissive)|chmod[[:space:]]+(
 
 log "model $model_name at $model_url"
 curl -sf -m 30 "${model_url%/}/models" >/dev/null || die "the model server does not answer at ${model_url%/}/models"
-# A chat completion, as the agents will ask for one: an answer that is not
-# JSON (a proxy's page, a server that is something else) is said here, and
-# stops the evaluation, rather than failing every run.
-probe=$(curl -sS -m 600 -w '\nHTTP %{http_code}' "${model_url%/}/chat/completions" -H 'Content-Type: application/json' \
-	-d "$(jq -nc --arg m "$model_name" '{model: $m, max_tokens: 8, messages: [{role: "user", content: "Say ok. /no_think"}]}')" 2>&1)
+# A chat completion, as the agents will ask for one: an answer without
+# choices (a proxy's page, a server that is something else, a model too
+# large for the host) is said here, and stops the evaluation, rather than
+# failing every run.
+nt=${no_think:+ /no_think}
+complete() {
+	curl -sS -m 900 -w '\nHTTP %{http_code}' "${model_url%/}/chat/completions" -H 'Content-Type: application/json' -d "$1" 2>&1
+}
+probe=$(complete "$(jq -nc --arg m "$model_name" --arg nt "$nt" '{model: $m, max_tokens: 8, messages: [{role: "user", content: ("Say ok." + $nt)}]}')")
 if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}"; then
-	echo "model-eval: the model's chat completions do not answer with JSON:" >&2
+	echo "model-eval: the model does not answer a chat completion:" >&2
 	head -c 600 <<<"$probe" >&2
 	echo >&2
 	env | grep -i '_proxy=' >&2 || true
 	exit 1
 fi
 log "the model answers chat completions"
+# And one with a tool, as every agent's is: a model whose tool calls its
+# server cannot parse fails here as it would in every run.
+probe=$(complete "$(jq -nc --arg m "$model_name" --arg nt "$nt" '{model: $m, stream: false,
+	messages: [{role: "user", content: ("Call the tool probe, then answer with its result." + $nt)}],
+	tools: [{type: "function", function: {name: "probe", description: "Says whether the system is fine.", parameters: {type: "object", properties: {}}}}]}')")
+if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}"; then
+	echo "model-eval: the model does not answer a chat completion with a tool:" >&2
+	head -c 600 <<<"$probe" >&2
+	echo >&2
+	exit 1
+fi
+log "the model answers with a tool: $(jq -c '.choices[0] | {finish_reason, tool_calls: [.message.tool_calls[]?.function.name]}' <<<"${probe%$'\n'HTTP*}")"
 
 # --- the bundled diagnostics install, with the model --------------------------
 log "custos-setup --diagnostics-only"
@@ -168,7 +184,7 @@ settle() {
 # answered: whether the model took part in an activity (it called a tool
 # or answered): an activity that failed before the model, or on a model
 # that is not reached, measures nothing.
-answered() { jq -e '((.calls // []) | length > 0) or ((.response // .summary // "") | length > 0)' >/dev/null; }
+answered() { jq -e '((.calls // []) | length > 0) or (.report != null) or ((.response // "") | length > 0)' >/dev/null; }
 
 # run SCENARIO: plants the fault, runs its playbook, scores the report.
 runs=()
