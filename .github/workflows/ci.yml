@@ -569,9 +569,12 @@ jobs:
       - name: Ollama and ${{ matrix.model }}
         id: model
         run: |
-          . test/airgap/versions
+          # Not the airgap test's Ollama (test/airgap/versions): its 0.9.0
+          # fails every request with tools to today's qwen3:4b at once
+          # (HTTP 500, "invalid character '<'"). One release for all models.
           curl -fsSL --retry 3 https://ollama.com/install.sh -o "$RUNNER_TEMP/ollama-install.sh"
-          OLLAMA_VERSION=$OLLAMA_VERSION sh "$RUNNER_TEMP/ollama-install.sh"
+          OLLAMA_VERSION=0.12.6 sh "$RUNNER_TEMP/ollama-install.sh"
+          /usr/local/bin/ollama --version
           sudo systemctl disable --now ollama.service >/dev/null 2>&1 || true
           # The agents' prompts (the tools, the playbook) need more context
           # than Ollama's default.

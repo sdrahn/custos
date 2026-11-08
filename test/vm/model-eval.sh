@@ -96,8 +96,8 @@ log "the model answers chat completions"
 # And one with a tool, as every agent's is: a model whose tool calls its
 # server cannot parse fails here as it would in every run. With
 # --no-think, a model whose tool calls the server cannot parse without
-# thinking (Ollama's qwen3:4b: "invalid character '<'") is tried with
-# thinking, and measured so (the results say "thinking": true).
+# thinking is tried with thinking, and measured so (the results say
+# "thinking": true).
 tool_probe() {
 	complete "$(jq -nc --arg m "$model_name" --arg nt "$nt" '{model: $m, stream: false,
 		messages: [{role: "user", content: ("Call the tool probe, then answer with its result." + $nt)}],
