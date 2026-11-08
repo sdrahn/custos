@@ -20,10 +20,11 @@ for f in "$in" "$dir/$name.ass" "$dir/$name.srt"; do
 	[ -s "$f" ] || { echo "render: $f is missing" >&2; exit 1; }
 done
 enc=(-an -r 25 -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -movflags +faststart)
-# The pages (2:1) scaled to 1920×960; below them a 120-pixel band in the
-# pages' dark green, where the subtitles are.
+# The pages (2:1) scaled to 1856×928, centred; below them a 152-pixel
+# band in the pages' dark green: the loop's strip at its top, the
+# subtitles below it (subtitles.js's ASS styles).
 ffmpeg -nostdin -loglevel error -y -i "$in" \
-	-vf "scale=1920:960:flags=lanczos,pad=1920:1080:0:0:color=0x0c322c,ass=$dir/$name.ass" \
+	-vf "scale=1856:928:flags=lanczos,pad=1920:1080:32:0:color=0x0c322c,ass=$dir/$name.ass" \
 	"${enc[@]}" "$dir/$name.mp4"
 # Full size (letterboxed to 16:9), with a subtitle track.
 ffmpeg -nostdin -loglevel error -y -i "$in" -i "$dir/$name.srt" \

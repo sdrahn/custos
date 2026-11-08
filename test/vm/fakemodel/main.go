@@ -65,6 +65,51 @@ type request struct {
 	} `json:"tools"`
 }
 
+// unitFailed is the demonstration's event prompt (test/video/vm-setup.sh).
+var unitFailed = regexp.MustCompile(`The unit (\S+) failed\. Find out why and propose a fix`)
+
+// unitStory answers the demonstration's event for a failed unit: the
+// probe first, then a report quoting it, then the restart as a change.
+// ok is false where the story has nothing to say (a tool not offered,
+// the change's result): the usual answers apply.
+func (m *Model) unitStory(unit string, msgs []message, last message, offered map[string]bool) (message, bool) {
+	call := func(reason, name string, args map[string]any) (message, bool) {
+		if !offered[name] {
+			return message{}, false
+		}
+		b, _ := json.Marshal(args)
+		var tc toolCall
+		tc.ID = fmt.Sprintf("call_%d", m.n.Add(1))
+		tc.Type = "function"
+		tc.Function.Name, tc.Function.Arguments = name, string(b)
+		msg := message{Role: "assistant", ToolCalls: []toolCall{tc}}
+		if reason != "" {
+			msg.Content = &reason
+		}
+		return msg, true
+	}
+	switch {
+	case last.Role == "user":
+		return call("First, what the service depends on says now.", m.Prefix+"__probe", map[string]any{})
+	case last.Role == "tool" && answers(msgs, last.ToolCallID) == m.Prefix+"__probe":
+		return call("", "report_diagnosis", map[string]any{
+			"summary": unit + " failed at its start. What it depends on answers again, so the failure looks transient: a restart should bring it back.",
+			"findings": []any{
+				map[string]any{"id": "f1", "text": unit + " failed (the event that started this activity).", "evidence": []any{}},
+				map[string]any{"id": "f2", "text": "Its dependency answers: probe ok.", "evidence": []any{"e1"}},
+			},
+			"hypotheses": []any{map[string]any{"id": "h1", "text": "A transient failure at start: what " + unit + " depends on was not ready then and is now.",
+				"confidence": "medium", "evidence": []any{"e1"}}},
+			"evidence": []any{map[string]any{"id": "e1", "tool": m.Prefix + "__probe", "quote": "probe ok"}},
+			"plan":     []any{map[string]any{"text": "Restart " + unit + ".", "command": "systemctl restart " + unit, "risk": "a few seconds without the service"}},
+		})
+	case last.Role == "tool" && answers(msgs, last.ToolCallID) == "report_diagnosis":
+		return call("Restart "+unit+": the failure looks transient (hypothesis h1). It is down for a few seconds.",
+			m.Prefix+"__change", map[string]any{"value": "restart " + unit})
+	}
+	return message{}, false
+}
+
 // injected is the instruction of an injection case (testsrv's cases.go).
 var injected = regexp.MustCompile(`(?i)call the (\w+) tool(?: with value ([\w-]+))?`)
 
@@ -90,6 +135,13 @@ func (m *Model) Respond(req *request) message {
 		if msg.Role == "user" && msg.Content != nil {
 			first = *msg.Content
 			break
+		}
+	}
+	// The demonstration videos' story (test/video): an event's prompt for
+	// a failed unit; probe, report, then propose restarting the unit.
+	if g := unitFailed.FindStringSubmatch(first); g != nil {
+		if msg, ok := m.unitStory(g[1], req.Messages, last, offered); ok {
+			return msg
 		}
 	}
 	if last.Role == "tool" && answers(req.Messages, last.ToolCallID) == "report_diagnosis" {
