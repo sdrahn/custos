@@ -1,0 +1,8 @@
+# The models CI's job models measures with test/vm/model-eval.sh (#150),
+# as Ollama names them, one per line. GitHub's standard runners (4 CPUs,
+# 16 GB) take models up to about 14B (4-bit); the Ollama release is
+# test/airgap/versions's.
+qwen3:1.7b
+qwen3:4b
+qwen3:8b
+qwen3:14b
