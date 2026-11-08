@@ -160,7 +160,17 @@ const pointer = () => {
     };
     /* point moves the pointer to the element, visibly, and outlines it. */
     const point = async (loc, ms = 600) => {
-        await loc.scrollIntoViewIfNeeded({ timeout: 30000 });
+        // The Agents tab re-renders every few seconds: an element replaced
+        // between finding it and scrolling to it is found again.
+        for (let i = 0; ; i++) {
+            try {
+                await loc.scrollIntoViewIfNeeded({ timeout: 30000 });
+                break;
+            } catch (e) {
+                if (i >= 4 || !/not attached/.test(String(e))) throw e;
+                await sleep(300);
+            }
+        }
         const b = await loc.boundingBox();
         if (!b) return;
         await page.mouse.move(b.x + Math.min(b.width / 2, 120), b.y + b.height / 2, { steps: 25 });
