@@ -334,17 +334,10 @@ function categoriesSection(a, data) {
         el("th", null, "Task category"), el("th", null, "Mode"), el("th", null, "Windows"), el("th", null, "Readiness"),
         el("th", null, "Overrides"), el("th", null, "Incidents"), el("th", null, "Proposals"), el("th", null, ""))));
     const tbody = el("tbody");
-    const reason = el("input", { id: "category-reason", type: "text", placeholder: "Reason (recorded)", "aria-label": "Reason" });
-    const env = el("textarea", { id: "category-envelope", rows: "5", spellcheck: "false", "aria-label": "Envelope (YAML)" });
-    const despite = el("input", { id: "category-despite", type: "checkbox" });
-    const which = el("select", { id: "category-select", "aria-label": "Category" },
-        ...names.filter(n => categoryUsable(n) && n !== "diagnostics").map(n => el("option", { value: n }, n)));
-    const fillEnvelope = () => {
-        const c = states[which.value];
-        env.value = c && c.envelope ? JSON.stringify(c.envelope, null, 2) + "\n" : ENVELOPE_TEMPLATE;
-    };
-    which.addEventListener("change", fillEnvelope);
-    fillEnvelope();
+    // Kept across the tab's refreshes (promoteForm): the form, the
+    // envelope being written, and the reason Demote and the reviews use.
+    const k = promoteForm(a, names, states);
+    const { reason, which, form } = k;
     const cells = {};
     for (const n of names) {
         const c = states[n] || { mode: "supervised" };
@@ -353,16 +346,16 @@ function categoriesSection(a, data) {
         const demote = el("button", { class: "secondary" }, "Demote");
         demote.hidden = !bounded;
         demote.addEventListener("click", () => act(demote, "Demoting " + n,
-            () => admin(["demote", a.name, n, "--reason", reason.value.trim() || "demoted in Cockpit"])));
+            () => admin(["demote", a.name, n, "--reason", reason.value.trim() || "demoted in Cockpit"]).then(k.used)));
         const promote = el("button", { class: "secondary" }, bounded ? "Change envelope…" : "Promote…");
         // A disabled category is denied whatever its mode (§6b), and
         // diagnostics needs no promotion: it only reads.
         promote.hidden = !usable || n === "diagnostics";
         promote.addEventListener("click", () => {
             which.value = n;
-            fillEnvelope();
+            k.fill();
             form.open = true;
-            env.focus();
+            k.env.focus();
         });
         cells[n] = { ready: el("td", { class: "muted" }, "…"), over: el("td", { class: "muted" }), inc: el("td", { class: "muted" }), props: el("td", { class: "muted" }) };
         tbody.append(el("tr", { id: "category-" + n }, el("td", { class: "mono" }, n),
@@ -380,21 +373,6 @@ function categoriesSection(a, data) {
         ));
     }
     table.append(tbody);
-    const go = el("button", null, "Promote");
-    go.addEventListener("click", () => {
-        const args = ["promote", a.name, which.value, "--envelope", "-"];
-        if (despite.checked) args.push("--despite-readiness");
-        if (reason.value.trim()) args.push("--reason", reason.value.trim());
-        act(go, "Promoting " + which.value, () => admin(args, env.value));
-    });
-    const form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
-        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz); optionally a rate (calls: N, per: 1s, 1m or 1h: " +
-           "beyond it, each of a tool's calls waits for an approval, and reaching it three times in a day demotes the category) and rollback " +
-           "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
-           "category that is not ready, unless you promote it despite its readiness, with a reason."),
-        el("div", { class: "toolbar" }, which), env,
-        el("label", null, despite, " Promote despite its readiness (needs a reason)"),
-        el("div", { class: "actions" }, go));
     const reviews = el("div", { id: "category-reviews" });
     box.append(table, el("div", { class: "toolbar" }, reason), reviews, form);
     // The after-the-fact review of promoted categories' autonomous actions
@@ -410,7 +388,7 @@ function categoriesSection(a, data) {
                         b.addEventListener("click", () => {
                             const args = ["review", a.name, cat, x.activity, x.call, v];
                             if (reason.value.trim()) args.push("--reason", reason.value.trim());
-                            act(b, "Reviewing " + x.tool, () => admin(args));
+                            act(b, "Reviewing " + x.tool, () => admin(args).then(k.used));
                         });
                         return b;
                     };
@@ -477,6 +455,64 @@ function ownersEditor(a, data) {
             : "No owners: the servers' approvers decide this agent's calls. Owners (user:NAME, group:NAME, role:NAME, remote-user:SUB, " +
               "remote-group:NAME) may approve them too."),
         ed.node);
+}
+
+/* promoteForm is an agent's form to promote a category, and the reason
+ * Demote and the reviews record, kept across the tab's refreshes (which
+ * rebuild the agent's view every few seconds) while the form is open or
+ * anything was typed: a refresh would otherwise close the form and lose
+ * the envelope being written. A new one, with the current categories and
+ * envelopes, once it is closed and untouched, or after an action used it
+ * (used). */
+const promoteForms = new Map();
+
+function promoteForm(a, names, states) {
+    const key = names.join(",");
+    const old = promoteForms.get(a.name);
+    if (old && old.key === key && (old.form.open || old.dirty || old.reason.value.trim() || old.despite.checked)) {
+        old.states = states;
+        return old;
+    }
+    const k = { key, states, dirty: false };
+    k.reason = el("input", { id: "category-reason", type: "text", placeholder: "Reason (recorded)", "aria-label": "Reason" });
+    k.env = el("textarea", { id: "category-envelope", rows: "5", spellcheck: "false", "aria-label": "Envelope (YAML)" });
+    k.despite = el("input", { id: "category-despite", type: "checkbox" });
+    k.which = el("select", { id: "category-select", "aria-label": "Category" },
+        ...names.filter(n => categoryUsable(n) && n !== "diagnostics").map(n => el("option", { value: n }, n)));
+    k.fill = () => {
+        const c = k.states[k.which.value];
+        k.env.value = c && c.envelope ? JSON.stringify(c.envelope, null, 2) + "\n" : ENVELOPE_TEMPLATE;
+        k.dirty = false;
+    };
+    k.which.addEventListener("change", k.fill);
+    k.env.addEventListener("input", () => { k.dirty = true });
+    k.fill();
+    // After an action that used them: the next render starts afresh.
+    k.used = out => {
+        k.form.open = false;
+        k.dirty = false;
+        k.reason.value = "";
+        k.despite.checked = false;
+        return out;
+    };
+    const go = el("button", null, "Promote");
+    go.addEventListener("click", () => {
+        const args = ["promote", a.name, k.which.value, "--envelope", "-"];
+        if (k.despite.checked) args.push("--despite-readiness");
+        if (k.reason.value.trim()) args.push("--reason", k.reason.value.trim());
+        // Kept, the button outlives the action, which disables it.
+        act(go, "Promoting " + k.which.value, () => admin(args, k.env.value).then(k.used)).finally(() => { go.disabled = false });
+    });
+    k.form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
+        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz); optionally a rate (calls: N, per: 1s, 1m or 1h: " +
+           "beyond it, each of a tool's calls waits for an approval, and reaching it three times in a day demotes the category) and rollback " +
+           "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
+           "category that is not ready, unless you promote it despite its readiness, with a reason."),
+        el("div", { class: "toolbar" }, k.which), k.env,
+        el("label", null, k.despite, " Promote despite its readiness (needs a reason)"),
+        el("div", { class: "actions" }, go));
+    promoteForms.set(a.name, k);
+    return k;
 }
 
 /* keptEditor is an editor kept across the tab's refreshes, which rebuild
