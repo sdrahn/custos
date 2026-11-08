@@ -290,6 +290,18 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.click("#category-security-response button:text-is('Promote…')");
     check(await page.$eval("#promote-form", d => d.open) && (await page.inputValue("#category-select")) === "security-response" &&
           (await page.inputValue("#category-envelope")).includes("windows:"), "Promote… opens the form for that category, with an envelope");
+    // The form, the envelope being written and the reason outlive the
+    // tab's refreshes (every 5 s): before, a refresh closed the form and
+    // lost both.
+    const envKept = (await page.inputValue("#category-envelope")) + "# written slowly\n";
+    await page.fill("#category-envelope", envKept);
+    await page.fill("#category-reason", "kept across a refresh");
+    await page.waitForTimeout(6000);
+    check(await page.$eval("#promote-form", d => d.open) && (await page.inputValue("#category-envelope")) === envKept &&
+          (await page.inputValue("#category-reason")) === "kept across a refresh" &&
+          (await page.inputValue("#category-select")) === "security-response",
+          "the promote form stays open, with the envelope and the reason being written, across a refresh");
+    await page.fill("#category-reason", "");
     await page.click("#promote-form button:text-is('Promote')");
     await page.waitForFunction(() => document.querySelector("#error").textContent.includes("is not ready"));
     check((await page.textContent("#error")).includes("security-response is not ready (observed 0.0 days of 14"),
