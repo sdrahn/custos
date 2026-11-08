@@ -327,7 +327,7 @@ const pointer = () => {
             await form.locator("select[name='h-h1']").selectOption("confirmed");
             await form.locator("select[name='plan']").selectOption("useful");
             await click(form.locator("button:has-text('Record feedback')"));
-            await form.getByText("Recorded").waitFor({ timeout: 60000 });
+            await form.getByText("Recorded. Thank you.").waitFor({ timeout: 60000 });
             await show(form, t.feedback);
         });
         await scene("propose: the fix waits for a person", async () => {
