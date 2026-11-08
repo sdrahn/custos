@@ -67,43 +67,23 @@ async function vmEventually(seconds, cmd) {
     }
     return null;
 }
-/* finished waits until patch-pilot's activity id has finished. */
-async function finished(id, what) {
-    const done = await vmEventually(60, `[ "$(${api("patch-pilot", "/v1/activities/" + id)} | jq -r .state)" = finished ]`);
+/* finished waits until the agent's activity id has finished. */
+async function finished(id, what, agent = "web-doctor") {
+    const done = await vmEventually(60, `[ "$(${api(agent, "/v1/activities/" + id)} | jq -r .state)" = finished ]`);
     if (done === null) {
-        const state = vm(`${api("patch-pilot", "/v1/activities/" + id)} | jq -c '{state, error, calls: [.calls[] | {tool, approval_id, error}]}'`);
+        const state = vm(`${api(agent, "/v1/activities/" + id)} | jq -c '{state, error, calls: [.calls[] | {tool, approval_id, error}]}'`);
         throw new Error(what + " did not finish: " + (state || "").trim());
     }
 }
 const api = (agent, p) => `curl -s --max-time 30 --unix-socket /run/agents/${agent}/api.sock http://a${p}`;
 
-/* waitingChange starts patch-pilot's change (prompt) and waits until it
- * waits for an approval: its activity and approval ids. */
-async function waitingChange(prompt) {
-    const id = (vm(`${api("patch-pilot", "/v1/activities")} -X POST -d '${JSON.stringify({ prompt })}' | jq -r .id`) || "").trim();
-    if (!id) throw new Error("patch-pilot started no activity");
-    const approval = await vmEventually(90, `${api("patch-pilot", "/v1/activities/" + id)} | jq -er 'select(.state == "waiting_approval") | ` +
-        `[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id'`);
-    if (!approval) throw new Error("the change does not wait for an approval");
-    return { id, approval: approval.trim() };
-}
-/* scheduledChange runs triage's schedule, which delegates a change to
- * patch-pilot; returns patch-pilot's waiting activity and its approval. */
-async function scheduledChange() {
-    const before = new Set((vm(`${api("patch-pilot", "/v1/activities")} | jq -r '.activities[].id'`) || "").split("\n"));
-    vm("systemctl start --no-block agent-schedule@triage_morning-check.service");
-    const id = await vmEventually(90, `${api("patch-pilot", "/v1/activities")} | jq -er '[.activities[] | ` +
-        `select(.state == "waiting_approval" and .origin.kind == "delegation") | .id] - ${JSON.stringify([...before])} | .[0]'`);
-    if (!id) throw new Error("triage's delegated change does not wait");
-    const approval = (vm(`${api("patch-pilot", "/v1/activities/" + id.trim())} | jq -r '[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id'`) || "").trim();
-    return { id: id.trim(), approval };
-}
-
 /* Subtitles ---------------------------------------------------------- */
 
 let t0 = 0;
 const clock = () => Date.now() - t0;
-const subs = new Subtitles(clock);
+// The agentic loop's stages, as the strip below the pages shows them.
+const STAGES = ["Observe", "Diagnose", "Propose", "Decide", "Act", "Learn", "Promote", "Review", "Demote"];
+const subs = new Subtitles(clock, STAGES);
 /* caption shows text while it can be read, then ends it: what follows
  * (the next click, a page loading) has no subtitle that is not about it. */
 const caption = async (text, hold) => {
@@ -164,12 +144,12 @@ const pointer = () => {
             console.log("FAIL: " + name + "\n    | " + e.message.split("\n").slice(0, 3).join("\n    | "));
             await page.screenshot({ path: path.join(out, `${version}-failed-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
             // What the job's log needs to tell why: where the browser was,
-            // what it showed, patch-pilot's latest activities, the gateway.
+            // what it showed, web-doctor's latest activities, the gateway.
             const shown = await page.evaluate(() => document.body ? document.body.innerText.slice(0, 400) : "").catch(() => "");
             const frames = page.frames().map(f => f.name() || f.url()).join(", ");
-            const acts = vm(`${api("patch-pilot", "/v1/activities")} | jq -c '[.activities[:3][] | {id, state, error, prompt}]'`) || "";
-            const last = (acts.match(/"id":"([^"]+)"/) || [])[1];
-            const calls = last ? vm(`${api("patch-pilot", "/v1/activities/" + last)} | jq -c '[.calls[] | {tool, approval_id, outcome, error}]'`) || "" : "";
+            const acts = vm(`${api("web-doctor", "/v1/activities")} | jq -c '[.activities[-3:][] | {id, state, error, origin: .origin.kind}]'`) || "";
+            const last = [...acts.matchAll(/"id":"([^"]+)"/g)].map(m => m[1]).pop();
+            const calls = last ? vm(`${api("web-doctor", "/v1/activities/" + last)} | jq -c '[.calls[] | {tool, approval_id, error}]'`) || "" : "";
             const gwlog = vm("journalctl -u mcp-gateway.service -o cat --no-pager --since -3min | grep -v '\"audit\":true' | tail -n 12") || "";
             const audit = vm("journalctl -u mcp-gateway.service -o cat --no-pager --since -3min | grep '\"audit\":true' | " +
                 "jq -c '{event, id, ok, by, via, error, reason}' 2>/dev/null | tail -n 8") || "";
@@ -180,7 +160,17 @@ const pointer = () => {
     };
     /* point moves the pointer to the element, visibly, and outlines it. */
     const point = async (loc, ms = 600) => {
-        await loc.scrollIntoViewIfNeeded({ timeout: 30000 });
+        // The Agents tab re-renders every few seconds: an element replaced
+        // between finding it and scrolling to it is found again.
+        for (let i = 0; ; i++) {
+            try {
+                await loc.scrollIntoViewIfNeeded({ timeout: 30000 });
+                break;
+            } catch (e) {
+                if (i >= 4 || !/not attached/.test(String(e))) throw e;
+                await sleep(300);
+            }
+        }
         const b = await loc.boundingBox();
         if (!b) return;
         await page.mouse.move(b.x + Math.min(b.width / 2, 120), b.y + b.height / 2, { steps: 25 });
@@ -241,140 +231,228 @@ const pointer = () => {
         await page.bringToFront();
         await sleep(1500);
     };
-    const approveInCustos = async (change, texts) => {
+    /* show points at loc while text is read. */
+    const show = async (loc, text, hold) => {
+        await point(loc, 300);
+        await caption(text, hold);
+        await unpoint(loc);
+    };
+    const agentView = async name => {
+        await tab(custos, "agents");
+        await click(custos().locator(`#agent-row-${name} button.link`));
+        await custos().locator("#boundaries").waitFor({ timeout: 60000 });
+    };
+    const category = () => custos().locator("#category-config-lifecycle");
+    /* categoryMode waits until config-lifecycle's mode cell says mode
+     * ("bounded (promoted)" says bounded). */
+    const categoryMode = async mode => {
+        await category().waitFor({ timeout: 60000 });
+        await category().locator("td").nth(1).getByText(new RegExp("^" + mode + "\\b")).waitFor({ timeout: 90000 });
+    };
+    /* failure fails shop-web.service (by systemctl here, or by fail(),
+     * typing it in the terminal) and returns web-doctor's activity its
+     * event started. */
+    const failure = async fail => {
+        const before = (vm(`${api("web-doctor", "/v1/activities")} | jq -r '.activities[].id'`) || "").split("\n").filter(Boolean);
+        if (fail) await fail();
+        else vm("systemctl reset-failed shop-web.service; systemctl start --no-block shop-web.service");
+        const id = await vmEventually(60, `${api("web-doctor", "/v1/activities")} | jq -er '[.activities[] | ` +
+            `select(.origin.kind == "event") | .id] - ${JSON.stringify(before)} | .[0]'`);
+        if (!id) throw new Error("shop-web.service's failure started no activity of web-doctor");
+        return id.trim();
+    };
+    const waitingApproval = async id => {
+        const a = await vmEventually(90, `${api("web-doctor", "/v1/activities/" + id)} | jq -er 'select(.state == "waiting_approval") | ` +
+            `[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id'`);
+        if (!a) throw new Error("web-doctor's restart does not wait for an approval");
+        return a.trim();
+    };
+    const openActivity = async id => {
         await tab(custos, "activity");
-        const row = custos().locator(`#activity-patch-pilot-${change.id}`);
+        const row = custos().locator(`#activity-web-doctor-${id}`);
         await row.waitFor({ timeout: 60000 });
         await click(row);
         await custos().locator("#activity-detail h2").waitFor({ timeout: 30000 });
-        await point(custos().locator("#activity-detail"), 300);
-        await caption(texts.chain);
-        await unpoint(custos().locator("#activity-detail"));
-        await tab(custos, "approvals");
-        const item = custos().locator("#approval-" + change.approval);
-        await item.waitFor({ timeout: 60000 });
-        await point(item, 300);
-        await caption(texts.item);
-        await unpoint(item);
-        const approve = item.locator("button:has-text('Approve once')");
-        await point(approve, 300);
-        await caption(texts.decide);
-        await unpoint(approve);
-        await approve.click();
-        await item.waitFor({ state: "detached", timeout: 30000 });
-        await sleep(1000);
-        await finished(change.id, "the approved change " + change.id);
-        return change;
     };
-    const auditInCustos = async (change, text) => {
-        await tab(custos, "audit");
-        const a = custos().locator("#action-" + change.approval);
-        await a.waitFor({ timeout: 60000 });
-        await a.getByText("executed").waitFor({ timeout: 60000 });
-        await point(a, 300);
-        await caption(text);
-        await unpoint(a);
-    };
-    const gatewayPage = async texts => {
-        const change = await waitingChange("CHANGE: install the pending security patches");
-        await page.goto(gateway + "/approvals/");
-        // Not signed in: on to the identity provider.
-        await page.locator("#username").waitFor({ timeout: 60000 });
-        await caption(texts.signIn);
-        await type(page.locator("#username"), user);
-        await type(page.locator("#password"), password);
-        await click(page.locator("button[type=submit]"));
-        const decide = page.locator(`a[href="/approvals/${change.approval}"]`);
-        await decide.waitFor({ timeout: 60000 });
-        await caption(texts.list);
-        await click(decide);
-        await page.locator("button[name=decision][value=approve]").waitFor({ timeout: 30000 });
-        await point(page.locator("main, body").first(), 200);
-        await caption(texts.detail);
-        await click(page.locator("button[name=decision][value=approve]"));
+    /* The terminal, as root: run takes [command, caption] pairs. */
+    const terminalRun = async steps => {
+        await page.goto(url + "/system/terminal");
+        const term = terminal().locator(".xterm-screen, .terminal").first();
+        await term.waitFor({ timeout: 60000 });
+        // Readable in the video: the terminal's own font size buttons.
+        const bigger = terminal().locator("button[aria-label*='ncrease'], button:has-text('+')").first();
+        for (let i = 0; i < 4; i++) await bigger.click({ timeout: 5000 }).catch(() => {});
+        await click(term);
+        await page.keyboard.type("sudo -i", { delay: 45 });
+        await page.keyboard.press("Enter");
         await sleep(1500);
-        await caption(texts.done);
-        await finished(change.id, "the change approved on the gateway's page, " + change.id + ",");
+        await page.keyboard.type(password, { delay: 30 });
+        await page.keyboard.press("Enter");
+        await sleep(1500);
+        for (const [cmd, text] of steps) {
+            await page.keyboard.type("clear; " + cmd, { delay: 40 });
+            await page.keyboard.press("Enter");
+            await sleep(2500);
+            if (text) await caption(text);
+        }
+        await page.keyboard.type("exit", { delay: 45 });
+        await page.keyboard.press("Enter");
     };
     const emergencyStop = async texts => {
         await openCustos();
         await tab(custos, "activity");
-        await point(custos().locator("#stop-all"), 300);
-        await caption(texts.button);
+        await show(custos().locator("#stop-all"), texts.button);
         await click(custos().locator("#stop-all"));
         await click(custos().locator("#stop-go"));
         await custos().locator("#stopped:not([hidden])").waitFor({ timeout: 90000 });
-        await point(custos().locator("#stopped"), 300);
-        await caption(texts.stopped);
-        await unpoint(custos().locator("#stopped"));
+        await show(custos().locator("#stopped"), texts.stopped);
         await click(custos().locator("#stopped button:has-text('Release…')"));
         await click(custos().locator("#stopped button:has-text('Release all agents')"));
         await custos().locator("#stopped").waitFor({ state: "hidden", timeout: 90000 });
         await caption(texts.released);
     };
-    const readiness = async text => {
-        await tab(custos, "agents");
-        await click(custos().locator("#agent-row-patch-pilot button.link"));
-        const cat = custos().locator("#category-patch-errata");
-        await cat.waitFor({ timeout: 60000 });
-        await cat.getByText(/^(not ready|ready)$/).waitFor({ timeout: 60000 });
-        await point(cat, 300);
-        await caption(text);
-        await unpoint(cat);
+
+    /* The loop (#149), with each version's words. t: the texts. */
+    const loop = async t => {
+        let first, approval, second;
+        await scene("meet web-doctor", async () => {
+            await openCustos();
+            await agentView("web-doctor");
+            await show(custos().locator("#agent-detail"), t.meet);
+            await show(custos().locator("#boundaries"), t.supervised);
+        });
+        await scene("observe: a service fails", async () => {
+            subs.stage("Observe");
+            first = await failure(t.observeTerminal ? () => terminalRun(t.observeTerminal) : null);
+            if (t.observeTerminal) await openCustos();
+            await openActivity(first);
+            await show(custos().locator("#activity-detail"), t.observe);
+        });
+        await scene("diagnose: the report and its feedback", async () => {
+            subs.stage("Diagnose");
+            const report = custos().locator("#report");
+            await report.waitFor({ timeout: 90000 });
+            await show(report.locator(".hypothesis").first(), t.diagnose);
+            const form = custos().locator(".report-feedback");
+            await point(form, 200);
+            await form.locator("select[name='h-h1']").selectOption("confirmed");
+            await form.locator("select[name='plan']").selectOption("useful");
+            await click(form.locator("button:has-text('Record feedback')"));
+            await form.getByText("Recorded. Thank you.").waitFor({ timeout: 60000 });
+            await show(form, t.feedback);
+        });
+        await scene("propose: the fix waits for a person", async () => {
+            subs.stage("Propose");
+            approval = await waitingApproval(first);
+            await tab(custos, "approvals");
+            const item = custos().locator("#approval-" + approval);
+            await item.waitFor({ timeout: 60000 });
+            await show(item, t.propose);
+        });
+        await scene("decide: a person approves", async () => {
+            subs.stage("Decide");
+            await t.decide(approval);
+            await finished(first, "web-doctor's approved restart " + first, "web-doctor");
+        });
+        await scene("act: the fix runs, on the record", async () => {
+            subs.stage("Act");
+            await openCustos();
+            await tab(custos, "audit");
+            const a = custos().locator("#action-" + approval);
+            await a.waitFor({ timeout: 60000 });
+            await a.getByText("executed").waitFor({ timeout: 60000 });
+            await show(a, t.act);
+            await openGateway("/audit");
+            await show(gw().locator("#audit"), t.actGateway);
+        });
+        await scene("learn: readiness", async () => {
+            subs.stage("Learn");
+            if (t.learnTerminal) await terminalRun(t.learnTerminal);
+            await openCustos();
+            await agentView("web-doctor");
+            await category().getByText(/^ready$/).waitFor({ timeout: 90000 });
+            await show(category(), t.learn);
+        });
+        await scene("promote: autonomy within an envelope", async () => {
+            subs.stage("Promote");
+            await click(custos().locator("#promote-form summary"));
+            await custos().locator("#category-select").selectOption("config-lifecycle");
+            const env = custos().locator("#category-envelope");
+            await env.fill("");
+            await type(env, "windows: [{days: [mon, tue, wed, thu, fri, sat, sun], from: '00:00', to: '23:59', tz: UTC}]\n" +
+                "rate: {calls: 5, per: 1h}");
+            await show(env, t.envelope);
+            await click(custos().locator("#promote-form button:text-is('Promote')"));
+            await categoryMode("bounded");
+            await show(category(), t.promote);
+        });
+        await scene("act alone: the next failure", async () => {
+            subs.stage("Act");
+            second = await failure(null);
+            await finished(second, "web-doctor's autonomous restart " + second, "web-doctor");
+            const asked = vm(`${api("web-doctor", "/v1/activities/" + second)} | jq -r '[.calls[] | select(.approval_id != null and .approval_id != "")] | length'`);
+            if ((asked || "").trim() !== "0") throw new Error("the promoted category's restart asked for an approval");
+            await openCustos();
+            await openActivity(second);
+            await show(custos().locator("#activity-detail"), t.alone);
+        });
+        await scene("review: what it did alone", async () => {
+            subs.stage("Review");
+            await agentView("web-doctor");
+            const item = custos().locator(`#category-reviews [id^='review-${second}-']`).first();
+            await item.waitFor({ timeout: 90000 });
+            await show(item, t.review);
+        });
+        await scene("demote: back to supervised", async () => {
+            subs.stage("Demote");
+            await type(custos().locator("#category-reason"), t.reason);
+            const item = custos().locator(`#category-reviews [id^='review-${second}-']`).first();
+            await click(item.locator("button:has-text('Should not have run')"));
+            await categoryMode("supervised");
+            await show(category(), t.demote);
+            if (t.demoteTerminal) await terminalRun(t.demoteTerminal);
+        });
+        subs.stage(null);
     };
 
     /* The versions ---------------------------------------------------- */
 
+    const demo = "A demonstration on a test system: a scripted model and test tools stand in for a real model and real tools.";
     if (version === "business") {
-        await card("mcp-gateway and Custos", "Governed AI agents for SUSE Linux");
+        await card("mcp-gateway and Custos", "The agentic loop: how an AI agent earns trust, and loses it", 5000);
+        await caption(demo);
         await scene("log in", () => login("Custos runs on the customer's own SUSE Linux host, managed in Cockpit, the web console administrators already use."));
-        await scene("the agents", async () => {
-            await openCustos();
-            await tab(custos, "agents");
-            await custos().locator("#agent-row-patch-pilot").waitFor({ timeout: 60000 });
-            await point(custos().locator("#agent-row-triage"), 200);
-            await caption("Each agent has one job. triage looks at the host every morning and hands work to the others.");
-            await point(custos().locator("#agent-row-patch-pilot"), 200);
-            await caption("patch-pilot keeps the host patched. disk-watch frees space when /var fills up.");
-            await click(custos().locator("#agent-row-patch-pilot button.link"));
-            await custos().locator("#boundaries").waitFor({ timeout: 60000 });
-            await point(custos().locator("#boundaries"), 300);
-            await caption("patch-pilot is supervised: it may look freely, but every change waits for a person.");
-            await unpoint(custos().locator("#boundaries"));
-        });
-        let approved;
-        await scene("a change waits for a person", async () => {
-            approved = await approveInCustos(await scheduledChange(), {
-                chain: "This morning triage found work and handed it to patch-pilot. Its change now waits for an approval.",
-                item: "The approver sees the exact call, as mcp-gateway received it, and beside it the agent's own reasoning, marked as the agent's claim.",
-                decide: "A person decides. mcp-gateway enforces the decision: the agent cannot get around it.",
-            });
-        });
-        await scene("the audit trail", () => auditInCustos(approved, "Every step is recorded: proposed, approved by carol in Cockpit, executed. A declined change is there too."));
-        await card("mcp-gateway", "One control point for every tool an agent uses");
-        await scene("mcp-gateway in Cockpit", async () => {
-            await openGateway("/servers");
-            await point(gw().locator("#servers"), 300);
-            await caption("mcp-gateway runs the tools on the host: services, patches, snapshots, diagnostics. Agents reach them only through it.");
-            await unpoint(gw().locator("#servers"));
-            await tab(gw, "clients");
-            await point(gw().locator("#clients"), 300);
-            await caption("It knows every agent that connects, and decides each call by the customer's policy.");
-            await unpoint(gw().locator("#clients"));
-            await tab(gw, "audit");
-            await point(gw().locator("#audit"), 300);
-            await caption("Its own audit log records every decision and its outcome, for the customer to prove who allowed what, and when.");
-            await unpoint(gw().locator("#audit"));
-        });
-        await scene("the gateway's approval page", () => gatewayPage({
-            signIn: "Approvers do not need Cockpit. A mail or a notification links to mcp-gateway's own approval page; they sign in with the company's identity provider.",
-            list: "The page lists what this approver may decide.",
-            detail: "The call and its arguments, for whom, and the scopes the policy offers. The agent never sees this page.",
-            done: "Approved: the change runs, and the decision is recorded as made on the approval page.",
-        }));
-        await scene("autonomy is earned", async () => {
-            await openCustos();
-            await readiness("Autonomy is earned per task. Readiness counts how often approvers said no, from mcp-gateway's own records. Only a proven task may act alone, within agreed limits.");
+        await loop({
+            meet: "web-doctor looks after the shop's web front. When the service fails, it finds out why and proposes a fix.",
+            supervised: "It is supervised: it may look freely, but every change waits for a person.",
+            observe: "shop-web.service just failed. systemd started web-doctor at once: nobody had to notice.",
+            diagnose: "Its diagnosis: a hypothesis, the evidence for it, and a plan. Quotes Custos checked against the tool's output are marked verified.",
+            feedback: "The administrator confirms the diagnosis. That verdict is recorded, and counts as evidence later.",
+            propose: "web-doctor proposes the fix from its plan: restart shop-web.service. It must ask, and explains why.",
+            decide: async approval => {
+                await page.goto(gateway + "/approvals/");
+                await page.locator("#username").waitFor({ timeout: 60000 });
+                await caption("The approver needs no Cockpit: a mail links to mcp-gateway's approval page, behind the company's sign-in.");
+                await type(page.locator("#username"), user);
+                await type(page.locator("#password"), password);
+                await click(page.locator("button[type=submit]"));
+                const decide = page.locator(`a[href="/approvals/${approval}"]`);
+                await decide.waitFor({ timeout: 60000 });
+                await click(decide);
+                await page.locator("button[name=decision][value=approve]").waitFor({ timeout: 30000 });
+                await caption("The exact call, for whom, and the agent's reasoning. A person decides; the agent never sees this page.");
+                await click(page.locator("button[name=decision][value=approve]"));
+                await sleep(1500);
+            },
+            act: "Approved, the restart runs. Every step is on the record: proposed, approved by carol, executed.",
+            actGateway: "mcp-gateway keeps its own record of every decision and its outcome, outside the agent.",
+            learn: "Each decision builds a track record per kind of task. Here it is ready after one, because this demo asks little: normally 14 days and 50 proposals.",
+            envelope: "The administrator grants autonomy for this kind of task only: within time windows, at most 5 restarts an hour.",
+            promote: "Configuration and lifecycle tasks may now run without asking, inside that envelope. Every other kind still asks.",
+            alone: "shop-web fails again. This time web-doctor diagnoses and restarts it on its own: no approval needed, inside its envelope.",
+            review: "Every action taken alone is put before a person afterwards.",
+            reason: "Restarts hide that the upstream app keeps failing.",
+            demote: "\"Should not have run\": the task is demoted at once, back to supervised. The next restart asks again. The loop goes on.",
         });
         await scene("the emergency stop", () => emergencyStop({
             button: "And if anything looks wrong: one button stops every agent.",
@@ -383,133 +461,45 @@ const pointer = () => {
         }));
         await card("AI proposes. People decide.<br>The platform enforces.", "mcp-gateway and Custos · SUSE Linux Enterprise Server 16 and openSUSE Leap 16", 6000);
     } else {
-        await card("mcp-gateway and Custos", "Technical walkthrough");
-        await scene("log in", () => login("Everything here is the installed packages in openSUSE Leap 16 with SELinux enforcing, driven as the person carol."));
-        await scene("an agent and its boundaries", async () => {
-            await openCustos();
-            await tab(custos, "agents");
-            await click(custos().locator("#agent-row-patch-pilot button.link"));
-            await custos().locator("#boundaries").waitFor({ timeout: 60000 });
-            await point(custos().locator("#agent-detail"), 200);
-            await caption("Each agent is a systemd unit (agent@NAME) with its own user, SELinux domain agent_t and socket. Its only tools are mcp-gateway's.");
-            await unpoint(custos().locator("#agent-detail"));
-            await point(custos().locator("#boundaries"), 200);
-            await caption("Its permissions are gateway data written by agent-admin: probe is read-only and runs; change is in task category patch-errata and needs an approval.");
-            await unpoint(custos().locator("#boundaries"));
-        });
-        await scene("the gateway's policy decides", async () => {
-            await tab(custos, "policy");
-            await custos().locator("#posture-patch-pilot").waitFor({ timeout: 60000 });
-            await point(custos().locator("#whatif select"), 300);
-            await custos().locator("#whatif select").selectOption("patch-pilot");
-            await unpoint(custos().locator("#whatif select"));
-            await type(custos().locator("#whatif-tool"), "custos-test__change");
-            await custos().locator("#whatif-result[data-for='patch-pilot custos-test__change ']").waitFor({ timeout: 30000 });
-            await point(custos().locator("#whatif-result"), 200);
-            await caption("What would the gateway decide? The page asks mcp-gateway's own OPA policy: this call needs an approval.");
-            await custos().locator("#whatif-tool").fill("");
-            await type(custos().locator("#whatif-tool"), "custos-test__wipe");
-            await custos().locator("#whatif-result[data-for='patch-pilot custos-test__wipe ']").waitFor({ timeout: 30000 });
-            await caption("A tool no permission names is denied, with the gateway's reason. The agent's own process enforces nothing.");
-            await unpoint(custos().locator("#whatif-result"));
-        });
-        await scene("a delegated change and its approval", async () => {
-            const change = await scheduledChange();
-            await approveInCustos(change, {
-                chain: "triage's timer started an activity; it delegated through the gateway's agents server (agents__delegate) to patch-pilot. The chain goes back to the schedule.",
-                item: "The approval item: the call from the gateway's control API, and the agent's proposal (R5) beside it, marked self-asserted.",
-                decide: "Approved as carol through Cockpit's bridge: the gateway's audit names carol, via cockpit, never root.",
-            });
-        });
-        await scene("chat over AG-UI", async () => {
-            await tab(custos, "agents");
-            await click(custos().locator("#agent-row-patch-pilot button.link"));
-            const chat = custos().locator("#chat-patch-pilot");
-            await chat.waitFor({ timeout: 60000 });
-            await type(chat.locator(".chat-input"), "PROBE the host, please.");
-            await click(chat.locator("button:has-text('Send')"));
-            await chat.locator(".msg-agent", { hasText: "probe ok" }).waitFor({ timeout: 60000 });
-            await point(chat, 200);
-            await caption("Chat runs over AG-UI on the agent's socket; each message is an activity of carol, with the same policy and audit.");
-            await unpoint(chat);
-        });
-        await card("mcp-gateway", "Policy, approvals and audit, outside the agent");
-        await scene("mcp-gateway's Cockpit page", async () => {
-            const change = await waitingChange("CHANGE: restart the web server");
-            await openGateway("/approvals/" + change.approval);
-            const item = gw().locator("#approval-" + change.approval);
-            await item.waitFor({ timeout: 60000 });
-            await point(item, 200);
-            await caption("mcp-gateway's own Cockpit page lists the pending approvals, live, with the scopes the policy offers.");
-            await unpoint(item);
-            await click(item.locator("button:not(.danger)").first());
-            await gw().locator("#approvals").getByText(/not pending|Nothing to decide/).waitFor({ timeout: 30000 });
-            await tab(gw, "servers");
-            await point(gw().locator("#servers"), 200);
-            await caption("Servers: each MCP server runs as transient systemd units, one SELinux domain per server, started per principal.");
-            await unpoint(gw().locator("#servers"));
-            await tab(gw, "clients");
-            await point(gw().locator("#clients"), 200);
-            await caption("Clients: the agents' sessions, identified by the kernel (SO_PEERCRED) on the socket, or by an OAuth token over HTTPS.");
-            await unpoint(gw().locator("#clients"));
-            await tab(gw, "policy");
-            await point(gw().locator("#bindings"), 200);
-            await caption("Policy: role bindings and approver rules. Custos adds its agents module; the gateway's OPA decides every call.");
-            await unpoint(gw().locator("#bindings"));
-            await tab(gw, "audit");
-            await point(gw().locator("#audit"), 200);
-            await caption("Audit: the decision, mcp-approval and mcp-result records in mcp-gateway.service's journal, keyed by decision id.");
-            await unpoint(gw().locator("#audit"));
-        });
-        await scene("the approval page on the HTTPS listener", () => gatewayPage({
-            signIn: "The gateway's own approval page, on its HTTPS listener: OpenID Connect, authorization code with PKCE, at the site's identity provider.",
-            list: "Signed in as remote-user carol, an owner of patch-pilot (agent-admin owners): the approvals the policy lets her decide.",
-            detail: "The call, its arguments, the principal agent-patch-pilot and the offered scopes. A CSRF-protected form; no token of the agent's.",
-            done: "Decided and audited with via=page. The same broker as Cockpit, the command line, mail and webhooks.",
-        }));
-        await scene("the command line", async () => {
-            await page.goto(url + "/system/terminal");
-            const term = terminal().locator(".xterm-screen, .terminal").first();
-            await term.waitFor({ timeout: 60000 });
-            // Readable in the video: the terminal's own font size buttons.
-            const bigger = terminal().locator("button[aria-label*='ncrease'], button:has-text('+')").first();
-            for (let i = 0; i < 4; i++) await bigger.click({ timeout: 5000 }).catch(() => {});
-            await click(term);
-            const run = async (cmd, text, wait = 2500) => {
-                await page.keyboard.type(cmd, { delay: 45 });
-                await page.keyboard.press("Enter");
-                await sleep(wait);
-                await caption(text);
-            };
-            await page.keyboard.type("sudo -i", { delay: 45 });
-            await page.keyboard.press("Enter");
-            await sleep(1500);
-            await page.keyboard.type(password, { delay: 30 });
-            await page.keyboard.press("Enter");
-            await sleep(1500);
-            await run("clear; agent-admin show patch-pilot | jq -c '.agents[\"patch-pilot\"] | {mode, owners, permissions: [.permissions[] | {tool, category}]}'",
-                      "agent-admin is root's tool: it writes the gateway's data and returns once OPA has loaded it.");
-            await run("clear; systemctl show -p IPAddressDeny -p IPAddressAllow agent@patch-pilot.service",
-                      "The unit denies every address; agent-admin fence allows the model endpoint and the nameservers at each start.");
-            await run("clear; journalctl -o json -n 3 --no-pager SYSLOG_IDENTIFIER=agent-patch-pilot | jq -c '{AGENT_EVENT, AGENT_TOOL, AGENT_INVOCATION}'",
-                      "Every step is a journal record with AGENT_* fields; arguments only as a digest. journalctl -o json feeds a SIEM.");
-            await run("clear; agent-admin readiness patch-pilot patch-errata | jq -c '[.. | objects | select(has(\"ready\")) | {ready, unmet}][0]'",
-                      "Readiness from the gateway's decisions: not ready yet, so promote refuses without --despite-readiness and a reason.");
-            await page.keyboard.type("exit", { delay: 45 });
-            await page.keyboard.press("Enter");
-        });
-        await scene("promotion is refused when not ready", async () => {
-            await openCustos();
-            await readiness("The readiness of patch-errata in Cockpit: proposals, override and incident rates over 30 days.");
-            await click(custos().locator("#promote-form summary"));
-            await custos().locator("#category-select").selectOption("patch-errata");
-            await click(custos().locator("#promote-form button:text-is('Promote')"));
-            const error = custos().locator("#error");
-            await error.getByText(/not ready/).waitFor({ timeout: 60000 });
-            await point(error, 200);
-            await caption("Promoting it now is refused. After promotion, custos-demote.timer demotes it again on overrides, rollbacks or an incident.");
-            await unpoint(error);
-            await click(error.locator("button:text-is('Dismiss')"));
+        await card("mcp-gateway and Custos", "The agentic loop: a technical walkthrough", 5000);
+        await caption(demo);
+        await scene("log in", () => login("The installed packages in openSUSE Leap 16 with SELinux enforcing, driven as the person carol."));
+        await loop({
+            meet: "web-doctor: a systemd unit (agent@web-doctor) with its own user and SELinux domain. Its event names shop-web.service.",
+            supervised: "Its permissions are gateway data: probe is read-only; change is in task category config-lifecycle and needs an approval.",
+            observeTerminal: [
+                ["systemctl show -p OnFailure --value shop-web.service", "agent-admin put an OnFailure= drop-in on the unit: its failure starts agent-event@."],
+                ["systemctl start shop-web.service", "Failing it, as root, in the terminal."],
+            ],
+            observe: "The event's activity: origin event, by unit-failure:shop-web.service, started as root and damped per unit.",
+            diagnose: "The report (report_diagnosis): hypotheses cite evidence; the host verifies each quote against the tool calls' output.",
+            feedback: "Feedback through the root bridge (agent-admin feedback), recorded outside the agent as diagnosis.feedback.",
+            propose: "The change waits at the gateway: its approval item joins the call with the agent's proposal (R5), marked self-asserted.",
+            decide: async approval => {
+                await openGateway("/approvals/" + approval);
+                const item = gw().locator("#approval-" + approval);
+                await item.waitFor({ timeout: 60000 });
+                await show(item, "Decided on mcp-gateway's own Cockpit page this time: the same broker as Custos's page, the approval page, mail and the CLI.");
+                await click(item.locator("button:not(.danger)").first());
+                await gw().locator("#approvals").getByText(/not pending|Nothing to decide/).waitFor({ timeout: 30000 });
+            },
+            act: "The history joins the agent's records and the gateway's audit by approval id: proposed, approved by carol via cockpit, executed.",
+            actGateway: "The gateway's audit: decision, mcp-approval and mcp-result, in mcp-gateway.service's journal.",
+            learnTerminal: [
+                ["agent-admin readiness web-doctor config-lifecycle | jq -c '.categories[\"config-lifecycle\"] | {ready, proposals, override_rate, unmet}'",
+                 "Readiness from the gateway's decisions, not the agent's records. This demo's thresholds are low; the defaults are 14 days and 50 proposals."],
+            ],
+            learn: "The same measures in Cockpit, read as root through the bridge.",
+            envelope: "The envelope: windows the gateway's policy checks, and a rate it enforces per tool (approval_over_rate, its R6).",
+            promote: "agent-admin promote: recorded as category.promoted, with the measures, by carol through the root bridge.",
+            alone: "The next failure: the change ran without an approval, inside the window and under the rate.",
+            review: "Autonomous calls become review items: here, and for the gateway's approvers (its R4).",
+            reason: "Restarts hide that the upstream app keeps failing.",
+            demote: "An incident verdict demotes the category at once (category.review, category.demoted); custos-demote.timer also demotes on overrides and rollbacks.",
+            demoteTerminal: [
+                ["journalctl -o json --no-pager -n 3 SYSLOG_IDENTIFIER=custos-promotion AGENT_NAME=web-doctor | jq -c '{AGENT_EVENT, AGENT_CATEGORY, AGENT_MODE_TO, AGENT_VERDICT}'",
+                 "root's records of each step, which readiness and the evaluator trust: never the agent's own."],
+            ],
         });
         await scene("the emergency stop", () => emergencyStop({
             button: "Stop all agents: agent-admin stop-all, as carol with administrative access.",

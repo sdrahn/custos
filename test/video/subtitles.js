@@ -1,13 +1,30 @@
 /* Subtitles of the demonstration videos (test/video/tour.js): cues timed
  * against the recording's start, written as SRT and WebVTT (for players)
- * and as ASS for render.sh to burn into the band below the pages. */
+ * and as ASS for render.sh to burn into the band below the pages. With
+ * stages (the agentic loop's), the ASS file also has the loop's strip at
+ * the top of the band: every stage, the current one lit, those passed
+ * marked. */
 "use strict";
 
 class Subtitles {
     /* now: milliseconds since the recording started. */
-    constructor(now) {
+    constructor(now, stages = []) {
         this.now = now;
         this.cues = [];
+        this.stages = stages;
+        // When each stage was the current one: {start, end, index}.
+        this.spans = [];
+    }
+
+    /* stage makes the stage named current from now; null: none. */
+    stage(name) {
+        const t = this.now();
+        const last = this.spans[this.spans.length - 1];
+        if (last && last.end === null) last.end = Math.max(t, last.start + 1);
+        if (name === null) return;
+        const index = this.stages.indexOf(name);
+        if (index < 0) throw new Error("no stage " + name);
+        this.spans.push({ start: t, end: null, index });
     }
 
     /* show starts a cue (ending the one before) and returns how long to
@@ -34,8 +51,16 @@ class Subtitles {
         return "WEBVTT\n\n" + this.cues.map(c => `${stamp(c.start, ".")} --> ${stamp(c.end, ".")}\n${c.text}\n`).join("\n");
     }
 
-    /* ass: for 1920×1080, the cues centred in the 120-pixel band at the
-     * bottom (render.sh scales the pages to 1920×960 above it). */
+    /* loopLine: the strip's text while stage index is current (ASS colour
+     * overrides are blue-green-red). */
+    loopLine(index) {
+        return this.stages.map((n, i) => i === index ? `{\\c&H3F7CFE&\\b1}${n}{\\r}` :
+            i < index ? `{\\c&H78BA30&}${n}{\\r}` : n).join("  ›  ");
+    }
+
+    /* ass: for 1920×1080: the pages are 1856×928 at the top (render.sh),
+     * the band below them holds the loop's strip at its top and the cues
+     * centred at its bottom. */
     ass() {
         const esc = t => t.replace(/\\/g, "\\\\").replace(/[{}]/g, m => "\\" + m).replace(/\n/g, "\\N");
         return [
@@ -43,9 +68,11 @@ class Subtitles {
             "[V4+ Styles]",
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, " +
                 "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            "Style: Default,DejaVu Sans,34,&H00FFFFFF,&H00FFFFFF,&H002C320C,&H002C320C,0,0,0,0,100,100,0,0,1,0,0,2,80,80,22,1", "",
+            "Style: Default,DejaVu Sans,32,&H00FFFFFF,&H00FFFFFF,&H002C320C,&H002C320C,0,0,0,0,100,100,0,0,1,0,0,2,80,80,14,1",
+            "Style: Loop,DejaVu Sans,24,&H009A9A9A,&H009A9A9A,&H002C320C,&H002C320C,0,0,0,0,100,100,0,0,1,0,0,8,40,40,940,1", "",
             "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
             ...this.cues.map(c => `Dialogue: 0,${assStamp(c.start)},${assStamp(c.end)},Default,,0,0,0,,${esc(c.text)}`),
+            ...this.spans.map(s => `Dialogue: 0,${assStamp(s.start)},${assStamp(s.end === null ? Math.max(this.now(), s.start + 1) : s.end)},Loop,,0,0,0,,${this.loopLine(s.index)}`),
         ].join("\n") + "\n";
     }
 }

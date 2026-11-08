@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/sdrahn/custos/internal/openai"
@@ -153,5 +154,48 @@ func TestScriptObeysInjections(t *testing.T) {
 		if call != want {
 			t.Errorf("%q: %q, want %q", note, call, want)
 		}
+	}
+}
+
+// The demonstration's story (test/video): for its event prompt, the probe,
+// then a report quoting the probe, then restarting the unit as a change,
+// then the usual answer to the change's result.
+func TestUnitStory(t *testing.T) {
+	m := &Model{Prefix: "custos-test"}
+	tools := []string{"custos-test__probe", "custos-test__change", "report_diagnosis"}
+	r := req("The unit shop-web.service failed. Find out why and propose a fix.\n(systemd: Result: exit-code)", tools...)
+	step := func(want string) map[string]any {
+		t.Helper()
+		got := m.Respond(r)
+		if len(got.ToolCalls) != 1 || got.ToolCalls[0].Function.Name != want {
+			t.Fatalf("want a call of %s, got %+v", want, got)
+		}
+		var args map[string]any
+		json.Unmarshal([]byte(got.ToolCalls[0].Function.Arguments), &args)
+		// The tool's answer, as the host returns it.
+		out := map[string]string{"custos-test__probe": "probe ok", "report_diagnosis": "{\"ok\":true}",
+			"custos-test__change": "changed restart shop-web.service"}[want]
+		r.Messages = append(r.Messages, got, message{Role: "tool", ToolCallID: got.ToolCalls[0].ID, Content: &out})
+		return args
+	}
+	step("custos-test__probe")
+	rep := step("report_diagnosis")
+	ev := rep["evidence"].([]any)[0].(map[string]any)
+	if ev["quote"] != "probe ok" || ev["tool"] != "custos-test__probe" || !strings.Contains(rep["summary"].(string), "shop-web.service") {
+		t.Errorf("report: %v", rep)
+	}
+	if ch := step("custos-test__change"); ch["value"] != "restart shop-web.service" {
+		t.Errorf("change: %v", ch)
+	}
+	if got := m.Respond(r); got.Content == nil || *got.Content != "done: changed restart shop-web.service" {
+		t.Errorf("after the change: %+v", got)
+	}
+	// Without the tools, the story steps aside: the usual answers.
+	if got := m.Respond(req("The unit shop-web.service failed. Find out why and propose a fix.")); got.Content == nil || *got.Content != "ok" {
+		t.Errorf("without tools: %+v", got)
+	}
+	// The functional tests' event prompt is not the story's.
+	if got := m.Respond(req("The unit evtest-fail.service failed.", tools...)); got.Content == nil || *got.Content != "ok" {
+		t.Errorf("the functional tests' prompt: %+v", got)
 	}
 }

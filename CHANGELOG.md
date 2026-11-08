@@ -7,6 +7,35 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- The demonstration videos follow one problem through the agentic loop
+  (#149), with a strip below the pages that lights up each stage. A
+  service fails, and its event starts web-doctor (observe). Its report
+  is confirmed (diagnose). It proposes a restart (propose). A person
+  approves it on the gateway's approval page, or on mcp-gateway's
+  Cockpit page in the technical version (decide). It runs, on both
+  records (act). Readiness follows (learn). The category is promoted
+  with an envelope (promote). The next failure is fixed without asking
+  (act). That action is reviewed (review). "Should not have run"
+  demotes it (demote). The demonstration's readiness thresholds are
+  low, and a subtitle says so. custos-tests' scripted model answers
+  that event's prompt with a probe, a report and a restart.
+
+### Fixed
+
+- A field being typed in on the Agents tab (the promote form's envelope,
+  its reason, a kept editor) lost the keyboard focus at each refresh,
+  every five seconds: what was typed next went nowhere. The refresh now
+  gives the focus back, with the caret where it was.
+
+- Cockpit's form to promote a task category closed within five seconds
+  and lost the envelope being written: the Agents tab rebuilt the
+  agent's view, form included, at each refresh. So did the reason that
+  Demote and "Should not have run" record. The form and the reason are
+  now kept while the form is open or anything was typed, as the
+  permissions editor is, and start afresh once an action used them.
+
 ### Added
 
 - `model-eval.sh` (custos-tests) measures how well a model does Custos's

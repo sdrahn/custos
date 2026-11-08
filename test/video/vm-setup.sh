@@ -83,3 +83,44 @@ bash "$here/cockpit-vm-setup.sh" "$rpms" "$password" >&3
 
 echo "video-setup: carol, signed in at the identity provider, owns patch-pilot" >&2
 agent-admin owners patch-pilot remote-user:carol >/dev/null || die "agent-admin owners failed"
+
+# The agentic loop the videos follow (#149): a service that fails, and
+# web-doctor, whose event on it starts an activity at once. The scripted
+# model answers the event's prompt with a probe, a diagnosis report and a
+# restart as a change (test/vm/fakemodel); the change is in the task
+# category config-lifecycle, supervised until promoted.
+echo "video-setup: the loop's service and its agent" >&2
+printf '%s\n' '[Unit]' 'Description=Shop web front (Custos demonstration)' \
+	'[Service]' 'Type=oneshot' \
+	"ExecStart=/bin/sh -c 'echo \"shop-web: upstream app.internal:8080 is not answering\" >&2; exit 1'" \
+	>/etc/systemd/system/shop-web.service
+systemctl daemon-reload
+cat >/root/custos-cockpit/web-doctor.yaml <<'YAML'
+version: 1
+name: web-doctor
+description: Looks after the shop's web front.
+model: {provider: openai, name: qwen3-32b, endpoint: "http://127.0.0.1:8008/v1"}
+instruction: When a service fails, find out why, report it, and propose the fix.
+gateway: {servers: [custos-test]}
+limits: {max_invocation_seconds: 600}
+interaction: {agui: true, client_tools: deny}
+events:
+  - name: web-down
+    on_unit_failure: [shop-web.service]
+    prompt: "The unit {unit} failed. Find out why and propose a fix."
+    min_interval_seconds: 1
+YAML
+agent-admin delete web-doctor >/dev/null 2>&1 || true
+agent-admin create web-doctor --from /root/custos-cockpit/web-doctor.yaml >/dev/null || die "creating web-doctor failed"
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change, category: config-lifecycle}' |
+	agent-admin permissions web-doctor >/dev/null || die "web-doctor's permissions"
+agent-admin owners web-doctor remote-user:carol >/dev/null || die "web-doctor's owners"
+eventually 30 test -S /run/agents/web-doctor/api.sock || die "web-doctor has no socket"
+systemctl show -p OnFailure --value shop-web.service | grep -q 'agent-event@web-doctor_web-down' ||
+	die "shop-web.service has no OnFailure= for web-doctor"
+# Readiness the demonstration can reach in minutes; the videos say so.
+# (The defaults: 14 days, 50 proposals, at most 5 % overrides and 2 %
+# incidents.)
+printf '%s\n' '# custos demonstration videos (test/video/vm-setup.sh): reachable in minutes' \
+	'observation_days: 0' 'proposals: 1' 'override_rate: 0.5' 'incident_rate: 0.5' 'window_days: 30' \
+	'diagnostics_feedback: 0' 'diagnostics_confirmed_rate: 0' >/etc/custos/promotion.yaml

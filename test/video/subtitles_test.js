@@ -37,4 +37,25 @@ const ass = s2.ass();
 assert.ok(ass.includes("PlayResX: 1920") && ass.includes("PlayResY: 1080"));
 // ASS override braces and backslashes are escaped: the text shows as is.
 assert.ok(ass.includes("Dialogue: 0,0:00:00.00,0:00:03.20,Default,,0,0,0,,One \\{brace\\} and a back\\\\slash"), ass);
+// The loop's strip: one line per stage span, the current stage lit (orange,
+// bold), those before it marked (green), the rest plain.
+t = 0;
+const s4 = new Subtitles(() => t, ["Observe", "Decide", "Act"]);
+s4.stage("Observe");
+t = 2000;
+s4.stage("Decide");
+t = 5000;
+s4.stage(null);
+assert.deepStrictEqual(s4.spans.map(x => [x.start, x.end, x.index]), [[0, 2000, 0], [2000, 5000, 1]]);
+assert.throws(() => s4.stage("Dream"), /no stage Dream/);
+assert.strictEqual(s4.loopLine(1), "{\\c&H78BA30&}Observe{\\r}  ›  {\\c&H3F7CFE&\\b1}Decide{\\r}  ›  Act");
+const ass4 = s4.ass();
+assert.ok(ass4.includes("Style: Loop,"), ass4);
+assert.ok(ass4.includes("Dialogue: 0,0:00:02.00,0:00:05.00,Loop,,0,0,0,,{\\c&H78BA30&}Observe"), ass4);
+// A stage still current when the file is written ends now.
+t = 0;
+const s5 = new Subtitles(() => t, ["Observe"]);
+s5.stage("Observe");
+t = 1500;
+assert.ok(s5.ass().includes("Dialogue: 0,0:00:00.00,0:00:01.50,Loop"), s5.ass());
 console.log("subtitles: ok");
