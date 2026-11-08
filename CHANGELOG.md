@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- Cockpit's form to promote a task category closed within five seconds
+  and lost the envelope being written: the Agents tab rebuilt the
+  agent's view, form included, at each refresh. So did the reason that
+  Demote and "Should not have run" record. The form and the reason are
+  now kept while the form is open or anything was typed, as the
+  permissions editor is, and start afresh once an action used them.
+
 ### Added
 
 - Demonstration videos of mcp-gateway and Custos, without audio and with
