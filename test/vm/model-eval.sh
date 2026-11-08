@@ -94,10 +94,22 @@ if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}"; then
 fi
 log "the model answers chat completions"
 # And one with a tool, as every agent's is: a model whose tool calls its
-# server cannot parse fails here as it would in every run.
-probe=$(complete "$(jq -nc --arg m "$model_name" --arg nt "$nt" '{model: $m, stream: false,
-	messages: [{role: "user", content: ("Call the tool probe, then answer with its result." + $nt)}],
-	tools: [{type: "function", function: {name: "probe", description: "Says whether the system is fine.", parameters: {type: "object", properties: {}}}}]}')")
+# server cannot parse fails here as it would in every run. With
+# --no-think, a model whose tool calls the server cannot parse without
+# thinking (Ollama's qwen3:4b: "invalid character '<'") is tried with
+# thinking, and measured so (the results say "thinking": true).
+tool_probe() {
+	complete "$(jq -nc --arg m "$model_name" --arg nt "$nt" '{model: $m, stream: false,
+		messages: [{role: "user", content: ("Call the tool probe, then answer with its result." + $nt)}],
+		tools: [{type: "function", function: {name: "probe", description: "Says whether the system is fine.", parameters: {type: "object", properties: {}}}}]}')"
+}
+probe=$(tool_probe)
+if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}" && [ -n "$no_think" ]; then
+	log "with /no_think, the server does not parse the model's tool calls: $(head -c 300 <<<"${probe%$'\n'HTTP*}")"
+	no_think= nt=
+	probe=$(tool_probe)
+	jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}" && log "with thinking it does: measuring with thinking"
+fi
 if ! jq -e '.choices' >/dev/null 2>&1 <<<"${probe%$'\n'HTTP*}"; then
 	echo "model-eval: the model does not answer a chat completion with a tool:" >&2
 	head -c 600 <<<"$probe" >&2
