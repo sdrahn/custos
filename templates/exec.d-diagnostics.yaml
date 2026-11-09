@@ -40,6 +40,14 @@ commands:
     description: SELinux mode, policy and its state (sestatus)
     argv: [/usr/bin/env, sestatus]
     read_only: true
+  reboot_status:
+    description: Whether an update waits for a reboot (/run/reboot-needed), the running kernel and the installed ones
+    # zypper and transactional-update write /run/reboot-needed after an
+    # update that needs a reboot. Which services wait for a restart
+    # (zypper ps) is not here: it reads other users' processes, and the
+    # command runs as the agent's user.
+    argv: [/usr/bin/sh, -c, "if [ -e /run/reboot-needed ]; then echo 'A reboot is pending: /run/reboot-needed exists (an update needs one).'; else echo 'No reboot is pending: /run/reboot-needed does not exist.'; fi; echo \"Running kernel: $(uname -r)\"; echo \"Installed kernels: $(ls /usr/lib/modules 2>/dev/null | tr '\\n' ' ')\""]
+    read_only: true
   package_dependencies:
     description: Unsatisfied dependencies of the installed packages; no file checks (rpm -Va --nofiles)
     # --noscripts: no package's %verify script runs; this only reads.

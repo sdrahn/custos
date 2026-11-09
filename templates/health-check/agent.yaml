@@ -37,7 +37,6 @@ gateway:
     - systemd__list_loaded_units
     - systemd__list_log
     - systemd__get_file
-    - systemd__check_restart_reload
     - exec__disk_usage
     - exec__memory_usage
     - exec__pressure_stall
@@ -50,6 +49,7 @@ gateway:
     - exec__boot_blame
     - exec__selinux_status
     - exec__package_dependencies
+    - exec__reboot_status
     - zypp__check_updates
     - snapper__list_snapshots
     - tukit__get_status

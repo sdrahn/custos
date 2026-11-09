@@ -1478,6 +1478,15 @@ if command -v custos-setup >/dev/null; then
 				exec_failed="$exec_failed $tool"
 			}
 		done
+		# reboot_status (update-status): whether a reboot is pending, and
+		# the running kernel among the installed ones, as the agent's user.
+		reboot_says() {
+			local a
+			a=$(run_activity health-check "CALL exec__reboot_status")
+			jq -e --arg k "$(uname -r)" '.summary | (contains("reboot is pending") or contains("No reboot is pending")) and contains("Running kernel: " + $k) and contains("Installed kernels: ") and (split("Installed kernels: ")[1] | contains($k))' <<<"$a" >/dev/null ||
+				{ echo "    | the activity: $(jq -c '{state, summary}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+		}
+		check "exec__reboot_status says whether a reboot is pending, with the running kernel among the installed ones" reboot_says
 		# Custos's server custos-net: the network commands in the host's
 		# network namespace (network_view: host, mcp-gateway R7), which
 		# the exec server's instances do not see.
