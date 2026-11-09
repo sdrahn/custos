@@ -158,3 +158,48 @@ func TestBridgeRefusesRootsEvents(t *testing.T) {
 		}
 	}
 }
+
+// An earlier connection's TIME_WAIT entry for the same addresses, which
+// the kernel lists with uid 0, is not the socket the relay reached: only
+// a connected entry counts. Otherwise the check failed on OBS's aarch64
+// builds, and a local user's listener could pass as root's by closing a
+// connection first.
+func TestPeerUIDSkipsTimeWait(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skip(err)
+	}
+	defer ln.Close()
+	c, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	remote := procAddr(c.RemoteAddr().(*net.TCPAddr))
+	local := procAddr(c.LocalAddr().(*net.TCPAddr))
+	row := func(st string, uid int) string {
+		return fmt.Sprintf("   1: %s %s %s 00000000:00000000 00:00000000 00000000 %5d        0 1 0000000000000000 20 4 30 10 -1", remote, local, st, uid)
+	}
+	header := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
+	dir := t.TempDir()
+	defer func(p []string) { ProcNetTCP = p }(ProcNetTCP)
+	for name, rows := range map[string][]string{
+		"time-wait first": {row("06", 0), row("01", 1234)},
+		"syn-recv":        {row("06", 0), row("03", 1234)},
+		"only time-wait":  {row("06", 0)},
+	} {
+		p := dir + "/" + strings.ReplaceAll(name, " ", "-")
+		os.WriteFile(p, []byte(header+"\n"+strings.Join(rows, "\n")+"\n"), 0o644)
+		ProcNetTCP = []string{p}
+		uid, err := peerUID(c)
+		if name == "only time-wait" {
+			if err == nil {
+				t.Errorf("%s: uid %d, want no socket", name, uid)
+			}
+			continue
+		}
+		if err != nil || uid != 1234 {
+			t.Errorf("%s: uid %d, %v; want 1234", name, uid, err)
+		}
+	}
+}

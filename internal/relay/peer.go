@@ -19,7 +19,13 @@ import (
 // after each connection, before anything is sent, the socket it reached
 // must belong to root. The kernel's socket table says whose it is: the
 // entry whose local address is the port and whose remote address is the
-// relay's end of this connection.
+// relay's end of this connection, in a connected state. A closed
+// connection of the same addresses can still be in the table, as
+// TIME_WAIT, which the kernel lists with uid 0: on loopback the next
+// connection may reuse its ports. Counting that entry would let any local
+// user's listener pass as root's, by closing a connection first, and
+// fails the check for a listener that is not root's (OBS's aarch64
+// builds of 0.5.0).
 
 // ProcNetTCP are the kernel's TCP socket tables the owner is read from.
 var ProcNetTCP = []string{"/proc/net/tcp", "/proc/net/tcp6"}
@@ -67,7 +73,7 @@ func peerUID(c net.Conn) (int, error) {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			fs := strings.Fields(sc.Text())
-			if len(fs) < 8 || fs[1]+" "+fs[2] != want {
+			if len(fs) < 8 || fs[1]+" "+fs[2] != want || !connected[fs[3]] {
 				continue
 			}
 			f.Close()
@@ -77,6 +83,12 @@ func peerUID(c net.Conn) (int, error) {
 	}
 	return 0, fmt.Errorf("the socket at %s is not in the kernel's tables", remote)
 }
+
+// connected are the states (the table's st, in hex) of the other end of
+// a connection just made: ESTABLISHED, or SYN_RECV until the handshake's
+// last ACK arrives. Not TIME_WAIT (06) or CLOSE (07), which are an
+// earlier connection's.
+var connected = map[string]bool{"01": true, "03": true}
 
 // procAddr is an address as /proc/net/tcp{,6} writes it: the IP in hex,
 // 32-bit words in host byte order (little endian), and the port in hex.
