@@ -84,7 +84,11 @@ their states and the agent's stated rationale. **Show the full
 response** opens all of it in a dialog, with its Markdown rendered:
 tables, headings, lists and code. It is the model's own text; the page
 never runs it as HTML and shows a link's address instead of following
-it. **Copy as text** copies it as the model wrote it. A call waiting for approval links to the Approvals tab.
+it. **Copy as text** copies it as the model wrote it. *The model*
+says how much the model thought before answering (its thinking is not
+kept; `model.reasoning_effort: none` turns it off) and whether it
+answered a playbook in text, so that the host asked it once for its
+report, and whether it filed one. A call waiting for approval links to the Approvals tab.
 **Cancel activity** ends a running activity. The page cancels as the
 person first, which works for their own activities, and else through
 administrative access.

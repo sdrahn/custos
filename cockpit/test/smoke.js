@@ -799,6 +799,20 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // its evidence Custos verified; feedback through the root bridge.
     await page.goto(url + "?report#/activity/patch-pilot/e-33b0cafe");
     await page.waitForSelector("#report");
+    check(!(await page.$("#model-view")), "an activity whose model neither thought nor was asked for its report has no model section");
+    // The model's thinking and the report nudge (§14c), when there were.
+    await page.goto(url + "?report&nudged#/activity/patch-pilot/e-33b0cafe");
+    await page.waitForSelector("#model-view");
+    check((await page.textContent("#model-thought")).includes("It thought 15 KB before answering") &&
+          (await page.textContent("#model-nudged")).includes("asked it once to file one, and it did.") &&
+          (await page.textContent("#model-view")).includes("3 model calls"),
+          "the activity says how much its model thought, and that the host asked it for the report, which it filed");
+    await page.goto(url + "?nudged&noreport#/activity/patch-pilot/e-33b0cafe");
+    await page.waitForSelector("#model-nudged");
+    check((await page.textContent("#model-nudged")).includes("It did not: its answer is the response above."),
+          "and when it did not file it, that its answer is the response");
+    await page.goto(url + "?report#/activity/patch-pilot/e-33b0cafe");
+    await page.waitForSelector("#report");
     // The agent's response (§4 response): its start in the detail, all of
     // it in a dialog, rendered from its Markdown and never as HTML.
     check((await page.textContent("#activity-detail .response")).includes("3 patches pending"), "the detail shows the start of the response");
