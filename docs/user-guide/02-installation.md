@@ -116,7 +116,7 @@ It then:
    `--restarts`, and `mcp-gateway-restarts-server` installed, it links
    that server's profile there too, for the services `update-status`
    finds waiting for a restart. The server holds `CAP_SYS_PTRACE`, so
-   offering it is a choice of its own ([chapter 9](09-administration.md#playbooks)).
+   offering it is a choice of its own ([chapter 9](09-administration.md#playbook-tools)).
 
 Each step prints `done`, `already` or `skipped` with why: running it
 again changes only what differs, and never goes back to diagnostics-only
