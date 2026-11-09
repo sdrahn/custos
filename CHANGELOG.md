@@ -38,8 +38,11 @@ removed.
   (#155): every agent's instruction ends with the host's paragraph
   saying so, and an output that reads like instructions reaches the
   model with the host's notice beside it (`custos_notice`), naming the
-  signs; `tool.result` records them (`AGENT_INJECTION_SIGNS`). Advice to
-  the model; the gateway's approval stays the boundary.
+  signs; `tool.result` records them (`AGENT_INJECTION_SIGNS`). An
+  output that came back as an error and a client tool's result get it
+  too, and a `custos_notice` inside an output is a sign of its own
+  (security review 0.6, P4–P7). Advice to the model; the gateway's
+  approval stays the boundary.
 - `{unit_re}` in a playbook step's arguments: the unit escaped for a
   regular expression (security review 0.6, N5). `service-health`'s
   journal pattern uses it, so that `nginx.service` no longer also matches
@@ -88,6 +91,12 @@ removed.
 
 ### Fixed
 
+- A tool's error output reached the journal (`AGENT_REASON` on
+  `tool.result`) and the activity record (`calls[].reason`) verbatim,
+  for example the whole stdout and stderr of an exec command that
+  exited non-zero. Both now keep the gateway's reason (`mcp-gateway: …`)
+  or a fixed text with the output's size, never the output (security
+  review 0.6, P4a).
 - Security review 0.6 (`docs/security-review-0.6.md`) of the seal of
   the agents' data: any `agent-admin` write, and `seal --agents`, signed
   an agent's data edited by hand as it was, which the gateway then

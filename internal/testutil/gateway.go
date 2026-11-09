@@ -23,6 +23,9 @@ type Gateway struct {
 	Tools []string
 	// Block names tools whose calls never return (for cancel tests).
 	Block map[string]bool
+	// Fail names tools whose calls return their output as an error
+	// (isError), as the exec server does for a non-zero exit.
+	Fail map[string]bool
 	// Legacy: approval notices name only the tool (mcp-gateway before
 	// sdrahn/mcp-gateway#333), no call in _meta.
 	Legacy bool
@@ -40,7 +43,7 @@ type Gateway struct {
 
 // StartGateway listens on dir/mcp.sock.
 func StartGateway(t *testing.T, dir string, tools []string) *Gateway {
-	g := &Gateway{Socket: dir + "/mcp.sock", Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, decisions: map[string]chan bool{}}
+	g := &Gateway{Socket: dir + "/mcp.sock", Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, Fail: map[string]bool{}, decisions: map[string]chan bool{}}
 	l, err := net.Listen("unix", g.Socket)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +184,7 @@ func (g *Gateway) call(id json.RawMessage, name string, args map[string]any, tok
 		}
 		write(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": params})
 		if !<-g.decision(aid) {
-			text("Forbidden: declined by an approver", true)
+			text("mcp-gateway: declined by an approver", true) // as mcp-gateway words a denial
 			return
 		}
 	}
@@ -189,7 +192,7 @@ func (g *Gateway) call(id json.RawMessage, name string, args map[string]any, tok
 	g.Executed = append(g.Executed, name)
 	g.mu.Unlock()
 	b, _ := json.Marshal(args)
-	text(name+" done with "+string(b), false)
+	text(name+" done with "+string(b), g.Fail[name])
 }
 
 func splitTool(n string) (string, string) {
@@ -214,7 +217,7 @@ func StartHTTPGateway(t *testing.T, tools []string) (*Gateway, string) {
 
 // NewGateway returns a fake gateway.
 func NewGateway(tools []string) *Gateway {
-	return &Gateway{Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, decisions: map[string]chan bool{}}
+	return &Gateway{Tools: tools, Ask: map[string]string{}, Block: map[string]bool{}, Fail: map[string]bool{}, decisions: map[string]chan bool{}}
 }
 
 // Pending reports whether approval id waits for Decide.
