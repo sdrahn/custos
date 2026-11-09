@@ -36,11 +36,13 @@ type ModelDefaults struct {
 	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
 	// TimeoutSeconds: model.timeout_seconds (0: none).
 	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	// MaxOutputTokens: model.max_output_tokens (0: none).
+	MaxOutputTokens int `yaml:"max_output_tokens,omitempty" json:"max_output_tokens,omitempty"`
 }
 
 func (m *ModelDefaults) config() config.Model {
 	return config.Model{Provider: m.Provider, Name: m.Name, Endpoint: m.Endpoint, Credential: m.Credential, Temperature: m.Temperature,
-		TimeoutSeconds: m.TimeoutSeconds}
+		TimeoutSeconds: m.TimeoutSeconds, MaxOutputTokens: m.MaxOutputTokens}
 }
 
 // ParseDefaults reads and checks a defaults file.
@@ -125,6 +127,9 @@ func renderModel(m *ModelDefaults, comment string) []byte {
 	}
 	if m.TimeoutSeconds > 0 {
 		b.WriteString("  timeout_seconds: " + strconv.Itoa(m.TimeoutSeconds) + "\n")
+	}
+	if m.MaxOutputTokens > 0 {
+		b.WriteString("  max_output_tokens: " + strconv.Itoa(m.MaxOutputTokens) + "\n")
 	}
 	return []byte(b.String())
 }

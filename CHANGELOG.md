@@ -33,6 +33,12 @@ removed.
   model's calls: how many, the largest prompt, the tokens written and
   the longest call. A run that ends in prose keeps the answer and
   whether it names the fault.
+- `model.max_output_tokens`: how much the model may write in one answer
+  (#155). A small model can write without end; with a limit its answer
+  is cut off there, and the `model.call` record says so
+  (`AGENT_CUT_OFF`). It is kept when Cockpit saves the model defaults.
+  `model-eval.sh --max-output TOKENS` sets it (CI: 2048) and counts the
+  cut-off calls.
 - The seal covers each agent's gateway data and the agents' token
   issuers too (#158, the rest of security review M5). `agent-admin`
   signs them as it writes them; the gateway denies an agent whose data

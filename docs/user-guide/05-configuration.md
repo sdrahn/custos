@@ -26,6 +26,7 @@ model:
   credential: model-key          # optional
   temperature: 0.2               # optional
   timeout_seconds: 1800          # optional
+  max_output_tokens: 2048        # optional
 instruction: |
   You keep this host patched. Look before you change anything.
 gateway:
@@ -71,6 +72,9 @@ has no limit of its own, and only `limits.max_invocation_seconds` bounds
 it with the rest of the activity. Set it when a model server should be
 given up on sooner, or leave it out for a slow local model whose prompts
 grow with each tool result ([chapter 12](12-troubleshooting.md#model)).
+`max_output_tokens` bounds one answer in tokens (absent or `0`: the
+server's limit). A small model may write without end; a limit cuts it
+off (`AGENT_CUT_OFF` in `model.call`). 2048 fits a diagnosis report.
 `credential` is the **name** of a secret stored with
 `agent-admin set-credential`, such as `model-key`, never the key itself
 ([below](#model-credentials)). An unknown key in `model:`, such as
@@ -113,21 +117,21 @@ on a host you use. CI measures the models of `test/vm/eval-models` the
 same way for each release (job `models`).
 
 What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
-(4 vCPUs, 16 GB, no GPU), thinking off, four planted faults, at most
-20 minutes per diagnosis run:
+(4 vCPUs, 16 GB, no GPU), thinking off, `max_output_tokens: 2048`, four
+planted faults, at most 20 minutes per diagnosis run:
 
 | Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
 |---|---|---|---|---|---|---|
-| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 951 s | 2/7 |
-| Qwen3 4B | 0/4 | 0/4 | 0 | – | 1200 s | 0/7 |
-| Qwen3 8B | 0/4 | 0/4 | 0 | – | 1202 s | 1/7 |
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 630 s | 1/7 |
+| Qwen3 4B | 0/4 | 0/4 | 0 | – | 557 s | 0/6 |
+| Qwen3 8B | 2/4 | 2/4 | 0 | 5/5 | 1202 s | 1/7 |
 
-No model up to 8B found a planted fault there. The prompts stay small
-(at most about 6,500 tokens), but 1.7B and 8B answer in prose instead
-of filing a report, and 4B's first answer in each run did not finish
-within the 20 minutes. Without a GPU, none of them is a diagnostician:
-plan for a model server with a GPU and a larger model, and measure it
-with `model-eval.sh` before you rely on it.
+8B filed reports for the unsynchronized clock and the full file system,
+each naming the fault with quotes Custos verified; its other runs
+ran out of time. 1.7B and 4B wrote to the output limit with neither an
+answer nor a tool call. On a CPU even 8B is too slow: plan
+for a model server with a GPU and a larger model, and measure it with
+`model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
 

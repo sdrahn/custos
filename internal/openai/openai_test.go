@@ -134,3 +134,49 @@ func TestNoArgumentSchema(t *testing.T) {
 		}
 	}
 }
+
+// model.max_output_tokens goes to the server as max_tokens; an answer the
+// server cut off there ("length") says so, and a tool call cut off in its
+// arguments is an error that names the limit.
+func TestMaxOutputTokens(t *testing.T) {
+	var got request
+	answer := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = request{}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(answer))
+	}))
+	defer srv.Close()
+	m := &Model{Endpoint: srv.URL, Name: "qwen"}
+	call := func(cfg *genai.GenerateContentConfig) (*model.LLMResponse, error) {
+		var resp *model.LLMResponse
+		var err error
+		for r, e := range m.LLM().GenerateContent(context.Background(), &model.LLMRequest{Config: cfg,
+			Contents: []*genai.Content{genai.NewContentFromText("why", genai.RoleUser)}}, false) {
+			resp, err = r, e
+		}
+		return resp, err
+	}
+
+	answer = `{"choices":[{"message":{"role":"assistant","content":"The unit failed because"},"finish_reason":"length"}],"usage":{"prompt_tokens":7,"completion_tokens":64}}`
+	resp, err := call(&genai.GenerateContentConfig{MaxOutputTokens: 64})
+	if err != nil || got.MaxTokens != 64 || resp.FinishReason != genai.FinishReasonMaxTokens || resp.Content.Parts[0].Text != "The unit failed because" {
+		t.Errorf("cut off: max_tokens %d, %+v %v", got.MaxTokens, resp, err)
+	}
+
+	answer = `{"choices":[{"message":{"role":"assistant","content":"Done."},"finish_reason":"stop"}],"usage":{}}`
+	resp, err = call(&genai.GenerateContentConfig{})
+	if err != nil || got.MaxTokens != 0 || resp.FinishReason != "" {
+		t.Errorf("no limit: max_tokens %d, %+v %v", got.MaxTokens, resp, err)
+	}
+	b, _ := json.Marshal(m.request(&model.LLMRequest{Config: &genai.GenerateContentConfig{}}))
+	if strings.Contains(string(b), "max_tokens") {
+		t.Errorf("max_tokens sent without a limit: %s", b)
+	}
+
+	answer = `{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"report_diagnosis","arguments":"{\"summary\":\"The unit"}}]},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`
+	_, err = call(&genai.GenerateContentConfig{MaxOutputTokens: 64})
+	if err == nil || err.Error() != "model endpoint: the answer was cut off after 64 tokens (model.max_output_tokens), in the arguments of report_diagnosis" {
+		t.Errorf("cut off in a tool call: %v", err)
+	}
+}

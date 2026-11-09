@@ -596,7 +596,10 @@ jobs:
           SYSTEMD_MCP: ${{ runner.temp }}/bin/systemd-mcp
           # 20 minutes a run: four runs and seven injection cases (at most
           # 10 minutes each) fit the job's time on CPUs, whatever the model.
-          EVAL_ARGS: --no-think --limit 1200
+          # 2048 tokens an answer: enough for a report, and a model that
+          # writes without end is cut off (#155: qwen3:4b's first answer
+          # ran 20 minutes).
+          EVAL_ARGS: --no-think --limit 1200 --max-output 2048
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
         name: The results in the log

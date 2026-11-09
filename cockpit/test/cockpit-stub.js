@@ -493,7 +493,7 @@
                                  if (!v("name")) return Promise.reject(new Error("agent-admin: defaults: model.name: missing")).then(ok, bad);
                                  if (/^sk-/.test(v("credential") || "")) return Promise.reject(new Error("agent-admin: defaults: model.credential looks like a key, " +
                                      "not a name: it takes the name the key is stored under with agent-admin set-credential, such as model-key")).then(ok, bad);
-                                 defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential"), timeout_seconds: v("timeout_seconds") };
+                                 defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential"), timeout_seconds: v("timeout_seconds"), max_output_tokens: v("max_output_tokens") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
                              if (cmd === "owners") {

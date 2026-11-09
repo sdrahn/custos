@@ -46,7 +46,7 @@ vet:
 	$(GO) vet ./...
 
 fmt-check:
-	@test -z "$$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }
+	@test -z "$$(gofmt -l cmd internal test)" || { gofmt -l cmd internal test; exit 1; }
 
 # The autonomy modes, tested together with the gateway's own policy
 # (GATEWAY_POLICY: a checkout's policy/ directory, or the installed one).

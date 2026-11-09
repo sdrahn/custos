@@ -181,7 +181,14 @@ anyway. Check in this order:
   `limits.max_invocation_seconds`), let the model server keep the prompt's
   common start between calls (prompt caching, such as llama.cpp's
   `--cache-reuse`, or vLLM's prefix caching), or give the model a faster
-  machine.
+  machine. A call that takes long with a small prompt is often a model
+  writing without end: set `model.max_output_tokens`.
+- **`the answer was cut off after … tokens (model.max_output_tokens), in
+  the arguments of …`**: the model reached its output limit while it
+  wrote a tool call, so the call is incomplete and is not made. Raise
+  `model.max_output_tokens`. An answer in prose cut off there is kept as
+  far as it got, and its `model.call` record has
+  `AGENT_CUT_OFF=max_output_tokens`.
 
 ## Approvals {#approvals}
 

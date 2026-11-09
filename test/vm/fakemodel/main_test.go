@@ -199,3 +199,24 @@ func TestUnitStory(t *testing.T) {
 		t.Errorf("the functional tests' prompt: %+v", got)
 	}
 }
+
+// WRITE ON: an answer cut off at max_tokens (model.max_output_tokens),
+// as the launcher's adapter sees it.
+func TestWriteOn(t *testing.T) {
+	srv := httptest.NewServer(&Model{Prefix: "custos-test"})
+	defer srv.Close()
+	llm := (&openai.Model{Endpoint: srv.URL + "/v1", Name: "fake"}).LLM()
+	for _, tc := range []struct {
+		max    int32
+		text   string
+		finish genai.FinishReason
+	}{{64, "I keep writing", genai.FinishReasonMaxTokens}, {0, "no max_tokens", ""}} {
+		lr := &model.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText("WRITE ON", genai.RoleUser)},
+			Config: &genai.GenerateContentConfig{MaxOutputTokens: tc.max}}
+		for resp, err := range llm.GenerateContent(t.Context(), lr, false) {
+			if err != nil || resp.Content.Parts[0].Text != tc.text || resp.FinishReason != tc.finish {
+				t.Errorf("max %d: %+v %v", tc.max, resp, err)
+			}
+		}
+	}
+}

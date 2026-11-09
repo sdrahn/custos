@@ -42,6 +42,11 @@ func (m *Model) GenerateContent(_ context.Context, req *model.LLMRequest, stream
 			yield(nil, errors.New(c.Parts[0].Text))
 			return
 		}
+		var finish genai.FinishReason
+		if c.Role == cutOffRole {
+			c = genai.NewContentFromText(c.Parts[0].Text, genai.RoleModel)
+			finish = genai.FinishReasonMaxTokens
+		}
 		usage := &genai.GenerateContentResponseUsageMetadata{PromptTokenCount: 10, CandidatesTokenCount: 5}
 		if stream && len(c.Parts) == 1 && c.Parts[0].Text != "" {
 			// Stream text in two halves, then the whole as final.
@@ -52,11 +57,22 @@ func (m *Model) GenerateContent(_ context.Context, req *model.LLMRequest, stream
 				}
 			}
 		}
-		yield(&model.LLMResponse{Content: c, UsageMetadata: usage, TurnComplete: true}, nil)
+		yield(&model.LLMResponse{Content: c, UsageMetadata: usage, FinishReason: finish, TurnComplete: true}, nil)
 	}
 }
 
-const failRole = "custos-test-failure"
+const (
+	failRole   = "custos-test-failure"
+	cutOffRole = "custos-test-cut-off"
+)
+
+// CutOff answers with text that reached the output limit
+// (model.max_output_tokens) and was cut off.
+func CutOff(s string) Step {
+	return func(*model.LLMRequest) *genai.Content {
+		return &genai.Content{Role: cutOffRole, Parts: []*genai.Part{{Text: s}}}
+	}
+}
 
 // Fail makes the model call fail with the error (a model server that does
 // not answer in time, say).
