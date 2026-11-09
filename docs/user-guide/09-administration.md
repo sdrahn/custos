@@ -342,6 +342,8 @@ steps marked `optional` are left out instead. The agent then reports
 what it found, its hypotheses and a remediation plan for you; it changes
 nothing.
 
+## What the playbooks need {#playbook-tools}
+
 Most playbooks need read-only commands for mcp-gateway's `exec` server
 (`mcp-gateway-exec-server`):
 
@@ -390,6 +392,8 @@ permission that names server and tool exactly, as the `health-check`
 template's does: `- {server: restarts, tool: pending_restarts, read_only: true, category: diagnostics}`.
 Each playbook's `needs` says what it uses.
 
+## Your own playbooks {#own-playbooks}
+
 Your own playbooks go in `/etc/custos/playbooks/`, one file per playbook,
 named after it; a file with a shipped name replaces that playbook, and an
 empty one hides it:
@@ -421,7 +425,7 @@ write `{unit_re}`: the unit with its dots escaped.
 
 `agent-admin playbooks` lists a file that does not parse with its error.
 
-### Diagnosis reports and your feedback {#reports}
+## Diagnosis reports and your feedback {#reports}
 
 An agent ends a playbook with a **diagnosis report**: a summary, its
 findings, its hypotheses about the cause, each with its confidence (low,
