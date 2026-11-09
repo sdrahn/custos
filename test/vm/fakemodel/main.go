@@ -60,7 +60,7 @@ type toolCall struct {
 }
 
 type request struct {
-	Model    string    `json:"model"`
+	Model     string    `json:"model"`
 	Messages  []message `json:"messages"`
 	MaxTokens int       `json:"max_tokens"`
 	Tools     []struct {
