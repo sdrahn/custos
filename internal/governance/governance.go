@@ -119,6 +119,9 @@ type Activity struct {
 	// Response is the model's last text in full (Summary is its start),
 	// at most ResponseMax bytes. GET /v1/activities leaves it out.
 	Response string `json:"response,omitempty"`
+	// ThoughtBytes is the size of the model's thinking over the
+	// activity's model calls (model.reasoning_effort), never its text.
+	ThoughtBytes int `json:"thought_bytes,omitempty"`
 }
 
 // SummaryMax and ResponseMax bound an activity's summary and response.
@@ -675,6 +678,11 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 		}
 		if n > 0 {
 			f["THOUGHT_BYTES"] = strconv.Itoa(n)
+			g.mu.Lock()
+			if in := g.inv[cctx.InvocationID()]; in != nil {
+				in.act.ThoughtBytes += n
+			}
+			g.mu.Unlock()
 		}
 	}
 	if resp != nil && resp.Content != nil {

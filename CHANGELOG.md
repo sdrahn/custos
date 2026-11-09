@@ -32,6 +32,10 @@ removed.
 
 ### Added
 
+- An activity says how much its model thought (`thought_bytes`, the sum
+  of its `model.call` records' `AGENT_THOUGHT_BYTES`), and Cockpit's
+  activity view says so, and whether the host had to ask the model for
+  the playbook's report (`report_nudged`) and whether it then filed one.
 - A playbook step takes the call's arguments (`args`), and `{unit}` in
   them is the unit the activity is about: the request's new `"unit"`
   (`POST /v1/activities`), or for an event that runs a playbook the unit

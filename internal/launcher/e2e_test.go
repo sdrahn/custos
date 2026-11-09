@@ -686,6 +686,10 @@ func TestModelThinking(t *testing.T) {
 	if len(mc) != 1 || mc[0].Fields["THOUGHT_BYTES"] != "33" {
 		t.Errorf("model.call %+v", mc)
 	}
+	// The activity says how much, never what.
+	if !strings.Contains(string(b), `"thought_bytes":33`) {
+		t.Errorf("the activity has no thought_bytes: %s", b)
+	}
 }
 
 // The reference launcher passes the contract's checks (test/contract), as
