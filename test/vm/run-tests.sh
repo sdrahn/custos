@@ -1484,11 +1484,13 @@ if command -v custos-setup >/dev/null; then
 			local a
 			a=$(run_activity health-check "CALL exec__reboot_status")
 			# The command's stdout, from the whole response (the summary
-			# is cut short, and repeats the script's own text).
+			# is cut short, and repeats the script's own text), which
+			# GET /v1/activities/{id} has.
+			a=$(api health-check "/v1/activities/$(jq -r .id <<<"$a")")
 			jq -e --arg k "$(uname -r)" '(.response // "" | ltrimstr("done: ") | fromjson | .output.stdout) |
 				(startswith("A reboot is pending") or startswith("No reboot is pending")) and contains("Running kernel: " + $k + "\n") and
 				(split("Installed kernels: ")[1] | split(" ") | index($k) != null)' <<<"$a" >/dev/null ||
-				{ echo "    | the activity: $(jq -c '{state, summary}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+				{ echo "    | the activity: $(jq -c '{state, response: (.response // "" | .[-400:])}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
 		}
 		check "exec__reboot_status says whether a reboot is pending, with the running kernel among the installed ones" reboot_says
 		# Custos's server custos-net: the network commands in the host's
