@@ -158,9 +158,12 @@ type Start struct {
 	// model's first turn.
 	Playbook string
 	Steps    []Step
-	Parent   *Ref
-	Root     *Ref
-	Cancel   context.CancelFunc
+	// Tools, for a playbook, are the gateway's tools the model is shown
+	// in the activity (§14c): the playbook's. Nil: every tool.
+	Tools  []string
+	Parent *Ref
+	Root   *Ref
+	Cancel context.CancelFunc
 	// Started, if set, is told the activity's id when it starts.
 	Started func(id string)
 }
@@ -198,6 +201,9 @@ type invocation struct {
 	// steps are the playbook steps the host runs, next the next one.
 	steps []Step
 	next  int
+	// only are the gateway's tools the model is shown (a playbook's);
+	// nil: every tool.
+	only map[string]bool
 }
 
 // History is how many ended activities are kept in memory; the journal
@@ -468,6 +474,12 @@ func (g *Governor) beforeRun(ictx agent.InvocationContext) (*genai.Content, erro
 	paused := g.paused
 	if !paused {
 		g.inv[id] = &invocation{session: s.ID(), user: s.UserID(), start: act.Started, act: act, cancel: st.Cancel, steps: st.Steps}
+		if st.Tools != nil {
+			g.inv[id].only = map[string]bool{}
+			for _, t := range st.Tools {
+				g.inv[id].only[t] = true
+			}
+		}
 	}
 	g.mu.Unlock()
 	f := journal.Fields{
@@ -578,6 +590,16 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 		Content:      genai.NewContentFromText(fmt.Sprintf("I stopped here: this agent's limit %s (%d) was reached.", name, value), genai.RoleModel),
 		TurnComplete: true,
 	}, nil
+}
+
+// Shows reports whether the model is shown the gateway's tool in the
+// invocation: in a playbook run only the playbook's tools (§14c, #155),
+// otherwise every tool the configuration shows.
+func (g *Governor) Shows(invID, tool string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	in := g.inv[invID]
+	return in == nil || in.only == nil || in.only[tool]
 }
 
 // stepArgs is a copy of a step's arguments (the call may be changed by
