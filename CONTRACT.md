@@ -183,6 +183,7 @@ started them.
 | `summary` | the agent's last text, at most 500 bytes (cut at a character, marked `…`) |
 | `response` | the agent's last text in full, at most 32 KiB (cut as `summary`), as the model wrote it: often Markdown. **Self-asserted by the agent**; a console renders it as text, never as HTML. Only in `GET /v1/activities/{id}` and an ended activity a `wait` returns, not in `GET /v1/activities` |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
+| `report_nudged` | `true` when the activity's model answered its playbook without a report and the host asked it once to file one (§14c, the report nudge); absent otherwise |
 | `thought_bytes` | the size of the model's thinking over the activity's model calls (§14, `model.reasoning_effort`; the `model.call` records' `AGENT_THOUGHT_BYTES`), never its text; absent when it did not think |
 
 Arguments never appear in activities or the journal (only
@@ -968,6 +969,7 @@ and without the `AGENT_` prefix):
 | `AGENT_PROMPT_BYTES` | `model.call` with `OUTCOME=error`: the size of the conversation sent (text and tool results), as the failed call reports no tokens. A failed call's record has `OUTCOME=error` and the error as `REASON`; an answered one has no `OUTCOME` |
 | `AGENT_CUT_OFF` | `model.call`: `max_output_tokens` when the answer reached `model.max_output_tokens` (§14) and was cut off; absent otherwise |
 | `AGENT_THOUGHT_BYTES` | `model.call`: the size of the model's thinking in the answer (§14, `model.reasoning_effort`), when there was any |
+| `AGENT_REPORT_NUDGE` | `model.call`: `1` when this answer of a playbook run had no report and no tool call, and the host asked for the report (§14c); absent otherwise |
 
 | `AGENT_EVENT` | `MESSAGE_ID` |
 |---|---|
@@ -1393,6 +1395,19 @@ and the activity's time. The model is told the steps were run, with their argume
 unit, and gets their outputs; it may call the playbook's tools, also a
 step's tool with other arguments, and it reports.
 
+**The report nudge** (#155). When the model answers a playbook run
+without a report and without a tool call (its answer in prose, as small
+models often do), the host asks it once more, in the same activity: it
+adds its own call of `report_diagnosis` (no arguments) to the model's
+answer and answers that call itself, without running the tool, with
+"Not recorded: you answered in text, and a diagnosis counts only as a
+report. Call report_diagnosis now …". The model's text stays in the
+conversation. Once per activity, after the steps, not when the activity
+was stopped or cancelled; the next model call counts toward
+`max_llm_calls` as any. The activity says so (`report_nudged`, §4) and
+so does the answer's `model.call` record (`AGENT_REPORT_NUDGE`, §10). It
+is no call of the agent's: not in `calls`, no `tool.call`.
+
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,
 `selinux-denials`, `time-sync`, `network-config` (the interfaces, routes,
@@ -1576,7 +1591,7 @@ packages are installed:
 ```
 custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
              [--provider openai|vertex|gemini] [--endpoint URL] --model NAME
-             [--credential-file FILE]
+             [--credential-file FILE] [--restarts]
 ```
 
 It is non-interactive and idempotent. In this order, each step printed
@@ -1599,9 +1614,12 @@ on standard output as `custos-setup: <step>: done|already|skipped
    running it says so. A copy of an earlier release's file, unchanged
    (by its digest), it replaces. It also copies the server definition
    `custos-net` into `/etc/mcp-gateway/servers.d/`, keeping one that
-   differs, and, when `mcp-gateway-restarts-server` is installed, links
-   its profile `/usr/share/mcp-gateway/profiles/restarts.yaml` there as
-   `restarts.yaml`, keeping a file of that name that is not the link.
+   differs, and, with `--restarts` and `mcp-gateway-restarts-server`
+   installed, links its profile `/usr/share/mcp-gateway/profiles/restarts.yaml`
+   there as `restarts.yaml`, keeping a file of that name that is not the
+   link. Without `--restarts` it makes no link (the server holds
+   `CAP_SYS_PTRACE`, so offering it is the administrator's own choice)
+   and keeps one that is there.
    All this before the agent, whose session then offers the commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,
@@ -1697,7 +1715,7 @@ with `CAP_SYS_PTRACE`, so installing it is the administrator's choice).
 | Pending action as an approval item with actions, evidence, impact; nothing state-changing without approval | §6 supervised default, §7 | done: enforced by the gateway's policy (tested with OPA against it, and on the real gateway in the functional tests); the agent's proposal (rationale, context, suspected-injection signs) with each call (§7, the gateway's R5), self-asserted; planned steps and impact as the model states them open (O6); the Cockpit Approvals tab, decisions as the person, tested in a real Cockpit (O9); the gateway's own approval page and mail decide the same items |
 | Outcome after execution; proposed → approved/rejected → executed history | §4, §10 "History of an action" | done (journal and activity API); Cockpit Audit tab done, the join tested on a real gateway (O9) |
 | Chat as one mode | §11 | done: AG-UI and ADK REST, tested; Cockpit chat, tested in a real Cockpit (O9) |
-| See autonomy mode and policy; adjust where permitted | §6 | done: gateway data and `agent-admin mode/permissions/show`; the Cockpit Agents and Policy tabs (with the gateway's own decision for a call), tested in a real Cockpit (O9) |
+| See autonomy mode and policy; adjust where permitted | §6 | done: gateway data and `agent-admin mode/permissions/show`; the Cockpit Agents and Policy tabs (with the gateway's own decision for a call), tested in a real Cockpit (O9); a category is promoted and its envelope changed with a form (windows, rate, rollback conditions, readiness), not a YAML text (#163) |
 | Stop / pause / override in-flight or scheduled activity; emergency stop | §8 | done: cancel, pause (host and gateway), stop-all (it stops the units and sandboxes without waiting for the gateway's policy to load the stop; security review M3); tested on the host, in policy, in the functional tests and in a real Cockpit |
 | On-premises, air-gapped | §14 (`provider: openai` with a local server), §19 (OBS) | done; no external service needed; the air-gapped gate (§20a) runs every release without network |
 | Independent of kit / any host | Part I is host-independent; §3 discovery by contract only | done: a second host (`test/vm/secondhost`, the standard library and the contract alone) passes the same conformance checks as the launcher (`test/contract`), and the Cockpit page lists, pauses and cancels on it in a real Cockpit (O8) |
@@ -1712,11 +1730,11 @@ the product and release process, tracked here so that nothing is lost.
 | Requirement | Contract | State in this repository |
 |---|---|---|
 | Supervised by default for every category; not configurable away at install | §6, §6a | done (§6, §6a) |
-| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, `rate` (the gateway's `rate_limit`, per tool) and `rollback` (the demotion evaluator), done; hosts and blast radius across hosts parked with the fleet (O13) |
+| Policy-bounded autonomy as a named destination, with an envelope (hosts, windows, rates, blast radius, rollback) | §6a | `bounded` with `windows`, `rate` (the gateway's `rate_limit`, per tool) and `rollback` (the demotion evaluator), done, and set in Cockpit with a form (#163); the evaluator runs a rollback health check only from agent data the seal covers (security review 0.6, N1); hosts and blast radius across hosts parked with the fleet (O13) |
 | Observation period, override rate, explicit authenticated promotion, demotion path | §6a, §10 | observation, override rate (with reviews of autonomous actions), promotion and demotion by hand, and automatic demotion on the override rate, rollback conditions and incident reviews, and on repeated rate caps (O12), done |
 | Per-category, not whole-agent, promotion; audit per category | §6a, §10 | done: `promote`, `demote`, promotion records (O11) |
 | Promotion-readiness view (override rate, incident rate, diversity, envelope size) | §6a | measures, thresholds, `agent-admin readiness` and the Cockpit view done, and `promote` checks them; envelope size open (O11) |
-| Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done |
+| Hard capability limits, audit trail, emergency stop | §6, §8, §10, §15, §18 | done; each agent's gateway data and the agents' token issuers are sealed (§6b, #158): the gateway counts them only with `agent-admin`'s signature, so an agent whose data was edited by hand is denied every call; `agent-admin` builds only on data that verifies, and `show` reports a copy signed earlier or on another host (security review 0.6) |
 | Prompt-injection defence | §6 (the gateway decides every call, never the model), §16a (egress fence) | the boundaries are done; the evaluation suite of injection attempts done, on every VM run with a model that obeys them and in the air-gapped gate with the tested model; a call to a tool not given recorded (`not offered`); a suspected injection shown with the approval item, with the output the model read before the call (O14) |
 | Service identity; privilege only through existing surfaces; MCP | §2, §6, §17 | done |
 | Fleet control plane: audit aggregation, policy distribution, approvals; mandatory above `N` hosts | §12 | parked (O13) |
@@ -1726,7 +1744,7 @@ the product and release process, tracked here so that nothing is lost.
 | Air-gapped as a release-gate test | §19 | CI runs with a scripted model; on release branches the air-gapped gate (CI job `airgap`, `test/airgap`) installs the packages, Ollama and a tested open-weight model (`test/airgap/versions`) from an offline mirror in a VM without network, and runs the functional tests with an agent on that model |
 | Signed distro component, updated through the errata pipeline | §19 | OBS packaging done; signing and errata *outside* |
 | Model serving runtime, model artifacts through errata and offline mirrors | — | *outside* |
-| Tested open-weight models (2 or 3) with model cards, validation evidence, deprecation policy | — | *outside*; the validation suite to run them against is O15 |
+| Tested open-weight models (2 or 3) with model cards, validation evidence, deprecation policy | — | *outside*; the validation suite to run them against is O15, and `model-eval.sh` (custos-tests) measures a model on planted faults and the injection cases, run by CI for each release (job `models`) with the results in the user guide (chapter 5); for small models on CPUs (#155) the host gives the playbooks' steps their arguments and runs them, shows a playbook run only its tools, bounds the model's output (`model.max_output_tokens`) and lets thinking be turned off (`model.reasoning_effort`) |
 | Reference hardware sizing for x86_64 and aarch64 (riscv64 excluded) | — | *outside* |
 | Safety report and EU AI Act high-risk evidence; support terms for AI-specific failures | — | *outside*; §6a and §10 supply the oversight and logging evidence |
 
@@ -1749,9 +1767,9 @@ inherited, not specified again.
 | Enabling more categories: one documented, authenticated, logged action; the result identical to a broader install with them | §6b, §17 | done: `agent-admin enable` (in Cockpit **Enable…**, which also shows the state and marks disabled categories), `categories.enabled`; the gate compares the gateway's decisions with a host without enablement state. The way back, `agent-admin disable` (**Disable…**), `categories.disabled`, done (#110) |
 | Enabled categories start supervised | §6a, §6b | done (§6a); nothing new needed |
 | The diagnostics history as trust evidence for promotion | §4a, §6a, §6b | done: `agent-admin readiness` and the Cockpit readiness view show the reports, their verified quotes and root's feedback on them; on a host that started diagnostics-only they are readiness thresholds (reports with feedback, confirmed share), so `promote` follows them |
-| The bundled health-check and diagnostics agent | §14a, §17a, §20b | done: the template `health-check` (every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules), which `custos-setup` creates; both tested on a diagnostics-only host in the functional tests |
+| The bundled health-check and diagnostics agent | §14a, §17a, §20b | done: the template `health-check` (every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules), which `custos-setup` creates; `custos-setup` also installs the playbooks' commands and `custos-net`, replacing an earlier release's unchanged commands, and with `--restarts` mcp-gateway's server `restarts` (security review 0.6, P1); both tested on a diagnostics-only host in the functional tests |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | done: the `diagnostics` category (read-only), the playbooks, and the report with findings, hypotheses and a plan |
-| The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool |
+| The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool; the host runs the steps with their arguments (`{unit}`, `{unit_re}`) before the model answers, and a run shows the model only the playbook's tools; `update-status` sees a pending reboot (`/run/reboot-needed`, mcp-gateway 1.16) and, with mcp-gateway's server `restarts`, the services to restart |
 | Confidence indicator | §4a | done: in Cockpit, each hypothesis shows the agent's confidence, labelled as its own estimate, next to how many of its quotes the host verified |
 | Recommendation provenance ("because of log line X and metric Y") | §4a | done: each hypothesis cites evidence, whose quotes the host verifies against the output of the tool calls; Cockpit shows each quote as verified or as the agent's claim alone |
 | Administrator feedback | §4a, §10 | done: `agent-admin feedback`, and in Cockpit **Was it right?** under the report, recorded outside the agent as `diagnosis.feedback` |

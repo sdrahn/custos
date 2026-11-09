@@ -43,6 +43,12 @@ removed.
   too, and a `custos_notice` inside an output is a sign of its own
   (security review 0.6, P4–P7). Advice to the model; the gateway's
   approval stays the boundary.
+- The report nudge (#155): a model that answers a playbook run in prose,
+  without a report and without a tool call, is asked once more, in the
+  same activity, to file it with `report_diagnosis`. The activity says
+  so (`report_nudged`), and so does the answer's `model.call` record
+  (`AGENT_REPORT_NUDGE`). `model-eval.sh` shows which runs were asked
+  and counts the reports filed after it.
 - `{unit_re}` in a playbook step's arguments: the unit escaped for a
   regular expression (security review 0.6, N5). `service-health`'s
   journal pattern uses it, so that `nginx.service` no longer also matches
@@ -125,8 +131,12 @@ removed.
   package `mcp-gateway-restarts-server`), lists the services and
   processes that still use files an update replaced, as `zypper ps`
   does. health-check may call both, and no longer has
-  `check_restart_reload`. `custos-setup` links the server's profile into
-  `/etc/mcp-gateway/servers.d/` when its package is installed (sdrahn/mcp-gateway#345).
+  `check_restart_reload`. `custos-setup --restarts` links the server's
+  profile into `/etc/mcp-gateway/servers.d/` (sdrahn/mcp-gateway#345);
+  without the option it offers no server that holds a capability
+  (security review 0.6, P1). Where the exec server's commands cannot
+  see `/run/reboot-needed`, `reboot_status` says so rather than that no
+  reboot is pending (P3).
 - `custos-setup` kept the diagnostic commands of 0.4.0 and 0.5.0 as an
   administrator's file, since it knew only 0.3.0's as shipped; it now
   replaces those too, unchanged, with the current ones.

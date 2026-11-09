@@ -57,8 +57,10 @@ func TestPlaybookActivity(t *testing.T) {
 	if act.Playbook != "updates" || act.State != governance.StateFinished {
 		t.Errorf("activity %s", b)
 	}
-	if len(e.m.Calls) != 1 {
-		t.Fatalf("the model was called %d times, want once (for the report)", len(e.m.Calls))
+	// It answered in prose, without a report: the host asked once more
+	// (the report nudge, TestReportNudge).
+	if len(e.m.Calls) != 2 || !act.ReportNudged {
+		t.Fatalf("the model was called %d times (nudged %v), want twice: once for the report, once asked for it", len(e.m.Calls), act.ReportNudged)
 	}
 	cs := e.m.Calls[0].Contents
 	sent := ""
@@ -108,8 +110,8 @@ func TestPlaybookActivity(t *testing.T) {
 	if len(tc) != 1 || tc[0].Fields["PLAYBOOK_STEP"] != "1" || tc[0].Fields["RATIONALE"] == "" {
 		t.Errorf("tool.call %v", tc)
 	}
-	if n := len(e.log.Events(journal.ModelCall)); n != 1 {
-		t.Errorf("%d model.call records, want 1: the host's turn is no model call", n)
+	if n := len(e.log.Events(journal.ModelCall)); n != 2 {
+		t.Errorf("%d model.call records, want 2 (the answer, and the one after the nudge): the host's turn is no model call", n)
 	}
 }
 
@@ -143,7 +145,8 @@ func TestPlaybookUnit(t *testing.T) {
 	}
 	// Without a unit, the step that needs one does not run.
 	e.do("POST", "/v1/activities", "", map[string]any{"playbook": "unit-updates", "wait": true})
-	if got, _ := json.Marshal(stepArgs(e.m.Calls[1].Contents)); string(got) != `[{"all":true}]` {
+	// (Calls[1] is the first activity's, after the report nudge.)
+	if got, _ := json.Marshal(stepArgs(e.m.Calls[2].Contents)); string(got) != `[{"all":true}]` {
 		t.Errorf("without a unit: %s", got)
 	}
 	for _, body := range []map[string]any{
@@ -154,6 +157,67 @@ func TestPlaybookUnit(t *testing.T) {
 		if res, b := e.do("POST", "/v1/activities", "", body); res.StatusCode != 400 || !strings.Contains(string(b), "unit") {
 			t.Errorf("%v: %d %s", body, res.StatusCode, b)
 		}
+	}
+}
+
+// A playbook run whose model answers without a report is asked once,
+// in the same activity, to file one: the host's call of report_diagnosis
+// after the model's text, which the host answers itself. A model that
+// reports, an activity without a playbook, and a second answer without
+// a report are not asked (again).
+func TestReportNudge(t *testing.T) {
+	report := reportArgs("high")
+	e := newEnvPlaybooks(t, playbooks(t), testutil.Text("Nothing is pending, I think."), testutil.Call("r1", governance.ReportTool, report))
+	_, b := e.do("POST", "/v1/activities", "", map[string]any{"playbook": "updates", "wait": true})
+	var act governance.Activity
+	json.Unmarshal(b, &act)
+	if !act.ReportNudged || act.Report == nil || act.Report.Summary != "No updates are pending." || len(e.m.Calls) != 3 {
+		t.Fatalf("nudged %v, report %+v, %d model calls: %s", act.ReportNudged, act.Report, len(e.m.Calls), b)
+	}
+	// The model saw its own text, the host's call and the reminder.
+	var nudged bool
+	for _, c := range e.m.Calls[1].Contents {
+		for _, p := range c.Parts {
+			if fr := p.FunctionResponse; fr != nil && fr.Name == governance.ReportTool && fr.Response["error"] == governance.ReportNudgeText {
+				nudged = true
+			}
+		}
+	}
+	if !nudged {
+		t.Errorf("the model was not asked for the report: %+v", e.m.Calls[1].Contents)
+	}
+	mc := e.log.Events(journal.ModelCall)
+	if len(mc) != 3 || mc[0].Fields["REPORT_NUDGE"] != "1" || mc[1].Fields["REPORT_NUDGE"] != "" || mc[2].Fields["REPORT_NUDGE"] != "" {
+		t.Errorf("model.call %+v", mc)
+	}
+	if len(act.Calls) != 1 {
+		t.Errorf("the nudge is no tool call of the agent's: %+v", act.Calls)
+	}
+
+	// Asked once only: a second answer without a report ends the activity.
+	e = newEnvPlaybooks(t, playbooks(t), testutil.Text("Nothing."), testutil.Text("Still nothing."))
+	_, b = e.do("POST", "/v1/activities", "", map[string]any{"playbook": "updates", "wait": true})
+	act = governance.Activity{}
+	json.Unmarshal(b, &act)
+	if !act.ReportNudged || act.Report != nil || act.State != governance.StateFinished || len(e.m.Calls) != 2 || act.Summary != "Still nothing." {
+		t.Errorf("a second answer without a report: %d calls %s", len(e.m.Calls), b)
+	}
+
+	// A model that reports at once, and an activity without a playbook,
+	// are not asked.
+	e = newEnvPlaybooks(t, playbooks(t), testutil.Call("r1", governance.ReportTool, report), testutil.Text("Reported."))
+	_, b = e.do("POST", "/v1/activities", "", map[string]any{"playbook": "updates", "wait": true})
+	act = governance.Activity{}
+	json.Unmarshal(b, &act)
+	if act.ReportNudged || act.Report == nil || len(e.m.Calls) != 2 {
+		t.Errorf("a model that reported: %d calls %s", len(e.m.Calls), b)
+	}
+	e = newEnvPlaybooks(t, playbooks(t), testutil.Text("Hello."))
+	_, b = e.do("POST", "/v1/activities", "", map[string]any{"prompt": "hi", "wait": true})
+	act = governance.Activity{}
+	json.Unmarshal(b, &act)
+	if act.ReportNudged || len(e.m.Calls) != 1 {
+		t.Errorf("an activity without a playbook: %d calls %s", len(e.m.Calls), b)
 	}
 }
 

@@ -112,10 +112,11 @@ It then:
    playbooks daily and weekly, and you run any of them from Cockpit;
 4. stores the key as the agent's `model-key`;
 5. copies the playbooks' commands to `/etc/mcp-gateway/exec.d/`, and the
-   server `custos-net` to `/etc/mcp-gateway/servers.d/`; when you
-   installed `mcp-gateway-restarts-server`, it links that server's
-   profile there too, for the services `update-status` finds waiting for
-   a restart ([chapter 9](09-administration.md#playbooks)).
+   server `custos-net` to `/etc/mcp-gateway/servers.d/`; with
+   `--restarts`, and `mcp-gateway-restarts-server` installed, it links
+   that server's profile there too, for the services `update-status`
+   finds waiting for a restart. The server holds `CAP_SYS_PTRACE`, so
+   offering it is a choice of its own ([chapter 9](09-administration.md#playbooks)).
 
 Each step prints `done`, `already` or `skipped` with why: running it
 again changes only what differs, and never goes back to diagnostics-only

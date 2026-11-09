@@ -1189,6 +1189,11 @@ check "a playbook step with the request's unit: the host calls read_note as step
 		jq -e '.calls | map(select(.tool == \"custos-test__read_note\" and .playbook_step == 2)) | length == 1' >/dev/null"
 check "journal: the step's call has the unit in its arguments (ARGS_SHA256)" eventually 10 journal_has pb tool.call \
 	".AGENT_TOOL == \"custos-test__read_note\" and .AGENT_PLAYBOOK_STEP == \"2\" and .AGENT_ARGS_SHA256 == \"$unit_sha\""
+# The report nudge (#155): that run's model answered in prose, without a
+# report, so the host asked it once for one, in the same activity.
+check "a playbook run that ends in prose is asked once for its report (report_nudged)" bash -c \
+	"$(declare -f api); api pb /v1/activities | jq -e '[.activities[] | select(.playbook == \"unit-check\")][0] | .report_nudged == true and (.report | not)' >/dev/null"
+check "journal: its model.call says the host asked for the report (REPORT_NUDGE)" eventually 10 journal_has pb model.call '.AGENT_REPORT_NUDGE == "1"'
 check "a unit that is not a unit name is refused (400)" code_is 400 api pb /v1/activities -X POST -d '{"playbook":"unit-check","unit":"../web"}'
 check "agent-admin delete pb" agent-admin delete pb
 rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml /etc/custos/playbooks/unit-check.yaml
@@ -1458,7 +1463,7 @@ section "custos-setup (the bundled diagnostics install)"
 if command -v custos-setup >/dev/null; then
 	agent-admin delete health-check >/dev/null 2>&1
 	printf 'sk-test-key\n' >"$work/model-key"
-	setup() { custos-setup --diagnostics-only --backend on-host --model fake --endpoint http://127.0.0.1:8008/v1 --credential-file "$work/model-key"; }
+	setup() { custos-setup --diagnostics-only --backend on-host --model fake --endpoint http://127.0.0.1:8008/v1 --credential-file "$work/model-key" "$@"; }
 	check "custos-setup without --diagnostics-only writes nothing" bash -c \
 		"custos-setup --backend on-host --model fake | grep -q 'nothing to set up' && ! test -e /etc/mcp-gateway/policy/agents/_enablement.yaml"
 	check "custos-setup refuses a backend that is not one of the four" not custos-setup --diagnostics-only --backend cloud --model fake
@@ -1524,10 +1529,17 @@ if command -v custos-setup >/dev/null; then
 			rm -f /run/reboot-needed
 		fi
 		# mcp-gateway's server restarts (update-status's services to
-		# restart), which custos-setup links when its package is there.
+		# restart), which custos-setup --restarts links when its package is there.
 		if [ -e /usr/share/mcp-gateway/profiles/restarts.yaml ]; then
-			check "custos-setup linked the server restarts" bash -c \
-				"grep -q 'server restarts: done' '$work/setup.out' && test \"\$(readlink /etc/mcp-gateway/servers.d/restarts.yaml)\" = /usr/share/mcp-gateway/profiles/restarts.yaml"
+			# It holds CAP_SYS_PTRACE: linked only when asked for
+			# (--restarts, security review 0.6, P1).
+			check "custos-setup without --restarts does not link the server restarts" bash -c \
+				"grep -q 'server restarts: skipped (not offered' '$work/setup.out' && ! test -e /etc/mcp-gateway/servers.d/restarts.yaml"
+			restarts_linked() {
+				setup --restarts | grep -q 'server restarts: done' &&
+					test "$(readlink /etc/mcp-gateway/servers.d/restarts.yaml)" = /usr/share/mcp-gateway/profiles/restarts.yaml
+			}
+			check "custos-setup --restarts links the server restarts" restarts_linked
 			restarts_answers() { # through the gateway, as health-check, without an approval: it names the running kernel
 				local a
 				a=$(run_activity health-check "CALL restarts__pending_restarts")
