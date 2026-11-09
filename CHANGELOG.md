@@ -5,7 +5,7 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+## v0.6.0 — 2026-11-09
 
 Diagnosis with small models, and a seal that covers each agent. The
 host now does more of a playbook run itself: it runs the steps with
