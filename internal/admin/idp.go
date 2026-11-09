@@ -123,6 +123,21 @@ func (a *Admin) agentIssuers() ([]string, error) {
 	return doc.HTTP.Issuers, nil
 }
 
+// trustedIssuers are the issuers the gateway trusts for agents: _http.yaml's,
+// unless the seal covers it and it does not match (then none, and why;
+// security review 0.6, N6).
+func (a *Admin) trustedIssuers() ([]string, string) {
+	issuers, err := a.agentIssuers()
+	if err != nil {
+		return nil, err.Error()
+	}
+	if pub, agents, err := a.sealInfo(); err == nil && agents && !a.entryVerified(pub, HTTPIssuersName) {
+		return nil, GatewayHTTPIssuers + " does not match its seal, so the gateway trusts no issuer: check it, then accept it " +
+			"(agent-admin seal --agents --accept _http)"
+	}
+	return issuers, ""
+}
+
 // keycloakRealm is the realm of a Keycloak issuer URL (…/realms/<realm>).
 func keycloakRealm(issuer string) (base, realm string, ok bool) {
 	i := strings.Index(issuer, "/realms/")
@@ -155,10 +170,13 @@ func (a *Admin) IDPClient(name string, keycloak bool) error {
 		fmt.Fprint(a.Out, keycloakScript(base, realm, clientID, "agent-"+name, h))
 		return nil
 	}
-	issuers, _ := a.agentIssuers()
+	issuers, untrusted := a.trustedIssuers()
 	listed := "listed"
-	if !slices.Contains(issuers, h.Issuer) {
-		listed = "NOT listed yet: add it to " + GatewayHTTPIssuers + " (_http.issuers)"
+	switch {
+	case untrusted != "":
+		listed = "NOT trusted: " + untrusted
+	case !slices.Contains(issuers, h.Issuer):
+		listed = "NOT listed yet: agent-admin issuers --add " + h.Issuer
 	}
 	fmt.Fprintf(a.Out, `The OAuth client of agent %[1]s at the gateway's identity provider:
 
@@ -295,8 +313,7 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("the issuer's access token: %w", err)
 	}
-	issuers, err := a.agentIssuers()
-	if err != nil {
+	if _, err := a.agentIssuers(); err != nil {
 		return err
 	}
 	failed := 0
@@ -314,8 +331,12 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	str := func(k string) string { s, _ := claims[k].(string); return s }
 	iss := str("iss")
 	say(iss == h.Issuer, "iss "+iss, "the gateway's http.issuer is "+h.Issuer)
-	say(slices.Contains(issuers, iss), "the issuer is listed for agents ("+GatewayHTTPIssuers+")",
-		"add it to _http.issuers, or the gateway denies agent-* subjects from it everything")
+	trusted, untrusted := a.trustedIssuers()
+	why := "agent-admin issuers --add " + iss + ", or the gateway denies agent-* subjects from it everything"
+	if untrusted != "" {
+		why = untrusted
+	}
+	say(untrusted == "" && slices.Contains(trusted, iss), "the issuer is listed for agents ("+GatewayHTTPIssuers+")", why)
 	sub := str("sub")
 	say(sub == "agent-"+name, "sub "+sub, "want agent-"+name+" (in Keycloak: the client's hardcoded sub claim, and no default client scope that maps its own)")
 	var auds []string

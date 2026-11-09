@@ -287,7 +287,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 		d.Categories = map[string]*CategoryState{}
 	}
 	d.Categories[cat] = &CategoryState{Mode: "bounded", Envelope: env, PromotedBy: by + " " + now, Promotion: id}
-	if err := a.writeGateway(name, d); err != nil {
+	if err := a.writeGateway(name, d, false); err != nil {
 		return err
 	}
 	a.record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
@@ -318,7 +318,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 	}
 	c.Mode = "supervised"
 	c.DemotedBy = by + " " + a.Now().UTC().Format(time.RFC3339Nano)
-	if err := a.writeGateway(name, d); err != nil {
+	if err := a.writeGateway(name, d, true); err != nil {
 		return err
 	}
 	a.record(journal.CategoryDemoted, name, fmt.Sprintf("%s demoted %s of agent %s to supervised", by, cat, name), journal.Fields{

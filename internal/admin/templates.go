@@ -253,7 +253,7 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 		return err
 	}
 	d.Mode, d.Permissions = t.Mode, perms
-	if err := a.writeGateway(name, d); err != nil {
+	if err := a.writeGateway(name, d, false); err != nil {
 		return fmt.Errorf("agent %s was created, but setting the template's permissions failed (agent-admin permissions %s < %s): %w",
 			name, name, filepath.Join(t.Dir, "permissions.yaml"), err)
 	}

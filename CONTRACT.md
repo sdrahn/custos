@@ -709,9 +709,11 @@ With `agents: true` in `_seal.yaml` the seal also covers each agent's
 data (`agents/<name>.yaml`: mode, pause, permissions, categories,
 owners) and the agents' token issuers (`_http.yaml`). `agent-admin`
 signs each as it writes it: a JWS (ES256, the same key) over
-`{"agent": <name>, "data": <the entry without its signature>}` (`_http`
-for the issuers), in the entry's `signature`, and records it
-(`gateway.data`, §10, with the digest of what it signed). The agents
+`{"agent": <name>, "data": <the entry without its signature>,
+"record", "at", "host"}` (`_http` for the issuers; `record` a new id,
+`at` the time, `host` the host's machine-id), in the entry's
+`signature`, and records it (`gateway.data`, §10, with the digest and
+the record of what it signed). The agents
 module counts an agent's data only when the signature verifies, names
 that agent and covers the data: an agent whose data was edited by hand,
 is unsigned or carries another agent's signature is denied every call,
@@ -720,18 +722,40 @@ says the seal is broken; its owners approve nothing (§7). `_http.yaml`
 that the seal does not cover trusts no issuer. `_control.yaml`, the
 emergency stop, is never sealed: written by hand, it still stops every
 agent. A new seal covers the agents' data from the start (it signs every
-agent's data and `_http.yaml` before it writes `_seal.yaml`). A host
-sealed before 0.6 keeps unsigned agent data counting as it is until
-`agent-admin seal --agents`, which signs every agent's data and
-`_http.yaml` as they are on file (check them with `show` first) and sets
-`agents: true`. A missing key credential is an error, never a new key.
-`show` reports per agent `tampered` (the seal broken, or an earlier
-signed version put back: it verifies, but its digest is not the latest
-`gateway.data` record's; the gateway counts it), `issuers_tampered`
+agent's data and `_http.yaml` as they are before it writes
+`_seal.yaml`). A host sealed before 0.6 keeps unsigned agent data
+counting as it is until `agent-admin seal --agents`, which signs them
+and sets `agents: true`.
+
+`agent-admin` builds only on data the seal covers (security review 0.6,
+N1): on a host whose seal covers agent data, a change of an agent whose
+file does not verify (edited by hand, unsigned) is refused, and so is
+adding an issuer to an `_http.yaml` that does not. A change that only
+takes from the agent (a pause, a demotion, a lower mode; removing an
+issuer) is still written, unsigned, so the gateway denies the agent
+everything (no issuer trusted), which is stricter; so is it when the
+seal's key cannot be used (N3). `seal --agents` signs a file that does
+not verify only when `--accept NAME` names it (`_http` for the issuers),
+once the host's agent data was sealed (`agents: true`, or `gateway.data`
+records in the journal); a person checks it with `show` first. The
+demotion evaluator runs no `rollback.health_check` from data that does
+not verify. A missing key credential of a seal that is there is an
+error, never a new key (N2), for the agents' data and for the
+categories' state alike: `agent-admin seal --rekey` makes a new key and
+signs again, with it, what verifies against the seal so far (its public
+key is all that needs) and what `--accept` names (`_enablement` for the
+state); nothing changes when anything else is in the way.
+
+`show` reports per agent `tampered`: the seal broken; an earlier signed
+version put back (it verifies, but its `record` is not the latest
+`gateway.data` record's; the gateway counts it); or one signed on
+another host (its `host` is not this host's machine-id: hosts that share
+the key, a cloned image; the gateway counts it). `issuers_tampered`
 likewise, `agents_sealed`, and `seal_tampered` when the seal no longer
 covers agent data though the journal says `agent-admin` sealed it
 (`agents: true` or the whole seal removed: the gateway then counts the
-data as it is).
+data as it is). The gateway cannot tell an earlier or another host's
+signed version from the latest (N4): that needs state outside the host.
 
 What the seal does not cover (security review M5): itself. Removing `_seal.yaml` makes the host
 unsealed: its state counts as it is again, edited or removed. A state
@@ -1044,7 +1068,7 @@ and for `gateway.data` of the token issuers) and these added fields:
 | `AGENT_BY` | the person |
 | `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`, `categories.disabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
 | `AGENT_ENABLEMENT_SHA256` | `categories.enabled`, `categories.disabled`: the digest of the state after (§6b) |
-| `AGENT_DATA`, `AGENT_DATA_SHA256` | `gateway.data`: what `agent-admin` signed with the seal (an agent's name, or `_http` for the agents' token issuers) and the SHA-256 of the signed payload's JSON with sorted keys (§6b) |
+| `AGENT_DATA`, `AGENT_DATA_SHA256`, `AGENT_DATA_RECORD` | `gateway.data`: what `agent-admin` signed with the seal (an agent's name, `_http` for the agents' token issuers, `_seal` for a new key), the SHA-256 of the signed payload's JSON with sorted keys, and the payload's `record` (§6b) |
 | `AGENT_SEALED` | `categories.enabled`, `categories.disabled`: `1`, the host is sealed from this change on (§6b) |
 | `AGENT_ENABLEMENT` | `categories.enabled`, `categories.disabled`: the record's id (`n-…`), also in the data's `record` |
 | `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
@@ -1519,7 +1543,8 @@ standard error:
 | `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
 | `disable CATEGORY… \| --all` | disables task categories again (§6b, #110); `--all` returns the host to `diagnostics-only`. Writes `_enablement.yaml` and the record `categories.disabled`. Refused, naming what is in the way, while an agent has a permission in a category it disables or has one promoted; `diagnostics` is never disabled |
 | `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (`disable --all` is the way back there) and one with an agent that has a permission outside `diagnostics` |
-| `seal --agents` | makes the host's seal cover the agents' data and `_http.yaml` (§6b, #158): signs every agent's data and the issuers as they are on file, then sets `agents: true` in `_seal.yaml`. Refuses a host without a seal (the seal comes with an enablement state) and a key credential that does not match the seal |
+| `seal --agents [--accept NAME…]` | makes the host's seal cover the agents' data and `_http.yaml` (§6b, #158): signs every agent's data and the issuers, then sets `agents: true` in `_seal.yaml`. Once the host's agent data was sealed, a file that does not verify is signed only when `--accept` names it (`_http`: the issuers); nothing is written otherwise. Refuses a host without a seal (the seal comes with an enablement state) and a key credential that is missing or does not match the seal |
+| `seal --rekey [--accept NAME…]` | a new key for the seal (a lost or changed one, §6b): signs again, with it, the categories' state, the agents' data and the issuers that verify against the seal so far, and what `--accept` names (`_enablement`, an agent, `_http`); nothing changes when anything else does not verify. Records `gateway.data` (`AGENT_DATA=_seal`) |
 | `issuers [--add ISSUER…] [--remove ISSUER…]` | the token issuers trusted for agents over HTTPS (`_http.yaml`, §6, §16a), one per line; `--add` (an `https://` URL, as the tokens' `iss`) and `--remove` change them first, signed on a host whose seal covers agent data, and wait for the gateway's OPA |
 | `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
 | `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs"?, "steps": [{"tool", "why", "optional"?}], "look_for", "file", "error"?}}`, where `error` says why a file cannot be used. Needs no root |

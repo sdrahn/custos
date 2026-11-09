@@ -72,6 +72,13 @@ func (a *Admin) sealKey() (*ecdsa.PrivateKey, error) {
 		}
 		return x509.ParseECPrivateKey(blk.Bytes)
 	}
+	return a.newSealKey()
+}
+
+// newSealKey makes a new key and keeps it as the credential, replacing
+// one there was (agent-admin seal --rekey).
+func (a *Admin) newSealKey() (*ecdsa.PrivateKey, error) {
+	path := a.p(filepath.Join(CredstoreDir, SealCredential))
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -199,7 +206,11 @@ func (a *Admin) writeSeal(k *ecdsa.PrivateKey) error {
 	if err == nil && have == pub {
 		return nil
 	}
-	return a.sealAgentsWith(k)
+	// A new seal (the host had none): what is on disk is signed as it
+	// is. A seal that was removed is reported by show (security review
+	// 0.5, M5); a missing key of a seal that is there is an error, never
+	// a new key (enablementKey; 0.6, N2).
+	return a.resign(k, "", nil, false)
 }
 
 // checkSeal makes show report what the gateway enforces on a sealed host:
