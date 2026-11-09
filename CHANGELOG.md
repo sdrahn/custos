@@ -32,6 +32,10 @@ removed.
 
 ### Added
 
+- A playbook run shows the model only the playbook's tools (#155): its
+  steps' and those it names in the new key `tools`, of those the gateway
+  offers, and the report tool. A small model reads every tool it is
+  shown before it answers; the prompts of playbook runs get shorter.
 - A playbook step takes the call's arguments (`args`), and `{unit}` in
   them is the unit the activity is about: the request's new `"unit"`
   (`POST /v1/activities`), or for an event that runs a playbook the unit

@@ -116,7 +116,10 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	tools := tool.FilterToolset(gw, func(_ agent.ReadonlyContext, t tool.Tool) bool { return cfg.ShowsTool(t.Name()) })
+	// A playbook run shows only the playbook's tools (§14c, #155).
+	tools := tool.FilterToolset(gw, func(ctx agent.ReadonlyContext, t tool.Tool) bool {
+		return cfg.ShowsTool(t.Name()) && (ctx == nil || l.Governor.Shows(ctx.InvocationID(), t.Name()))
+	})
 	l.tools = tools
 	ct := clienttools.NewRegistry()
 
@@ -463,7 +466,7 @@ func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 	if req.Playbook != "" {
 		var status int
 		var err error
-		if prompt, st.Steps, status, err = l.playbookPrompt(r.Context(), req.Playbook, req.Unit, req.Prompt); err != nil {
+		if prompt, st.Steps, st.Tools, status, err = l.playbookPrompt(r.Context(), req.Playbook, req.Unit, req.Prompt); err != nil {
 			http.Error(w, err.Error(), status)
 			return
 		}
@@ -648,34 +651,36 @@ func peekJSON(r *http.Request, v any) (*http.Request, error) {
 // host runs before the model's first turn: refused when the playbook is
 // unknown or broken (400), or when the gateway does not offer this agent
 // a tool of a step that is not optional (422).
-func (l *Launcher) playbookPrompt(ctx context.Context, name, unit, extra string) (string, []governance.Step, int, error) {
+func (l *Launcher) playbookPrompt(ctx context.Context, name, unit, extra string) (string, []governance.Step, []string, int, error) {
 	if !playbook.ValidName(name) {
-		return "", nil, http.StatusBadRequest, fmt.Errorf("playbook: %q is not a playbook name", name)
+		return "", nil, nil, http.StatusBadRequest, fmt.Errorf("playbook: %q is not a playbook name", name)
 	}
 	all, err := playbook.Load(l.playbookRoot)
 	if err != nil {
-		return "", nil, http.StatusInternalServerError, fmt.Errorf("reading the playbooks: %w", err)
+		return "", nil, nil, http.StatusInternalServerError, fmt.Errorf("reading the playbooks: %w", err)
 	}
 	p := all[name]
 	switch {
 	case p == nil:
-		return "", nil, http.StatusNotFound, fmt.Errorf("no playbook %q on this host", name)
+		return "", nil, nil, http.StatusNotFound, fmt.Errorf("no playbook %q on this host", name)
 	case p.Error != "":
-		return "", nil, http.StatusBadRequest, fmt.Errorf("playbook %s (%s): %s", name, p.File, p.Error)
+		return "", nil, nil, http.StatusBadRequest, fmt.Errorf("playbook %s (%s): %s", name, p.File, p.Error)
 	}
 	offered, err := l.offeredTools(ctx)
 	if err != nil {
-		return "", nil, http.StatusBadGateway, fmt.Errorf("listing the gateway's tools: %w", err)
+		return "", nil, nil, http.StatusBadGateway, fmt.Errorf("listing the gateway's tools: %w", err)
 	}
 	if m := p.Missing(offered); len(m) > 0 {
-		return "", nil, http.StatusUnprocessableEntity, fmt.Errorf("playbook %s needs tools the gateway does not offer agent %s: %s",
+		return "", nil, nil, http.StatusUnprocessableEntity, fmt.Errorf("playbook %s needs tools the gateway does not offer agent %s: %s",
 			name, l.cfg.Name, strings.Join(m, ", "))
 	}
 	var steps []governance.Step
 	for _, s := range p.Run(offered, unit) {
 		steps = append(steps, governance.Step{Tool: s.Tool, Why: s.Why, Args: s.Args})
 	}
-	return p.Prompt(offered, unit, extra), steps, 0, nil
+	// The run shows the model only the playbook's tools (#155): a small
+	// model's prompt carries every tool's schema it is shown.
+	return p.Prompt(offered, unit, extra), steps, p.Offer(offered), 0, nil
 }
 
 // PlaybookOffer is a playbook as GET /v1/playbooks shows it to this
