@@ -384,7 +384,12 @@ const pointer = () => {
             await win.locator(".from").fill("00:00");
             await win.locator(".to").fill("23:59");
             await win.locator(".tz").selectOption("UTC");
-            await click(custos().locator("#envelope-rate"));
+            // check(), not a click: the tab re-renders every few seconds,
+            // and check() makes sure the box is ticked.
+            const rate = custos().locator("#envelope-rate");
+            await point(rate);
+            await unpoint(rate);
+            await rate.check();
             await custos().locator("#envelope-rate-calls").fill("5");
             await custos().locator("#envelope-rate-per").selectOption("1h");
             await show(custos().locator("#envelope-editor"), t.envelope);

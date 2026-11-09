@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -33,6 +34,8 @@ func playbooks(t *testing.T) string {
 		"    - {tool: fs__read_file, why: A file., optional: true}\n  look_for: Security patches.\n")
 	put("files", "files:\n  title: Files\n  steps:\n    - {tool: fs__read_file, why: A file.}\n  look_for: Anything.\n")
 	put("broken", "broken: {title: x}\n")
+	put("with-tools", "with-tools:\n  title: Updates, and patching named\n  steps:\n    - {tool: zypp__list_updates, why: Pending updates.}\n"+
+		"  tools: [zypp__install_patches, fs__read_file]\n  look_for: Patches.\n")
 	put("unit-updates", "unit-updates:\n  title: Updates of a unit\n  steps:\n    - {tool: zypp__list_updates, why: All., args: {all: true}}\n"+
 		"    - {tool: zypp__list_updates, why: The unit's., args: {for: [\"{unit}\"], limit: 5}}\n  look_for: Patches.\n")
 	return root
@@ -215,6 +218,35 @@ func TestReportNudge(t *testing.T) {
 	json.Unmarshal(b, &act)
 	if act.ReportNudged || len(e.m.Calls) != 1 {
 		t.Errorf("an activity without a playbook: %d calls %s", len(e.m.Calls), b)
+	}
+}
+
+// A playbook run shows the model only the playbook's tools (#155): its
+// steps' and its tools, of those the gateway offers, and the host's
+// report tool; an activity without a playbook shows every tool.
+func TestPlaybookShowsItsTools(t *testing.T) {
+	e := newEnvPlaybooks(t, playbooks(t), testutil.Text("ok"), testutil.Text("ok"), testutil.Text("ok"))
+	shown := func(body map[string]any) []string {
+		n := len(e.m.Calls)
+		body["wait"] = true
+		e.do("POST", "/v1/activities", "", body)
+		if len(e.m.Calls) <= n {
+			t.Fatalf("the model was not called for %v", body)
+		}
+		names := testutil.ToolNames(e.m.Calls[n])
+		sort.Strings(names)
+		return names
+	}
+	if got := strings.Join(shown(map[string]any{"playbook": "updates"}), " "); got != "report_diagnosis zypp__list_updates" {
+		t.Errorf("updates shows %s", got)
+	}
+	// tools: a further tool the gateway offers is shown; one it does not
+	// (fs__read_file, not among the agent's servers) is not.
+	if got := strings.Join(shown(map[string]any{"playbook": "with-tools"}), " "); got != "report_diagnosis zypp__install_patches zypp__list_updates" {
+		t.Errorf("with-tools shows %s", got)
+	}
+	if got := strings.Join(shown(map[string]any{"prompt": "hello"}), " "); !strings.Contains(got, "zypp__install_patches") || !strings.Contains(got, "zypp__list_updates") {
+		t.Errorf("an activity without a playbook shows %s", got)
 	}
 }
 

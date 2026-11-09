@@ -34,7 +34,11 @@ type Playbook struct {
 	Description string   `yaml:"description" json:"description"`
 	Needs       []string `yaml:"needs,omitempty" json:"needs,omitempty"`
 	Steps       []Step   `yaml:"steps" json:"steps"`
-	LookFor     string   `yaml:"look_for" json:"look_for"`
+	// Tools are further tools the model is offered in a run of the
+	// playbook, besides its steps' (#155): a run offers only those, so
+	// that a small model's prompt stays small.
+	Tools   []string `yaml:"tools,omitempty" json:"tools,omitempty"`
+	LookFor string   `yaml:"look_for" json:"look_for"`
 	// File is where it was read from (agent-admin playbooks).
 	File string `yaml:"-" json:"file"`
 	// Error says why a playbook file cannot be used (agent-admin
@@ -159,6 +163,11 @@ func (p *Playbook) check() error {
 	if len(p.Steps) == 0 {
 		return errors.New("steps: at least one")
 	}
+	for i, t := range p.Tools {
+		if !toolRE.MatchString(t) {
+			return fmt.Errorf("tools[%d]: %q: want server__tool", i, t)
+		}
+	}
 	required := 0
 	for i, s := range p.Steps {
 		if !toolRE.MatchString(s.Tool) {
@@ -232,6 +241,27 @@ func (p *Playbook) Missing(offered map[string]bool) []string {
 		if !s.Optional && !offered[s.Tool] {
 			out = append(out, s.Tool)
 		}
+	}
+	return out
+}
+
+// Offer is the tools a run of the playbook offers the model, of those
+// the gateway offers: its steps' and its tools (#155). The model is
+// shown no other tool of the gateway's in the run.
+func (p *Playbook) Offer(offered map[string]bool) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(t string) {
+		if offered[t] && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, s := range p.Steps {
+		add(s.Tool)
+	}
+	for _, t := range p.Tools {
+		add(t)
 	}
 	return out
 }
