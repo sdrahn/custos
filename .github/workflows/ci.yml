@@ -469,7 +469,7 @@ jobs:
           for f in "$RUNNER_TEMP"/vm/screenshots/*.png; do
             [ -f "$f" ] || continue
             n=$(basename "$f" .png)
-            case $n in failed-*) continue ;; esac
+            # A failed step's screenshot too: often the only view of why.
             echo "::group::screenshot $n"
             echo "SHOT-BEGIN $n"
             base64 -w 76 "$f"

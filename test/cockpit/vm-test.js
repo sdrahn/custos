@@ -148,7 +148,20 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
     await step("the Audit tab", async () => {
         await go("/audit");
         const a = frame().locator("#action-" + approval);
-        await a.waitFor({ timeout: 60000 });
+        try {
+            await a.waitFor({ timeout: 60000 });
+        } catch (e) {
+            // Once, on #175, the row did not come. The tab reads the last
+            // 500 records of each kind and makes a row only from the
+            // proposal or the gateway's decision among them: say what it
+            // showed and where those two records were.
+            const shown = await frame().locator("#audit-actions .action").evaluateAll(ns => ns.map(n => n.id).join(" ")).catch(() => "?");
+            const where = vm(`echo "agent records since T0: $(journalctl --since @${t0} AGENT_CONTRACT=1 -o cat | wc -l)," \
+                "its approval.pending in the last 500: $(journalctl -n 500 -o json AGENT_CONTRACT=1 | grep -c '"AGENT_APPROVAL_ID":"${approval}"')," \
+                "gateway lines since T0: $(journalctl --since @${t0} -u mcp-gateway.service -o cat | wc -l)," \
+                "its decision in the last 500: $(journalctl -n 500 -u mcp-gateway.service -o cat | grep -c '"id":"${approval}"')"`);
+            throw new Error(e.message.split("\n")[0] + "\nrows shown: " + (shown || "none") + "\n" + (where || "(the VM did not answer)").trim());
+        }
         const t = await a.textContent();
         check(t.includes("approved") && t.includes("by " + user) && t.includes("executed"), "the history: proposed, approved by " + user + ", executed", t);
         check((await frame().locator("#action-" + declined).textContent()).includes("declined"), "and the declined one");
