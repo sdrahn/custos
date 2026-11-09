@@ -437,7 +437,12 @@ signed_data(name, d) := object.union(d, {"signature": io.jwt.encode_sign(
 	json.unmarshal(seal_jwk),
 )})
 
-agents_sealed(a) := object.union(a, {"_seal": {"public_key": seal_pem, "agents": true}})
+# A sealed host has a signed enablement state too (without one it is
+# diagnostics-only, #109): here one that leaves permissions without a
+# category usable.
+enablement_ok := {"_enablement": signed("categories", ["diagnostics"], "n-1")}
+
+agents_sealed(a) := object.union(object.union(a, enablement_ok), {"_seal": {"public_key": seal_pem, "agents": true}})
 
 pp_data := agents("supervised")["patch-pilot"]
 
@@ -466,7 +471,7 @@ test_agent_data_tampered_denied if {
 	] {
 		data_effect(agents_sealed({"patch-pilot": d}), "list_updates") == "deny"
 	}
-	other := object.union({"patch-pilot": s}, {"_seal": {"public_key": other_seal_key, "agents": true}})
+	other := object.union({"patch-pilot": s}, object.union(enablement_ok, {"_seal": {"public_key": other_seal_key, "agents": true}}))
 	data_effect(other, "list_updates") == "deny"
 }
 
@@ -482,7 +487,7 @@ test_agent_data_tampered_reason if {
 # A seal without agents: true (a host sealed before #158), or no seal:
 # unsigned data counts as it is.
 test_agent_data_unsealed_counts if {
-	data_effect(sealed({"patch-pilot": pp_data}), "list_updates") == "allow"
+	data_effect(sealed(object.union({"patch-pilot": pp_data}, enablement_ok)), "list_updates") == "allow"
 	data_effect({"patch-pilot": pp_data}, "install_patches") == "ask"
 }
 
