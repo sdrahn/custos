@@ -184,6 +184,7 @@ started them.
 | `response` | the agent's last text in full, at most 32 KiB (cut as `summary`), as the model wrote it: often Markdown. **Self-asserted by the agent**; a console renders it as text, never as HTML. Only in `GET /v1/activities/{id}` and an ended activity a `wait` returns, not in `GET /v1/activities` |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
 | `report_nudged` | `true` when the activity's model answered its playbook without a report and the host asked it once to file one (§14c, the report nudge); absent otherwise |
+| `thought_bytes` | the size of the model's thinking over the activity's model calls (§14, `model.reasoning_effort`; the `model.call` records' `AGENT_THOUGHT_BYTES`), never its text; absent when it did not think |
 
 Arguments never appear in activities or the journal (only
 `args_sha256`); tools' outputs only as `calls[].preceding`, never in the

@@ -122,6 +122,9 @@ type Activity struct {
 	// ReportNudged: the playbook run's model answered without a report,
 	// and the host asked it once to file one (report_diagnosis).
 	ReportNudged bool `json:"report_nudged,omitempty"`
+	// ThoughtBytes is the size of the model's thinking over the
+	// activity's model calls (model.reasoning_effort), never its text.
+	ThoughtBytes int `json:"thought_bytes,omitempty"`
 }
 
 // SummaryMax and ResponseMax bound an activity's summary and response.
@@ -707,6 +710,11 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 		}
 		if n > 0 {
 			f["THOUGHT_BYTES"] = strconv.Itoa(n)
+			g.mu.Lock()
+			if in := g.inv[cctx.InvocationID()]; in != nil {
+				in.act.ThoughtBytes += n
+			}
+			g.mu.Unlock()
 		}
 	}
 	if resp != nil && resp.Content != nil {
