@@ -62,7 +62,13 @@ agent_principal if {
 	agent_issuer
 }
 
-agent_issuer if input.principal.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
+agent_issuer if input.principal.iss in http_issuers
+
+# The issuers trusted for agents: _http.yaml's, when the seal covers it
+# (below) or does not cover agent data; none otherwise.
+http_issuers := object.get(object.get(data.mcp.agents, "_http", {}), "issuers", []) if {
+	data_trusted("_http")
+} else := []
 
 agent_name := substring(input.principal.sub, 6, -1) if agent_principal
 
@@ -115,6 +121,34 @@ enablement_seal_broken if {
 enablement_state := object.get(enablement, "state", "") if not enablement_seal_broken
 
 enablement_state := "diagnostics-only" if enablement_seal_broken
+
+# The seal of the agents' data (§6b, #158): with agents: true in
+# _seal.yaml (agent-admin seals a new host so, or agent-admin seal
+# --agents), each agent's data and _http.yaml count only with a signature
+# by the seal's key over {"agent": <its name>, "data": <it without the
+# signature>}. An agent whose data the seal does not cover (edited by
+# hand, unsigned, another agent's) is denied everything; _http.yaml then
+# trusts no issuer. _control.yaml, the emergency stop, is never sealed.
+default agents_sealed := false
+
+agents_sealed if {
+	seal_key != ""
+	object.get(object.get(data.mcp.agents, "_seal", {}), "agents", false) == true
+}
+
+data_signed(name) if {
+	d := data.mcp.agents[name]
+	io.jwt.verify_es256(d.signature, seal_key)
+	[_, payload, _] := io.jwt.decode(d.signature)
+	payload.agent == name
+	payload.data == object.remove(d, {"signature"})
+}
+
+# Data the gateway counts: any, without a seal over agent data; a signed
+# one, with it.
+data_trusted(_) if not agents_sealed
+
+data_trusted(name) if data_signed(name)
 
 permission_enabled(p) if {
 	not misdeclared_diagnostics(p)
@@ -269,6 +303,14 @@ agent_denials contains "an agent's subject from an issuer not trusted for agents
 	not agent_issuer
 }
 
+# An issuer _http.yaml lists, which the seal does not cover.
+agent_denials contains "the agents' token issuers (_http.yaml) do not match their seal (changed outside agent-admin): no issuer is trusted until agent-admin issuers writes them again" if {
+	input.principal.transport == "http"
+	startswith(input.principal.sub, "agent-")
+	input.principal.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
+	not data_trusted("_http")
+}
+
 # An agent without agent data gets nothing.
 agent_denials contains "the agent has no agent data (agent-admin create)" if {
 	agent_principal
@@ -294,6 +336,15 @@ agent_denials contains "the agent is paused (agent-admin resume)" if {
 	agent_principal
 	not input.discovery
 	agent_data.paused == true
+}
+
+# The agent's data does not match the seal: everything is denied, as on
+# a pause, until agent-admin writes it again.
+agent_denials contains "the agent's data does not match its seal (changed outside agent-admin): every call is denied until agent-admin writes it again (agent-admin seal --agents)" if {
+	agent_principal
+	not input.discovery
+	agent_data
+	not data_trusted(agent_name)
 }
 
 agent_denials contains "the emergency stop is in effect (agent-admin resume-all)" if {

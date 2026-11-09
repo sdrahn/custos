@@ -217,6 +217,28 @@ before it keeps an unsealed state until then. Root can still decrypt
 the key and sign a state by hand: the seal makes a change past
 `agent-admin` deliberate, not impossible.
 
+The seal also covers **each agent's own gateway data** (its mode, pause,
+permissions, promoted categories and owners) and the token issuers
+trusted for agents (`_http.yaml`): `agent-admin` signs them as it
+writes them. An agent whose data was changed by hand is denied every
+call, as if paused, until `agent-admin` writes its data again; its
+denials say "the agent's data does not match its seal", and its owners
+approve nothing. Issuers changed by hand are not trusted until
+`agent-admin issuers` writes them again. The emergency stop is never
+sealed: written by hand, it still stops every agent. `agent-admin show`
+reports a broken seal per agent (`tampered`), for the issuers
+(`issuers_tampered`), and an earlier signed copy of an agent's data put
+back (it still counts; the journal knows a later one); Cockpit shows
+the agent as "seal broken".
+
+A new seal covers the agents' data from the start. On a host sealed
+before Custos 0.6, run once, after checking the agents' data with
+`agent-admin show`, since it signs the files as they are:
+
+```bash
+agent-admin seal --agents
+```
+
 `agent-admin diagnostics-only` makes a freshly installed host
 diagnostics-only; the installer's setup runs it. It refuses a host that
 has an enablement state already, or an agent with permissions outside

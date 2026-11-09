@@ -325,7 +325,8 @@ the host never writes itself:
   `agent-<name>`. On the gateway's HTTPS listener (an agent in a sandbox,
   §16a) it is a token whose subject is `agent-<name>` from an issuer
   listed in `/etc/mcp-gateway/policy/agents/_http.yaml`
-  (`_http: {issuers: [...]}`, none by default); that issuer gives such
+  (`_http: {issuers: [...]}`, none by default; `agent-admin issuers`
+  writes it, §17); that issuer gives such
   subjects to agents only. An `agent-*` subject from any other issuer is
   denied everything. Modes, pause and the emergency stop are the same on
   both.
@@ -702,9 +703,36 @@ root can still decrypt the key and sign a state of its own: the seal
 turns a change past `agent-admin` into a deliberate forgery; it cannot
 stop root, which only an outside party could (the fleet, O13).
 
-What the seal does not cover (security review M5): it covers the
-enablement state, not the agents' data (their modes, permissions and
-categories), and not itself. Removing `_seal.yaml` makes the host
+**The seal of the agents' data** (#158, the rest of security review M5).
+With `agents: true` in `_seal.yaml` the seal also covers each agent's
+data (`agents/<name>.yaml`: mode, pause, permissions, categories,
+owners) and the agents' token issuers (`_http.yaml`). `agent-admin`
+signs each as it writes it: a JWS (ES256, the same key) over
+`{"agent": <name>, "data": <the entry without its signature>}` (`_http`
+for the issuers), in the entry's `signature`, and records it
+(`gateway.data`, §10, with the digest of what it signed). The agents
+module counts an agent's data only when the signature verifies, names
+that agent and covers the data: an agent whose data was edited by hand,
+is unsigned or carries another agent's signature is denied every call,
+as on a pause (discovery keeps its tools listed), with a reason that
+says the seal is broken; its owners approve nothing (§7). `_http.yaml`
+that the seal does not cover trusts no issuer. `_control.yaml`, the
+emergency stop, is never sealed: written by hand, it still stops every
+agent. A new seal covers the agents' data from the start (it signs every
+agent's data and `_http.yaml` before it writes `_seal.yaml`). A host
+sealed before 0.6 keeps unsigned agent data counting as it is until
+`agent-admin seal --agents`, which signs every agent's data and
+`_http.yaml` as they are on file (check them with `show` first) and sets
+`agents: true`. A missing key credential is an error, never a new key.
+`show` reports per agent `tampered` (the seal broken, or an earlier
+signed version put back: it verifies, but its digest is not the latest
+`gateway.data` record's; the gateway counts it), `issuers_tampered`
+likewise, `agents_sealed`, and `seal_tampered` when the seal no longer
+covers agent data though the journal says `agent-admin` sealed it
+(`agents: true` or the whole seal removed: the gateway then counts the
+data as it is).
+
+What the seal does not cover (security review M5): itself. Removing `_seal.yaml` makes the host
 unsealed: its state counts as it is again, edited or removed. A state
 signed earlier still verifies: the seal has no freshness. Each change
 needs root. `agent-admin show` reports both: a host without a seal whose
@@ -715,8 +743,8 @@ enablement record ("an earlier state was put back"). A permission in
 diagnostics-only host, `{server: "*", tool: "*", category: diagnostics,
 read_only: true}` would allow what changes the system too, since the
 gateway cannot tell a tool that only reads from its `read_only` flag.
-`agent-admin permissions` refuses it; a hand edit is not sealed. Sealing
-the agents' data is for a later release (accepted for 0.5.0).
+`agent-admin permissions` refuses it; a hand edit is not sealed (on a
+host whose seal covers agent data, it denies the agent everything).
 
 **Trust evidence.** What the diagnostics agent did before another
 category was enabled is that category's starting evidence: the readiness
@@ -1000,9 +1028,10 @@ calls between categories or add incidents.
 **Diagnostics and enablement records** (§4a, §6b; draft, O16). The host
 writes `diagnosis.report` with the agent's fields; `agent-admin` writes
 `diagnosis.feedback`, `categories.enabled`, `categories.disabled`,
-`category.refused` and `event.skipped` with
+`category.refused`, `event.skipped` and `gateway.data` with
 `SYSLOG_IDENTIFIER=custos-promotion`, `AGENT_CONTRACT`, `AGENT_NAME` (empty
-for `categories.enabled` and `categories.disabled`, which are the host's) and these added fields:
+for `categories.enabled` and `categories.disabled`, which are the host's,
+and for `gateway.data` of the token issuers) and these added fields:
 
 | Field | Value |
 |---|---|
@@ -1013,6 +1042,7 @@ for `categories.enabled` and `categories.disabled`, which are the host's) and th
 | `AGENT_BY` | the person |
 | `AGENT_ENABLEMENT_FROM`, `AGENT_ENABLEMENT_TO` | `categories.enabled`, `categories.disabled`: the state before and after, as JSON (`{"state", "enabled"}`) |
 | `AGENT_ENABLEMENT_SHA256` | `categories.enabled`, `categories.disabled`: the digest of the state after (§6b) |
+| `AGENT_DATA`, `AGENT_DATA_SHA256` | `gateway.data`: what `agent-admin` signed with the seal (an agent's name, or `_http` for the agents' token issuers) and the SHA-256 of the signed payload's JSON with sorted keys (§6b) |
 | `AGENT_SEALED` | `categories.enabled`, `categories.disabled`: `1`, the host is sealed from this change on (§6b) |
 | `AGENT_ENABLEMENT` | `categories.enabled`, `categories.disabled`: the record's id (`n-…`), also in the data's `record` |
 | `AGENT_CATEGORY`, `AGENT_REASON` | `category.refused`: the disabled category, and what was refused (`permissions`, `promote`, `create --template patch-pilot`) |
@@ -1024,6 +1054,7 @@ for `categories.enabled` and `categories.disabled`, which are the host's) and th
 | `diagnosis.feedback` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a671` |
 | `categories.enabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a672` |
 | `categories.disabled` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a675` |
+| `gateway.data` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a676` |
 | `category.refused` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a673` |
 | `event.skipped` | `6f3c0e1a9b2d4c58a7e1f2d3c4b5a674` |
 
@@ -1118,11 +1149,11 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/custos/defaults.yaml` | root 0644 | the model for new agents (§14b); absent: none |
 | `/usr/share/custos/playbooks/*.yaml`, `/etc/custos/playbooks/*.yaml` | root 0644 | the diagnostic playbooks (§14c; O16): the package's, and the administrator's |
 | `/etc/mcp-gateway/policy/agents/_enablement.yaml` | root 0644 | the enablement state (§6b; O16), signed (`signature`) once sealed; absent: every category enabled, or diagnostics-only on a sealed host |
-| `/etc/mcp-gateway/policy/agents/_seal.yaml` | root 0644 | the seal's public key (§6b, #109) |
+| `/etc/mcp-gateway/policy/agents/_seal.yaml` | root 0644 | the seal's public key (§6b, #109), and `agents: true` when it covers the agents' data and `_http.yaml` (#158) |
 | `/etc/credstore.encrypted/custos-enablement-seal` | root 0600 | the seal's private key (`systemd-creds encrypt`) |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
-| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
+| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6), signed (`signature`) once the seal covers agent data (§6b). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
 | `/etc/systemd/system/agent@<name>.service.d/` | root | sandbox changes; Cockpit writes `50-cockpit.conf` only |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's `OnCalendar=` |
@@ -1469,6 +1500,8 @@ standard error:
 | `enable CATEGORY… \| --all` | enables task categories on a `diagnostics-only` or partly enabled host (§6b): writes `_enablement.yaml` and the record `categories.enabled`, and returns once the gateway's OPA has loaded it. The categories start supervised. Refuses a category not in the catalog |
 | `disable CATEGORY… \| --all` | disables task categories again (§6b, #110); `--all` returns the host to `diagnostics-only`. Writes `_enablement.yaml` and the record `categories.disabled`. Refused, naming what is in the way, while an agent has a permission in a category it disables or has one promoted; `diagnostics` is never disabled |
 | `diagnostics-only` | makes a fresh host `diagnostics-only` (§6b): the bundled install's step, which `custos-setup` runs (§17a). Refuses a host with enablement data (`disable --all` is the way back there) and one with an agent that has a permission outside `diagnostics` |
+| `seal --agents` | makes the host's seal cover the agents' data and `_http.yaml` (§6b, #158): signs every agent's data and the issuers as they are on file, then sets `agents: true` in `_seal.yaml`. Refuses a host without a seal (the seal comes with an enablement state) and a key credential that does not match the seal |
+| `issuers [--add ISSUER…] [--remove ISSUER…]` | the token issuers trusted for agents over HTTPS (`_http.yaml`, §6, §16a), one per line; `--add` (an `https://` URL, as the tokens' `iss`) and `--remove` change them first, signed on a host whose seal covers agent data, and wait for the gateway's OPA |
 | `feedback NAME ACTIVITY [--hypothesis ID=confirmed\|rejected\|unsure…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | feedback on an activity's report (§4a), recorded as `diagnosis.feedback` with the person |
 | `playbooks` | the playbooks (§14c), as JSON: `{"<playbook>": {"title", "description", "needs"?, "steps": [{"tool", "why", "optional"?}], "look_for", "file", "error"?}}`, where `error` says why a file cannot be used. Needs no root |
 | `stop-all`, `release-all` | the emergency stop (§8) and its end. `release-all` starts again the agents' sockets and schedule timers that are enabled: what an administrator disabled stays stopped. Both record who (`_control.by`: the person behind `sudo`, `SUDO_USER`, else `USER`) and when (`at`) |
@@ -1476,7 +1509,7 @@ standard error:
 | `trigger NAME_SCHEDULE` | starts the schedule's activity (run by `agent-schedule@.service`) |
 | `event NAME_EVENT_UNIT` | starts the event's activity for a unit that failed, damped (run by `agent-event@.service`, §15) |
 | `list` | the agents |
-| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}, "enablement"?: {"state", "enabled", "changed_by", "record", "tampered"?}}`, where `categories` is §6a's entries and `enablement` §6b's state (absent: every category), with `tampered` saying why it does not match its record. Needs no root: the files are readable by everyone; without access to the journal there is no tamper check |
+| `show [NAME…]` | the gateway data (§6) of the named agents, or of all, and the emergency stop (§8), as JSON: `{"agents": {"<name>": {"mode", "paused", "paused_by"?, "permissions", "categories"?}}, "control": {"stopped", "by"?, "at"?}, "enablement"?: {"state", "enabled", "changed_by", "record", "tampered"?}, "agents_sealed", "issuers_tampered"?, "seal_tampered"?}`, where `categories` is §6a's entries and `enablement` §6b's state (absent: every category), with `tampered` saying why it does not match its record; each agent may have `tampered` too, and `agents_sealed`, `issuers_tampered` and `seal_tampered` are the seal of the agents' data (§6b). Needs no root: the files are readable by everyone; without access to the journal there is no tamper check |
 | `categories` | the catalog (§6a), as JSON: `{"<category>": {"title", "description"?}}`. Needs no root |
 | `promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]`, `demote NAME CATEGORY [--reason TEXT]` | a category's promotion with its envelope (`FILE` `-` is stdin), and its demotion (§6a). They write `categories.<category>` in the gateway data and a promotion record (§10), and return once the gateway has loaded the change, as `mode` does. `promote` refuses a category that is not ready, naming what is not met, unless it is given `--despite-readiness` with a reason; its record's `AGENT_READINESS` is the category's measures |
 | `evaluate` | the demotion evaluator (§6a), which `custos-demote.service` runs: demotes every bounded category whose override rate or rollback conditions say so, printing one line per demotion, and posts a notice of each to the gateway's approvers (mcp-gateway's `POST /v1/notices` on its control socket, as root: about `agent-<name>`, for the servers of the category's permissions, severity `warning`), printing how that went. A notice the gateway refuses leaves the demotion as it is. An agent whose journal it cannot read is reported, and the others are still evaluated |

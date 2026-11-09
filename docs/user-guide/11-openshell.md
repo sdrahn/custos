@@ -309,14 +309,15 @@ listed for agents. Any other issuer's `agent-*` subject is denied
 everything, so a people's realm cannot mint agent identities by
 accident:
 
-```yaml
-# /etc/mcp-gateway/policy/agents/_http.yaml
-_http:
-  issuers: ["https://idp.example.com/realms/mcp"]
+```bash
+agent-admin issuers --add https://idp.example.com/realms/mcp
 ```
 
-The file is the package's (`%config(noreplace)`, empty list by
-default). The gateway's policy engine reads it within seconds. Check:
+It writes `/etc/mcp-gateway/policy/agents/_http.yaml` (the package's
+file, `%config(noreplace)`, empty list by default), signed where the
+host's seal covers it ([chapter 6](06-permissions-and-modes.md#diagnostics-only)),
+and waits until the gateway's policy engine has it. `agent-admin
+issuers` alone lists them; `--remove` takes one off. Check:
 
 ```bash
 curl -s --unix-socket /run/mcp-gateway/opa.sock http://opa/v1/data/mcp/agents/_http/issuers

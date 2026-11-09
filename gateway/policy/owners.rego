@@ -27,7 +27,10 @@ import rego.v1
 # denies any other such subject everything, so it has no pending call).
 custos_agent := substring(input.request.principal.sub, 6, -1) if startswith(input.request.principal.sub, "agent-")
 
+# Owners count only from agent data the gateway counts: on a host whose
+# seal covers agent data, signed (agents.rego, data_trusted).
 custos_owners contains rule if {
+	data.mcp.authz.data_trusted(custos_agent)
 	some rule in object.get(object.get(data.mcp.agents, custos_agent, {}), "owners", [])
 	is_string(rule)
 	rule != "self"
@@ -71,12 +74,13 @@ owned_agent(subject) := substring(subject.sub, 6, -1) if {
 owned_agent(subject) := substring(subject.sub, 6, -1) if {
 	startswith(subject.sub, "agent-")
 	subject.transport == "http"
-	subject.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
+	subject.iss in data.mcp.authz.http_issuers
 }
 
 owner_of(subject) if {
 	not custos_agent_approver
 	name := owned_agent(subject)
+	data.mcp.authz.data_trusted(name)
 	some rule in object.get(object.get(data.mcp.agents, name, {}), "owners", [])
 	is_string(rule)
 	rule != "self"

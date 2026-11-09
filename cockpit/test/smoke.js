@@ -970,6 +970,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.goto(url + "?diag&tampered#/agents/disk-watch");
     await page.waitForSelector("#enablement-tampered");
     check((await page.textContent("#enablement-tampered")).includes("differs from its record"), "a state changed outside agent-admin is reported");
+    // The seal of the agents' data (#158): an agent whose data was changed
+    // by hand is shown as denied, and so are the issuers.
+    await page.goto(url + "?diag&seal-broken#/agents/disk-watch");
+    await page.waitForSelector("#agent-tampered");
+    check((await page.textContent("#agent-tampered")).includes("denies the agent everything") &&
+          (await page.textContent("#agent-detail")).includes("seal broken"), "an agent whose data was changed outside agent-admin is shown as denied");
+    await page.waitForSelector("#issuers-tampered");
+    check((await page.textContent("#enablement")).includes("The seal covers each agent's gateway data"), "the seal over agent data is shown");
     // A host installed with the full capability: every category enabled,
     // Disable… offered, Enable… not.
     await page.goto(url + "?full#/agents/disk-watch");

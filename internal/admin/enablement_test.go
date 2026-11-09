@@ -356,7 +356,7 @@ func TestDisableRecordNotTampered(t *testing.T) {
 	}
 	var asked []string
 	a.JournalJSON = func(args ...string) ([]byte, error) {
-		asked = args
+		asked = append(asked, args...)
 		var out []string
 		for _, ev := range []string{journal.CategoriesEnabled, journal.CategoriesDisabled} {
 			for _, r := range records(mem, ev) {

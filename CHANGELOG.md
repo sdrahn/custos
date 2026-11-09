@@ -39,6 +39,16 @@ removed.
   (`AGENT_CUT_OFF`). It is kept when Cockpit saves the model defaults.
   `model-eval.sh --max-output TOKENS` sets it (CI: 2048) and counts the
   cut-off calls.
+- The seal covers each agent's gateway data and the agents' token
+  issuers too (#158, the rest of security review M5). `agent-admin`
+  signs them as it writes them; the gateway denies an agent whose data
+  was changed by hand everything (its owners approve nothing), and
+  trusts no issuer from an `_http.yaml` changed by hand. The emergency
+  stop is never sealed. `agent-admin show` and Cockpit report a broken
+  seal and an earlier signed copy put back (journal: `gateway.data`). A
+  new seal covers the agents' data from the start; a host sealed before
+  runs `agent-admin seal --agents` once. `agent-admin issuers` writes
+  `_http.yaml`, which was edited by hand before.
 
 ### Fixed
 

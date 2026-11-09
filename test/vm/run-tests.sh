@@ -1263,6 +1263,54 @@ check "show: diagnostics-only, recorded, not tampered" enablement_is \
 	'.state == "diagnostics-only" and .enabled == ["diagnostics"] and (.record | startswith("n-")) and (has("tampered") | not)'
 check "journal: categories.enabled by root" eventually 10 promotion_record categories.enabled '.AGENT_BY == "root" and (.AGENT_ENABLEMENT_TO | contains("diagnostics-only"))'
 check "diagnostics: PROBE runs" eventually 30 runs_with dg PROBE 'probe ok'
+# The seal of the agents' data (#158): a new seal covers it from the
+# start. agent-admin signs dg's data and the agents' token issuers; a
+# hand edit denies dg everything until agent-admin writes it again.
+seal=/etc/mcp-gateway/policy/agents/_seal.yaml
+issuers=/etc/mcp-gateway/policy/agents/_http.yaml
+posture_is() { agent-admin show | jq -e "$1" >/dev/null; }
+check "the seal covers the agents' data (agents: true)" grep -q '^  agents: true' "$seal"
+check "dg's data is signed" grep -Eq '^ +signature: ' "$dgdata"
+check "the agents' token issuers are signed" grep -Eq '^ +signature: ' "$issuers"
+check "show: the seal covers agent data, nothing tampered" posture_is \
+	'.agents_sealed == true and (.agents.dg | has("tampered") | not) and (has("issuers_tampered") | not)'
+check "journal: gateway.data for dg, by root" eventually 10 promotion_record gateway.data '.AGENT_DATA == "dg" and (.AGENT_DATA_SHA256 | length == 64)'
+cp "$dgdata" "$work/dg-signed.yaml"
+sed -i -E 's/^( +)mode: supervised$/\1mode: advisory/' "$dgdata"
+grep -Eq '^ +mode: advisory$' "$dgdata" || echo "the hand edit of $dgdata did not apply" >&2
+check "show: dg's data changed by hand does not match its seal" posture_is '.agents.dg.tampered | contains("does not match its seal")'
+check "the gateway denies dg everything, its diagnostics call too" eventually 30 effect_is dg probe deny
+if gateway_reasons; then
+	check "the denial's reason: the agent's data does not match its seal" reason_is dg probe \
+		"the agent's data does not match its seal (changed outside agent-admin): every call is denied until agent-admin writes it again (agent-admin seal --agents)"
+else
+	skip "the denial's reason (this mcp-gateway's policy has no deny_reasons)"
+fi
+check "agent-admin writes dg's data again" dg_perms
+check "signed again, the gateway allows dg's diagnostics call" eventually 30 effect_is dg probe allow
+check "agent-admin mode dg advisory" agent-admin mode dg advisory
+cp "$work/dg-signed.yaml" "$dgdata"
+check "show: an earlier signed version of dg's data put back is reported" posture_is '.agents.dg.tampered | contains("an earlier version was put back")'
+check "agent-admin mode dg supervised" agent-admin mode dg supervised
+check "show: dg's data is the latest again" posture_is '.agents.dg | has("tampered") | not'
+check "agent-admin issuers --add" agent-admin issuers --add https://agents.example.test
+check "the issuers are signed, with the issuer" bash -c "grep -q 'agents.example.test' '$issuers' && grep -Eq '^ +signature: ' '$issuers'"
+cp "$issuers" "$work/issuers.yaml"
+sed -i 's|agents.example.test|evil.example.test|' "$issuers"
+check "show: issuers changed by hand do not match their seal" posture_is '.issuers_tampered | contains("trusts no issuer")'
+cp "$work/issuers.yaml" "$issuers"
+check "agent-admin issuers --remove" agent-admin issuers --remove https://agents.example.test
+check "show: nothing tampered" posture_is '(has("issuers_tampered") | not) and (.agents.dg | has("tampered") | not)'
+# The emergency stop is never sealed: written by hand, it stops dg.
+printf '_control:\n  stopped: true\n' >/etc/mcp-gateway/policy/agents/_control.yaml
+check "an emergency stop written by hand stops a sealed host's agent" eventually 30 effect_is dg probe deny
+check "agent-admin release-all" agent-admin release-all
+check "released, dg's diagnostics call is allowed" eventually 30 effect_is dg probe allow
+# The checks below write dg's data past agent-admin, to test the
+# categories' gate on its own: the seal's agent part off for them (show
+# reports it), on again with agent-admin seal --agents.
+sed -i '/^  agents: true$/d' "$seal"
+check "show: the seal's agent part removed is reported" posture_is '.agents_sealed == false and (.seal_tampered | contains("no longer covers the agents'"'"' data"))'
 check "agent-admin refuses a permission of a disabled category" not dg_perms '- {server: custos-test, tool: change, category: patch-errata}'
 check "agent-admin refuses a permission without a category" not dg_perms '- {server: custos-test, tool: change}'
 check "journal: category.refused, with the person" eventually 10 promotion_record category.refused '.AGENT_NAME == "dg" and .AGENT_CATEGORY == "patch-errata" and .AGENT_BY == "root"'
@@ -1302,7 +1350,6 @@ check "the gateway hides the disabled category's tool from the agent" eventually
 # signed the state with a key kept as a systemd credential; the gateway
 # checks the signature with _seal.yaml's public key, and a state edited by
 # hand counts as diagnostics-only.
-seal=/etc/mcp-gateway/policy/agents/_seal.yaml
 check "the seal: its public key is gateway data" grep -q 'BEGIN PUBLIC KEY' "$seal"
 check "the seal's private key is an encrypted credential, root's alone" stat_is /etc/credstore.encrypted/custos-enablement-seal root:root:600
 check "the state is signed" grep -q '^  signature: ' "$enablement"
@@ -1366,6 +1413,12 @@ check "show: diagnostics-only, recorded, not tampered" enablement_is \
 check "agent-admin disable on a diagnostics-only host has nothing to do" not agent-admin disable compliance-audit
 # Forward again, as below; dg's permission in patch-errata back for it.
 cp "$work/dg-patch.yaml" "$dgdata"
+# A host whose seal does not cover the agents' data yet (sealed before
+# #158, or as here): agent-admin seal --agents signs it as it is on file.
+check "agent-admin seal --agents" agent-admin seal --agents
+check "show: the seal covers agent data again, dg signed, nothing tampered" posture_is \
+	'.agents_sealed == true and (has("seal_tampered") | not) and (.agents.dg | has("tampered") | not)'
+check "dg's data is signed again" grep -Eq '^ +signature: ' "$dgdata"
 # Every category enabled decides as a host without enablement state (the
 # broader install).
 check "agent-admin enable --all" agent-admin enable --all
