@@ -29,7 +29,7 @@ BuildRequires:  systemd-rpm-macros
 # The agents' tools, policy and approvals are mcp-gateway's (CONTRACT.md §1).
 # NVIDIA OpenShell is optional (sandbox kind openshell, CONTRACT.md §16a).
 Suggests:       openshell
-Requires:       mcp-gateway >= 1.15
+Requires:       mcp-gateway >= 1.16
 Requires(pre):  group(mcp-users)
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 %sysusers_requires
@@ -81,7 +81,7 @@ approver rules say who may decide.
 Summary:        Functional tests of custos, for openQA
 Group:          Development/Tools/Other
 Requires:       %{name} = %{version}
-Requires:       mcp-gateway >= 1.15
+Requires:       mcp-gateway >= 1.16
 # What the tests run: the gateway's control API and the agents' sockets
 # (curl, jq), the journal, nsenter and runuser (util-linux), and the
 # kernel audit log and SELinux tools for the denial check.
@@ -111,6 +111,10 @@ Summary:        The bundled health-check and diagnostics agent of custos
 Group:          System/Management
 Requires:       %{name} = %{version}
 Requires:       mcp-gateway-exec-server
+# update-status's services to restart (pending_restarts): a server with
+# CAP_SYS_PTRACE, so installing it is the administrator's choice;
+# custos-setup links its profile when it is installed.
+Suggests:       mcp-gateway-restarts-server
 Recommends:     %{name}-cockpit = %{version}
 Recommends:     %{name}-selinux = %{version}
 

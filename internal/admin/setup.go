@@ -43,13 +43,23 @@ const (
 	NetServerVendor   = "/usr/share/custos/gateway/servers.d/custos-net.yaml"
 )
 
+// RestartsProfile is mcp-gateway's server restarts (package
+// mcp-gateway-restarts-server, mcp-gateway 1.16): its tool
+// pending_restarts lists the services an update left waiting for a
+// restart. It names a capability, so the gateway accepts it only from
+// servers.d, where custos-setup links it when the package is installed.
+const RestartsProfile = "/usr/share/mcp-gateway/profiles/restarts.yaml"
+
 // shippedBefore are the SHA-256 digests of the exec command files earlier
-// releases shipped (0.3.0): a copy that is one of them is no
-// administrator's change, and custos-setup replaces it with the current
-// one.
+// releases shipped (0.3.0; 0.4.0 and 0.5.0): a copy that is one of them
+// is no administrator's change, and custos-setup replaces it with the
+// current one.
 var shippedBefore = map[string][]string{
-	"exec.d-diagnostics.yaml": {"971bf1d0e0ad1d7203cda0aefbb16fe1e76bf829d4bca39c8669d8367adb14fa"},
-	"exec.d-disk-usage.yaml":  {"7e7f23fe449a005adf26de9b12d02287f37b2f742c294c60a860aa102b6d4f33"},
+	"exec.d-diagnostics.yaml": {
+		"971bf1d0e0ad1d7203cda0aefbb16fe1e76bf829d4bca39c8669d8367adb14fa", // 0.3.0
+		"e14650e1dd4569ffaed6f04a6fef793da92e43efe173e4f0d8e30c792dad2c8e", // 0.4.0, 0.5.0
+	},
+	"exec.d-disk-usage.yaml": {"7e7f23fe449a005adf26de9b12d02287f37b2f742c294c60a860aa102b6d4f33"},
 }
 
 // SetupOptions are custos-setup's arguments.
@@ -211,6 +221,10 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	netStep := a.setupNetServer()
 	steps = append(steps, netStep)
 	execAdded = execAdded || netStep.Result == "done"
+	// mcp-gateway's server restarts, for update-status, when installed.
+	restartsStep := a.setupRestartsServer()
+	steps = append(steps, restartsStep)
+	execAdded = execAdded || restartsStep.Result == "done"
 
 	// 4. The health-check agent, from its template with the defaults.
 	if _, err := os.Stat(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); err == nil {
@@ -332,6 +346,31 @@ func (a *Admin) setupNetServer() Step {
 		return Step{name, "failed", err.Error()}
 	}
 	return Step{name, "done", dst}
+}
+
+// setupRestartsServer links mcp-gateway's profile restarts into the
+// gateway's servers.d, as mcp-gateway's user guide does, when the package
+// mcp-gateway-restarts-server is installed; a file there already that is
+// not that link is the administrator's and stays.
+func (a *Admin) setupRestartsServer() Step {
+	const name = "server restarts"
+	if _, err := os.Stat(a.p(RestartsProfile)); err != nil {
+		return Step{name, "skipped", "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart"}
+	}
+	if _, err := os.Stat(a.p(GatewayServersDir)); err != nil {
+		return Step{name, "skipped", GatewayServersDir + " does not exist"}
+	}
+	dst := a.p(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	if target, err := os.Readlink(dst); err == nil && target == RestartsProfile {
+		return Step{name, "already", ""}
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		return Step{name, "skipped", dst + " is not the link to " + RestartsProfile + ": kept"}
+	}
+	if err := os.Symlink(RestartsProfile, dst); err != nil {
+		return Step{name, "failed", err.Error()}
+	}
+	return Step{name, "done", dst + " -> " + RestartsProfile}
 }
 
 func sha256Hex(b []byte) string {

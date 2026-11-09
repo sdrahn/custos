@@ -16,7 +16,7 @@ terms the other chapters use.
 | Part | Package | What it does |
 |---|---|---|
 | the agents | `custos` | each agent is an ADK Go program (`agent-launcher`) run by systemd as its own system user `agent-<name>`, or inside an NVIDIA OpenShell sandbox |
-| mcp-gateway | `mcp-gateway` (≥ 1.15) | the agents' only tools: every tool call goes through it; its policy decides what each agent may do, and it holds the approvals |
+| mcp-gateway | `mcp-gateway` (≥ 1.16) | the agents' only tools: every tool call goes through it; its policy decides what each agent may do, and it holds the approvals |
 | the autonomy policy | `custos` | a module for mcp-gateway's policy (`agents.rego`) that turns each agent's mode and permissions into the gateway's decisions |
 | systemd | the system | starts agents on demand, runs schedules, sandboxes and stops agents |
 | SELinux | `custos-selinux` | confines agents (`agent_t`): they reach the gateway's MCP socket and nothing of the gateway's control socket or other agents |

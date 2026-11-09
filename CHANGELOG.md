@@ -9,6 +9,8 @@ removed.
 
 ### Changed
 
+- Custos requires mcp-gateway 1.16: its exec commands see whether an
+  update waits for a reboot (`/run/reboot-needed`).
 - Cockpit's **Promote…** and **Change envelope…** open a form for the
   envelope instead of a YAML text (#163): windows with the days as
   checkboxes (and *every day*, *weekdays*, *weekend*), from and to, and
@@ -102,13 +104,17 @@ removed.
   is pending when a kernel newer than the running one is installed
   (from rpm) or `/run/reboot-needed` exists (zypper and
   transactional-update write it after an update that needs a reboot),
-  and lists the running and the installed kernels. The exec server's
-  sandbox does not show the host's `/run/reboot-needed`, so without a
-  newer kernel it says that file may not be visible rather than that
-  nothing waits. Which services wait for a restart
-  (`zypper ps`) is not shown: it needs to read other users' processes,
-  and the command runs as the agent's user. health-check no longer has
-  `check_restart_reload`.
+  and lists the running and the installed kernels; the exec server's
+  commands see that file from mcp-gateway 1.16 on. Its new optional step
+  `restarts__pending_restarts`, mcp-gateway's server `restarts` (1.16,
+  package `mcp-gateway-restarts-server`), lists the services and
+  processes that still use files an update replaced, as `zypper ps`
+  does. health-check may call both, and no longer has
+  `check_restart_reload`. `custos-setup` links the server's profile into
+  `/etc/mcp-gateway/servers.d/` when its package is installed (sdrahn/mcp-gateway#345).
+- `custos-setup` kept the diagnostic commands of 0.4.0 and 0.5.0 as an
+  administrator's file, since it knew only 0.3.0's as shipped; it now
+  replaces those too, unchanged, with the current ones.
 - The shipped playbooks showed the model the wrong things (#155): their
   steps were called without arguments, so `failed-units` listed the
   *active* units (systemd-mcp's default) and never the failed one, and

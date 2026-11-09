@@ -311,7 +311,7 @@ call, in which order, and what to look for. Custos ships eleven, in
 | `network-config` | interfaces, routes, name servers, listening ports (no reachability test: the tools have no network) |
 | `boot-health` | the last boot's duration and slow or failed units |
 | `package-consistency` | unsatisfied package dependencies |
-| `update-status` | pending updates and patches, and whether one waits for a reboot (installs nothing) |
+| `update-status` | pending updates and patches, whether one waits for a reboot, and the services to restart after one (installs nothing) |
 
 ```bash
 agent-admin playbooks | jq 'map_values(.title)'     # the playbooks
@@ -361,12 +361,27 @@ host`: unix and netlink sockets only, no IP traffic):
 cp /usr/share/custos/gateway/servers.d/custos-net.yaml /etc/mcp-gateway/servers.d/
 ```
 
-`custos-setup` does both on the diagnostics-only install.
+`update-status` also lists the services that still run what an update
+replaced, and so wait for a restart, when mcp-gateway's server
+`restarts` is offered (mcp-gateway 1.16). Reading other users'
+processes needs a capability (`CAP_SYS_PTRACE`), so its definition is a
+profile you link yourself:
+
+```bash
+zypper install mcp-gateway-restarts-server
+ln -s /usr/share/mcp-gateway/profiles/restarts.yaml /etc/mcp-gateway/servers.d/restarts.yaml
+```
+
+`custos-setup` does all three on the diagnostics-only install; the
+last one only when `mcp-gateway-restarts-server` is installed.
 The agent needs `read_only` permissions for the tools, with
 `category: diagnostics` on a diagnostics-only host
 ([chapter 6](06-permissions-and-modes.md#diagnostics-only)), for example
 `- {server: exec, tool: memory_usage, read_only: true, category: diagnostics}`
 or `- {server: custos-net, tool: network_addresses, read_only: true, category: diagnostics}`.
+The gateway allows a call of `restarts` without an approval only by a
+permission that names server and tool exactly, as the `health-check`
+template's does: `- {server: restarts, tool: pending_restarts, read_only: true, category: diagnostics}`.
 Each playbook's `needs` says what it uses.
 
 Your own playbooks go in `/etc/custos/playbooks/`, one file per playbook,

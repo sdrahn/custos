@@ -15,7 +15,7 @@ the parts found each other. Creating the first agent is
 | What | Version or note |
 |---|---|
 | operating system | SUSE Linux Enterprise Server 16.0 or 16.1, openSUSE Leap 16.0 or 16.1 (x86_64, aarch64; SLES also s390x, ppc64le) |
-| mcp-gateway | 1.15 or later, with its SELinux module (`mcp-gateway-selinux`) where SELinux runs |
+| mcp-gateway | 1.16 or later, with its SELinux module (`mcp-gateway-selinux`) where SELinux runs |
 | SELinux | enforcing is supported and tested; `custos-selinux` is required where `selinux-policy-targeted` is installed |
 | systemd | the system's; agents use `systemd-creds` for secrets |
 | a model | an OpenAI-compatible server (for example a local vLLM or llama.cpp server), Google Gemini, or Vertex AI ([chapter 5](05-configuration.md#models)) |
@@ -111,7 +111,11 @@ It then:
    ([chapter 9](09-administration.md#templates)): it runs the diagnostic
    playbooks daily and weekly, and you run any of them from Cockpit;
 4. stores the key as the agent's `model-key`;
-5. copies the playbooks' commands to `/etc/mcp-gateway/exec.d/`.
+5. copies the playbooks' commands to `/etc/mcp-gateway/exec.d/`, and the
+   server `custos-net` to `/etc/mcp-gateway/servers.d/`; when you
+   installed `mcp-gateway-restarts-server`, it links that server's
+   profile there too, for the services `update-status` finds waiting for
+   a restart ([chapter 9](09-administration.md#playbooks)).
 
 Each step prints `done`, `already` or `skipped` with why: running it
 again changes only what differs, and never goes back to diagnostics-only

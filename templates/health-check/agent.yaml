@@ -32,7 +32,7 @@ instruction: |
   name the documents and sections you relied on. If the documentation
   is not offered, say so and go on without it.
 gateway:
-  servers: [systemd, exec, custos-net, zypp, snapper, tukit, suse-docs]
+  servers: [systemd, exec, custos-net, restarts, zypp, snapper, tukit, suse-docs]
   tools:
     - systemd__list_loaded_units
     - systemd__list_log
@@ -50,6 +50,7 @@ gateway:
     - exec__selinux_status
     - exec__package_dependencies
     - exec__reboot_status
+    - restarts__pending_restarts
     - zypp__check_updates
     - snapper__list_snapshots
     - tukit__get_status
