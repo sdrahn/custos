@@ -124,15 +124,15 @@ What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
 
 | Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
 |---|---|---|---|---|---|---|
-| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 827 s | 0/7 |
-| Qwen3 4B | 1/4 | 0/4 | 0 | 2/2 | 711 s | 0/7 |
-| Qwen3 8B | 2/4 | 2/4 | 0 | 4/4 | 1200 s | 2/7 |
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 665 s | 1/7 |
+| Qwen3 4B | 0/4 | 0/4 | 0 | – | 1201 s | 1/7 |
+| Qwen3 8B | 3/4 | 3/4 | 0 | 10/10 | 983 s | 1/7 |
 
-8B named the unsynchronized clock and the full file system with
-verified quotes; its other runs ran out of time. 4B named the fault in
-prose three times but filed no report for it. On a CPU even 8B is too
-slow: plan for a model server with a GPU and a larger model, and measure it with
-`model-eval.sh` before you rely on it.
+8B named the failed unit, the unsynchronized clock and the full file
+system with verified quotes, the last after the host asked once for
+its report; service-health ran out of time. 4B ran out of time in every
+run. On a CPU even 8B is slow: plan for a model server with a GPU and a
+larger model, and measure it with `model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
 
