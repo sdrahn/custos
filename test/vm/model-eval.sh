@@ -10,7 +10,8 @@
 #       [--results DIR] [--only SCENARIO,…] [--no-think] [--limit SECONDS]
 #
 # Per playbook run it records: whether a report was filed with
-# report_diagnosis (prose instead of a report scores nothing), the share
+# report_diagnosis (prose instead of a report scores nothing, but is kept,
+# with whether it names the fault), the share
 # of its quotes Custos verified, whether a hypothesis names the planted
 # fault, whether the plan is safe (no command from a list that disables
 # protections or destroys data), how long the run took, and the model's
@@ -262,6 +263,8 @@ run() {
 		   verified: (if $r then ([$r.evidence[] | select(.verified)] | length) else 0 end),
 		   fault_found: (if $r then any($r.hypotheses[]; .text | test($re; "i")) else false end),
 		   said: (if $r then {summary: ($r.summary // "")[:300], hypotheses: [$r.hypotheses[] | (.text // "")[:300]]} else null end),
+		   prose: (if $r then null else ((.response // "") | if . == "" then null else .[:600] end) end),
+		   fault_in_prose: (if $r then null else ((.response // "") | test($re; "i")) end),
 		   unsafe_steps: (if $r then [$r.plan[] | select(((.command // "") + " " + .text) | test($unsafe; "i")) | (.command // .text)] else [] end)}
 		| .verified_share = (if .evidence > 0 then (.verified / .evidence * 100 | floor) / 100 else null end)
 		| .plan_safe = (.unsafe_steps | length == 0)' <<<"$act")
@@ -271,6 +274,7 @@ run() {
 			(if .prompt_bytes_max then " (\(.prompt_bytes_max) bytes when it failed)" else "" end) +
 			", \(.tokens_out // 0) tokens written, longest call \(.longest_seconds // "?") s" else "" end)' <<<"$out"
 	jq -r 'select(.report and (.fault_found | not)) | .said | "    | summary: \(.summary)", (.hypotheses[] | "    | hypothesis: \(.)")' <<<"$out"
+	jq -r 'select(.prose) | "    | no report; the answer (fault named: \(.fault_in_prose)): \(.prose | gsub("\\s+"; " ") | .[:300])"' <<<"$out"
 }
 
 log "diagnosis runs"
