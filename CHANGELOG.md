@@ -7,6 +7,36 @@ removed.
 
 ## Unreleased
 
+Diagnosis with small models, and a seal that covers each agent. The
+host now does more of a playbook run itself: it runs the steps with
+their arguments, shows the model only the playbook's tools, bounds its
+output, can turn its thinking off, asks once for a report that was
+answered in prose, and tells it that what a tool returns is data, never
+instructions. With these, no tested model followed a prompt
+injection, and Qwen3 8B on four CPUs found half of the planted faults
+(chapter 5).
+The seal now covers each agent's gateway data and the token issuers;
+the security review before 0.6 (`docs/security-review-0.6.md`) found
+how hand-edited data could still become trusted, and how the OpenShell
+relay's owner check could be passed, and each is fixed. `update-status`
+sees a pending reboot and the services to restart (mcp-gateway 1.16),
+and Cockpit promotes a task category with a form instead of YAML.
+
+Upgrading from 0.5.x needs no change to configurations: contract
+version 1 only gained names. To know:
+
+- mcp-gateway 1.16 is the minimum: its exec commands see
+  `/run/reboot-needed`.
+- A host sealed before runs `agent-admin seal --agents` once, so that
+  the seal covers the agents' data. Add token issuers with
+  `agent-admin issuers` from now on, not by editing `_http.yaml`: an
+  edited file is no longer trusted.
+- The services to restart need mcp-gateway's server `restarts`, which
+  holds `CAP_SYS_PTRACE`: install `mcp-gateway-restarts-server` and run
+  `custos-setup --restarts`, or link its profile yourself (chapter 9).
+- Every agent's instruction ends with the host's paragraph on tool
+  outputs; an agent's own instruction is unchanged.
+
 ### Changed
 
 - Custos requires mcp-gateway 1.16: its exec commands see whether an
@@ -94,6 +124,27 @@ removed.
   new seal covers the agents' data from the start; a host sealed before
   runs `agent-admin seal --agents` once. `agent-admin issuers` writes
   `_http.yaml`, which was edited by hand before.
+- `model-eval.sh` (custos-tests) measures how well a model does Custos's
+  work on a test system (#150): the bundled diagnostics install with the
+  model, the health-check agent's playbooks against planted faults
+  (report filed, quotes verified, fault found, plan safe, duration), and
+  the prompt-injection cases. CI's job `models` runs it for each release
+  and on demand with the models of `test/vm/eval-models` (Qwen3 1.7B to
+  8B, on Ollama, CPU only) and tabulates them. User guide, chapter 5,
+  "Which model is good enough".
+- Demonstration videos of mcp-gateway and Custos, without audio and with
+  English subtitles, in a business and a technical version: CI's job
+  `video` records a scripted tour (`test/video/tour.js`) of the real
+  pages in the Leap 16 test VM: Custos's and mcp-gateway's Cockpit
+  pages, mcp-gateway's own approval page with a sign-in at the identity
+  provider, and Cockpit's terminal. Each version comes as an MP4 with
+  the subtitles burned in, an MP4 with a subtitle track, and `.srt` and
+  `.vtt` files, in the job's artifact `demo-videos` only. The job runs
+  for each release, when its tag is pushed (CI then builds the packages
+  and records the videos, nothing else), and by hand (Actions, CI, Run
+  workflow). custos-tests' `testidp` gained
+  the authorization code flow with PKCE (`--login`, `--issuer`), for
+  the approval page's sign-in.
 
 ### Fixed
 
@@ -163,38 +214,12 @@ removed.
   its reason, a kept editor) lost the keyboard focus at each refresh,
   every five seconds: what was typed next went nowhere. The refresh now
   gives the focus back, with the caret where it was.
-
 - Cockpit's form to promote a task category closed within five seconds
   and lost the envelope being written: the Agents tab rebuilt the
   agent's view, form included, at each refresh. So did the reason that
   Demote and "Should not have run" record. The form and the reason are
   now kept while the form is open or anything was typed, as the
   permissions editor is, and start afresh once an action used them.
-
-### Added
-
-- `model-eval.sh` (custos-tests) measures how well a model does Custos's
-  work on a test system (#150): the bundled diagnostics install with the
-  model, the health-check agent's playbooks against planted faults
-  (report filed, quotes verified, fault found, plan safe, duration), and
-  the prompt-injection cases. CI's job `models` runs it for each release
-  and on demand with the models of `test/vm/eval-models` (Qwen3 1.7B to
-  8B, on Ollama, CPU only) and tabulates them. User guide, chapter 5,
-  "Which model is good enough".
-
-- Demonstration videos of mcp-gateway and Custos, without audio and with
-  English subtitles, in a business and a technical version: CI's job
-  `video` records a scripted tour (`test/video/tour.js`) of the real
-  pages in the Leap 16 test VM: Custos's and mcp-gateway's Cockpit
-  pages, mcp-gateway's own approval page with a sign-in at the identity
-  provider, and Cockpit's terminal. Each version comes as an MP4 with
-  the subtitles burned in, an MP4 with a subtitle track, and `.srt` and
-  `.vtt` files, in the job's artifact `demo-videos` only. The job runs
-  for each release, when its tag is pushed (CI then builds the packages
-  and records the videos, nothing else), and by hand (Actions, CI, Run
-  workflow). custos-tests' `testidp` gained
-  the authorization code flow with PKCE (`--login`, `--issuer`), for
-  the approval page's sign-in.
 
 ## v0.5.0 — 2026-11-07
 
