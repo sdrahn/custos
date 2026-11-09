@@ -288,12 +288,23 @@ func (a *Admin) SealAgents() error {
 	}
 	names, _ := a.agentFiles()
 	if agents {
-		fmt.Fprintf(a.Out, "the seal covered the agents' data already; signed again: %d agents and the token issuers\n", len(names))
+		fmt.Fprintf(a.Out, "the seal covered the agents' data already; signed again: %s and the token issuers\n", countAgents(len(names)))
 	} else {
-		fmt.Fprintf(a.Out, "the seal covers the agents' data now: %d agents and the token issuers signed; "+
-			"a change outside agent-admin denies that agent everything\n", len(names))
+		fmt.Fprintf(a.Out, "the seal covers the agents' data now: %s and the token issuers signed; "+
+			"a change outside agent-admin denies that agent everything\n", countAgents(len(names)))
 	}
 	return a.waitPolicy("mcp/agents/_seal/agents", func(v any) bool { return v == true })
+}
+
+// countAgents is "1 agent", "2 agents", "no agents".
+func countAgents(n int) string {
+	switch n {
+	case 0:
+		return "no agents"
+	case 1:
+		return "1 agent"
+	}
+	return fmt.Sprintf("%d agents", n)
 }
 
 // --- the agents' token issuers (_http.yaml) ---------------------------------

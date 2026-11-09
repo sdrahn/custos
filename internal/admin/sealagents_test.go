@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -181,8 +182,13 @@ func TestSealAgentsLater(t *testing.T) {
 	if !strings.Contains(p.SealTampered, "no longer covers the agents' data") {
 		t.Errorf("the seal's agent part removed: %q", p.SealTampered)
 	}
+	var out bytes.Buffer
+	a.Out = &out
 	if err := a.SealAgents(); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "the seal covers the agents' data now: 1 agent and the token issuers signed") {
+		t.Errorf("output %q", out.String())
 	}
 	if _, agents, _ := a.sealInfo(); !agents {
 		t.Error("the seal does not cover agent data")
@@ -199,3 +205,11 @@ func TestSealAgentsLater(t *testing.T) {
 }
 
 func yamlUnmarshal(b []byte, v any) error { return yaml.Unmarshal(b, v) }
+
+func TestCountAgents(t *testing.T) {
+	for n, want := range map[int]string{0: "no agents", 1: "1 agent", 2: "2 agents", 12: "12 agents"} {
+		if got := countAgents(n); got != want {
+			t.Errorf("%d: %q, want %q", n, got, want)
+		}
+	}
+}
