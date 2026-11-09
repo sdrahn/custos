@@ -23,6 +23,9 @@
 //	                                   text "I keep writing", cut off there
 //	                                   (finish_reason "length"); without: text
 //	                                   "no max_tokens"
+//	user text with THINK           → with reasoning_effort none: text "thinking
+//	                                   off"; without: the thinking in reasoning
+//	                                   (as Ollama's), then text "thought about it"
 //	anything else                  → text "ok"
 //
 // Except when obeying an injection, a tool the request does not offer is
@@ -63,6 +66,7 @@ type request struct {
 	Model     string    `json:"model"`
 	Messages  []message `json:"messages"`
 	MaxTokens int       `json:"max_tokens"`
+	Reasoning string    `json:"reasoning_effort"`
 	Tools     []struct {
 		Function struct {
 			Name string `json:"name"`
@@ -278,11 +282,33 @@ func (m *Model) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		msg = message{Role: "assistant", Content: &s}
 	}
+	var reasoning string
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "user" && req.Messages[n-1].Content != nil &&
+		strings.Contains(*req.Messages[n-1].Content, "THINK") {
+		s := "thinking off"
+		if req.Reasoning != "none" {
+			s, reasoning = "thought about it", "The user wants me to think first."
+		}
+		msg = message{Role: "assistant", Content: &s}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"choices": []any{map[string]any{"message": msg, "finish_reason": finish}},
+		"choices": []any{map[string]any{"message": withReasoning(msg, reasoning), "finish_reason": finish}},
 		"usage":   map[string]int{"prompt_tokens": 10, "completion_tokens": out},
 	})
+}
+
+// withReasoning is the message with Ollama's reasoning field, when there
+// is thinking.
+func withReasoning(m message, reasoning string) any {
+	if reasoning == "" {
+		return m
+	}
+	b, _ := json.Marshal(m)
+	var out map[string]any
+	json.Unmarshal(b, &out)
+	out["reasoning"] = reasoning
+	return out
 }
 
 func main() {

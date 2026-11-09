@@ -118,6 +118,11 @@ type Model struct {
 	// without end; with a bound its answer is cut off and the activity
 	// goes on (or ends) in time.
 	MaxOutputTokens int `yaml:"max_output_tokens"`
+	// ReasoningEffort asks a model that thinks before it answers how much
+	// to (provider openai: the request's reasoning_effort): none, low,
+	// medium or high; "": the model server's default. Ollama thinks by
+	// default with a model that can, and none turns that off.
+	ReasoningEffort string `yaml:"reasoning_effort"`
 }
 
 // Timeout is TimeoutSeconds as a duration (0: none).
@@ -371,6 +376,14 @@ func (m Model) Check() error {
 	}
 	if m.MaxOutputTokens < 0 || m.MaxOutputTokens > math.MaxInt32 {
 		bad("model.max_output_tokens: %d: want 0 (none: the model server's) or more", m.MaxOutputTokens)
+	}
+	switch m.ReasoningEffort {
+	case "", "none", "low", "medium", "high":
+	default:
+		bad("model.reasoning_effort: %q: want none, low, medium or high", m.ReasoningEffort)
+	}
+	if m.ReasoningEffort != "" && m.Provider != "openai" {
+		bad("model.reasoning_effort: only for provider openai")
 	}
 	if m.Provider == "gemini" && m.Credential == "" {
 		bad("model.credential: provider gemini needs an API key credential")

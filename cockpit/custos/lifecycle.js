@@ -168,7 +168,7 @@ function credentialForm(n, cred) {
 function initDefaults() {
     const form = document.getElementById("model-defaults");
     const f = form.elements;
-    let timeoutSeconds, maxOutputTokens; // model.timeout_seconds and max_output_tokens of the defaults read
+    let timeoutSeconds, maxOutputTokens, reasoningEffort; // model.timeout_seconds, max_output_tokens, reasoning_effort of the defaults read
     const note = text => { const n = document.getElementById("defaults-note"); n.className = (text && text.cls) || "muted"; n.textContent = (text && text.msg) || "" };
     const provider = () => form.querySelector(".for-openai").hidden = f.provider.value !== "openai";
     f.provider.addEventListener("change", provider);
@@ -190,6 +190,7 @@ function initDefaults() {
             // Set with agent-admin defaults, not here: kept as it is.
             timeoutSeconds = m.timeout_seconds;
             maxOutputTokens = m.max_output_tokens;
+            reasoningEffort = m.reasoning_effort;
             note({ msg: d.model ? "" : "No defaults yet: new agents get the template's model." });
         } catch (ex) {
             note({ msg: ((ex && ex.message) || String(ex)).replace(/^agent-admin: /, ""), cls: "error-text" });
@@ -213,6 +214,7 @@ function initDefaults() {
         }
         if (Number.isInteger(timeoutSeconds) && timeoutSeconds > 0) y += "  timeout_seconds: " + timeoutSeconds + "\n";
         if (Number.isInteger(maxOutputTokens) && maxOutputTokens > 0) y += "  max_output_tokens: " + maxOutputTokens + "\n";
+        if (["none", "low", "medium", "high"].includes(reasoningEffort) && f.provider.value === "openai") y += "  reasoning_effort: " + JSON.stringify(reasoningEffort) + "\n";
         note({ msg: "Saving…" });
         try {
             await admin(["defaults", "--from", "-"], y);

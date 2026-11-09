@@ -180,3 +180,43 @@ func TestMaxOutputTokens(t *testing.T) {
 		t.Errorf("cut off in a tool call: %v", err)
 	}
 }
+
+// model.reasoning_effort goes to the server as reasoning_effort (only
+// when set); the model's thinking in an answer (Ollama's reasoning,
+// vLLM's reasoning_content) is a thought, not the answer's text.
+func TestReasoning(t *testing.T) {
+	var got request
+	answer := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = request{}
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(answer))
+	}))
+	defer srv.Close()
+	call := func(m *Model) *model.LLMResponse {
+		var resp *model.LLMResponse
+		for r, err := range m.LLM().GenerateContent(context.Background(), &model.LLMRequest{
+			Contents: []*genai.Content{genai.NewContentFromText("why", genai.RoleUser)}}, false) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp = r
+		}
+		return resp
+	}
+	answer = `{"choices":[{"message":{"role":"assistant","content":"","reasoning":"Let me think about the unit."},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`
+	resp := call(&Model{Endpoint: srv.URL, Name: "qwen3"})
+	if got.ReasoningEffort != "" || len(resp.Content.Parts) != 1 || !resp.Content.Parts[0].Thought || resp.Content.Parts[0].Text != "Let me think about the unit." {
+		t.Errorf("Ollama's reasoning: sent %q, %+v", got.ReasoningEffort, resp.Content.Parts)
+	}
+	b, _ := json.Marshal(got)
+	if strings.Contains(string(b), "reasoning") {
+		t.Errorf("reasoning sent without a setting, or back: %s", b)
+	}
+	answer = `{"choices":[{"message":{"role":"assistant","content":"The unit failed.","reasoning_content":"Hmm."},"finish_reason":"stop"}],"usage":{}}`
+	resp = call(&Model{Endpoint: srv.URL, Name: "qwen3", ReasoningEffort: "none"})
+	if got.ReasoningEffort != "none" || len(resp.Content.Parts) != 2 || !resp.Content.Parts[0].Thought || resp.Content.Parts[1].Thought ||
+		resp.Content.Parts[1].Text != "The unit failed." {
+		t.Errorf("reasoning_content and the answer: sent %q, %+v", got.ReasoningEffort, resp.Content.Parts)
+	}
+}

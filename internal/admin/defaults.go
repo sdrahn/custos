@@ -38,11 +38,13 @@ type ModelDefaults struct {
 	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 	// MaxOutputTokens: model.max_output_tokens (0: none).
 	MaxOutputTokens int `yaml:"max_output_tokens,omitempty" json:"max_output_tokens,omitempty"`
+	// ReasoningEffort: model.reasoning_effort ("": the server's default).
+	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 
 func (m *ModelDefaults) config() config.Model {
 	return config.Model{Provider: m.Provider, Name: m.Name, Endpoint: m.Endpoint, Credential: m.Credential, Temperature: m.Temperature,
-		TimeoutSeconds: m.TimeoutSeconds, MaxOutputTokens: m.MaxOutputTokens}
+		TimeoutSeconds: m.TimeoutSeconds, MaxOutputTokens: m.MaxOutputTokens, ReasoningEffort: m.ReasoningEffort}
 }
 
 // ParseDefaults reads and checks a defaults file.
@@ -131,6 +133,7 @@ func renderModel(m *ModelDefaults, comment string) []byte {
 	if m.MaxOutputTokens > 0 {
 		b.WriteString("  max_output_tokens: " + strconv.Itoa(m.MaxOutputTokens) + "\n")
 	}
+	kv("reasoning_effort", m.ReasoningEffort)
 	return []byte(b.String())
 }
 
