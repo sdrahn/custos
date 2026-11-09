@@ -32,6 +32,10 @@ removed.
 
 ### Added
 
+- An activity says how much its model thought (`thought_bytes`, the sum
+  of its `model.call` records' `AGENT_THOUGHT_BYTES`), and Cockpit's
+  activity view says so, and whether the host had to ask the model for
+  the playbook's report (`report_nudged`) and whether it then filed one.
 - A playbook run shows the model only the playbook's tools (#155): its
   steps' and those it names in the new key `tools`, of those the gateway
   offers, and the report tool. A small model reads every tool it is

@@ -178,6 +178,27 @@ async function showResponse(a, button) {
     dlg.showModal();
 }
 
+/* modelView says how the model went about it: its calls, how much it
+ * thought (model.reasoning_effort; the thinking itself is never shown or
+ * kept), and whether the host had to ask for the playbook's report (the
+ * report nudge, §14c). */
+function modelView(a) {
+    const lines = [];
+    if (a.thought_bytes) {
+        lines.push(el("li", { id: "model-thought" }, "It thought " + (a.thought_bytes >= 10240
+            ? Math.round(a.thought_bytes / 1024) + " KB" : a.thought_bytes + " bytes") + " before answering (the thinking is not kept; " +
+            "model.reasoning_effort: none turns it off)."));
+    }
+    if (a.report_nudged) {
+        lines.push(el("li", { id: "model-nudged" }, "It answered the playbook in text, without a report; the host asked it once to file one" +
+            (a.report ? ", and it did." : ". It did not: its answer is the response above.")));
+    }
+    if (!lines.length) return null;
+    return el("div", { id: "model-view" }, el("h3", null, "The model"),
+        el("p", { class: "muted" }, (a.llm_calls || 0) + (a.llm_calls === 1 ? " model call." : " model calls.")),
+        el("ul", null, lines));
+}
+
 /* responseView is the start of the agent's response, with a button for
  * all of it. */
 function responseView(a) {
@@ -215,6 +236,7 @@ function renderDetail(acts) {
             : null,
         a.reason ? el("p", null, el("span", { class: "muted" }, "Reason: "), a.reason) : null,
         responseView(a),
+        modelView(a),
         reportView(a),
         el("h3", null, "Tool calls"),
         (a.calls || []).length ? null : el("p", { class: "muted" }, "None yet."),
