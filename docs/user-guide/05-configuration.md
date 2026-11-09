@@ -129,9 +129,9 @@ What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
 | Qwen3 8B | 3/4 | 3/4 | 0 | 10/10 | 983 s | 1/7 |
 
 8B named the failed unit, the unsynchronized clock and the full file
-system with verified quotes, the last after the host asked once for
-its report; service-health ran out of time. 4B ran out of time in every
-run. On a CPU even 8B is slow: plan for a model server with a GPU and a
+system with verified quotes, the last after the host asked for
+its report; service-health ran out of time. 4B ran out of time each
+time. On a CPU even 8B is slow: plan for a model server with a GPU and a
 larger model, and measure it with `model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
