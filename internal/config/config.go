@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -112,6 +113,11 @@ type Model struct {
 	// own; the activity's max_invocation_seconds bounds it). A model
 	// server on slow hardware may need minutes to read a long prompt.
 	TimeoutSeconds int `yaml:"timeout_seconds"`
+	// MaxOutputTokens bounds what the model writes in one answer (0: no
+	// bound of its own; the model server's). A small model can write
+	// without end; with a bound its answer is cut off and the activity
+	// goes on (or ends) in time.
+	MaxOutputTokens int `yaml:"max_output_tokens"`
 }
 
 // Timeout is TimeoutSeconds as a duration (0: none).
@@ -362,6 +368,9 @@ func (m Model) Check() error {
 	}
 	if m.TimeoutSeconds < 0 {
 		bad("model.timeout_seconds: %d: want 0 (none: max_invocation_seconds bounds a call) or more", m.TimeoutSeconds)
+	}
+	if m.MaxOutputTokens < 0 || m.MaxOutputTokens > math.MaxInt32 {
+		bad("model.max_output_tokens: %d: want 0 (none: the model server's) or more", m.MaxOutputTokens)
 	}
 	if m.Provider == "gemini" && m.Credential == "" {
 		bad("model.credential: provider gemini needs an API key credential")

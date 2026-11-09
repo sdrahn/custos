@@ -26,6 +26,7 @@ model:
   credential: model-key          # optional
   temperature: 0.2               # optional
   timeout_seconds: 1800          # optional
+  max_output_tokens: 2048        # optional
 instruction: |
   You keep this host patched. Look before you change anything.
 gateway:
@@ -71,6 +72,9 @@ has no limit of its own, and only `limits.max_invocation_seconds` bounds
 it with the rest of the activity. Set it when a model server should be
 given up on sooner, or leave it out for a slow local model whose prompts
 grow with each tool result ([chapter 12](12-troubleshooting.md#model)).
+`max_output_tokens` bounds one answer in tokens (absent or `0`: the
+server's limit). A small model may write without end; a limit cuts it
+off (`AGENT_CUT_OFF` in `model.call`). 2048 fits a diagnosis report.
 `credential` is the **name** of a secret stored with
 `agent-admin set-credential`, such as `model-key`, never the key itself
 ([below](#model-credentials)). An unknown key in `model:`, such as

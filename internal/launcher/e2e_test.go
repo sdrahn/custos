@@ -57,7 +57,7 @@ func newEnvPlaybooks(t *testing.T, root string, steps ...testutil.Step) *env {
 	cfg, err := config.Parse([]byte(`
 version: 1
 name: patch-pilot
-model: {provider: openai, name: test, endpoint: "http://127.0.0.1:1"}
+model: {provider: openai, name: test, endpoint: "http://127.0.0.1:1", max_output_tokens: 512}
 instruction: Keep the host patched.
 gateway: {socket: ` + gw.Socket + `, servers: [zypp]}
 limits: {max_tool_calls: 5}
@@ -634,19 +634,35 @@ func TestSuspectedInjection(t *testing.T) {
 
 // model.call records have the call's duration; a model call that fails
 // (no answer in time) is recorded too, with the error and the size of
-// what was sent.
+// what was sent. The model is asked for at most model.max_output_tokens,
+// and an answer cut off there is recorded as such.
 func TestModelCallRecords(t *testing.T) {
 	e := newEnv(t,
 		testutil.Call("c1", "zypp__list_updates", map[string]any{}),
 		testutil.Fail("model endpoint: no answer within model.timeout_seconds (10m0s)"),
+		testutil.CutOff("The updates are"),
 	)
 	_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "check updates", "wait": true})
 	if !strings.Contains(string(b), `"state":"failed"`) {
 		t.Fatalf("activity %s", b)
 	}
+	if c := e.m.Calls[0].Config; c == nil || c.MaxOutputTokens != 512 {
+		t.Errorf("max_output_tokens not asked for: %+v", c)
+	}
+	// The cut-off answer: the next activity.
+	_, b = e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "and now?", "wait": true})
+	if !strings.Contains(string(b), `"state":"finished"`) || !strings.Contains(string(b), "The updates are") {
+		t.Fatalf("cut-off activity %s", b)
+	}
 	mc := e.log.Events(journal.ModelCall)
-	if len(mc) != 2 {
+	if len(mc) != 3 {
 		t.Fatalf("model.call %+v", mc)
+	}
+	if f := mc[2].Fields; f["CUT_OFF"] != "max_output_tokens" || f["OUTCOME"] != "ok" || !strings.Contains(mc[2].Message, "cut off at model.max_output_tokens") {
+		t.Errorf("cut-off call %+v %q", f, mc[2].Message)
+	}
+	if mc[0].Fields["CUT_OFF"] != "" {
+		t.Errorf("CUT_OFF on an answer that was not cut off: %+v", mc[0].Fields)
 	}
 	if mc[0].Fields["OUTCOME"] != "ok" || mc[0].Fields["DURATION_MS"] == "" || mc[0].Fields["TOKENS_IN"] != "10" {
 		t.Errorf("first %+v", mc[0].Fields)

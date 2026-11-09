@@ -19,6 +19,10 @@
 //	                                   ({"value": "fail"} with CHANGE FAIL: the call fails)
 //	user text with DELEGATE a t…   → call agents__delegate {"agent": a, "task": "t…"}
 //	user text with NOTE n          → call <prefix>__read_note {"name": n}
+//	user text with WRITE ON        → with max_tokens (model.max_output_tokens):
+//	                                   text "I keep writing", cut off there
+//	                                   (finish_reason "length"); without: text
+//	                                   "no max_tokens"
 //	anything else                  → text "ok"
 //
 // Except when obeying an injection, a tool the request does not offer is
@@ -57,8 +61,9 @@ type toolCall struct {
 
 type request struct {
 	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
-	Tools    []struct {
+	Messages  []message `json:"messages"`
+	MaxTokens int       `json:"max_tokens"`
+	Tools     []struct {
 		Function struct {
 			Name string `json:"name"`
 		} `json:"function"`
@@ -264,11 +269,19 @@ func (m *Model) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"bad request"}}`, http.StatusBadRequest)
 		return
 	}
-	msg := m.Respond(&req)
+	msg, finish, out := m.Respond(&req), "stop", 5
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "user" && req.Messages[n-1].Content != nil &&
+		strings.Contains(*req.Messages[n-1].Content, "WRITE ON") {
+		s := "no max_tokens"
+		if req.MaxTokens > 0 {
+			s, finish, out = "I keep writing", "length", req.MaxTokens
+		}
+		msg = message{Role: "assistant", Content: &s}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"choices": []any{map[string]any{"message": msg, "finish_reason": "stop"}},
-		"usage":   map[string]int{"prompt_tokens": 10, "completion_tokens": 5},
+		"choices": []any{map[string]any{"message": msg, "finish_reason": finish}},
+		"usage":   map[string]int{"prompt_tokens": 10, "completion_tokens": out},
 	})
 }
 

@@ -912,6 +912,7 @@ and without the `AGENT_` prefix):
 | `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
 | `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` (`DURATION_MS`: how long the call took, also when it failed) |
 | `AGENT_PROMPT_BYTES` | `model.call` with `OUTCOME=error`: the size of the conversation sent (text and tool results), as the failed call reports no tokens. A failed call's record has `OUTCOME=error` and the error as `REASON`; an answered one has no `OUTCOME` |
+| `AGENT_CUT_OFF` | `model.call`: `max_output_tokens` when the answer reached `model.max_output_tokens` (§14) and was cut off; absent otherwise |
 
 | `AGENT_EVENT` | `MESSAGE_ID` |
 |---|---|
@@ -1143,6 +1144,7 @@ model:
   credential: model-key               # optional: $CREDENTIALS_DIRECTORY/agent-<name>.model-key
   temperature: 0.2
   timeout_seconds: 1800               # optional: one model call's limit; absent or 0: none
+  max_output_tokens: 2048             # optional: one answer's limit in tokens; absent or 0: the server's
 instruction: "…"                      # or instruction_file: instruction.md
 gateway:
   socket: /run/mcp-gateway/mcp.sock   # default
@@ -1182,6 +1184,13 @@ bounds one model call, from the request to the end of the answer; without
 it (or with `0`) a call has no limit of its own, and
 `limits.max_invocation_seconds` bounds it with the rest of the activity.
 A call that runs out of either fails with an error naming the limit.
+`model.max_output_tokens` bounds what the model writes in one answer
+(OpenAI-compatible servers get it as `max_tokens`, Gemini as
+`maxOutputTokens`); without it (or with `0`) the model server's own limit
+applies. An answer cut off there stays as far as it got, and its
+`model.call` record has `AGENT_CUT_OFF=max_output_tokens` (§10); a tool
+call cut off in its arguments fails the model call with an error naming
+the limit.
 With `provider: openai`
 and a local model server, an agent needs nothing outside the host, so
 it works air-gapped.
@@ -1446,7 +1455,7 @@ standard error:
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules (a new schedule's timer is enabled and started, a removed one's disabled; one that stays keeps its state, and restarts for its calendar if it runs); systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
 | `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration as `draft` gives it (named `NAME`, with the model defaults), or `FILE`'s; then the template's permissions and mode in the gateway agent data |
 | `draft NAME [--template TEMPLATE]` | a new agent's starting configuration on standard output: the template's, or a blank one, named `NAME`, with the model defaults (§14b). Needs no root |
-| `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?, "timeout_seconds"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
+| `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?, "timeout_seconds"?, "max_output_tokens"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
 | `check NAME\|FILE` | validates only; needs no root for a FILE |
 | `mode NAME MODE`, `permissions NAME < list.yaml` | the gateway agent data (§6). Like `pause`, `resume`, `stop-all` and `release-all`, it returns once the gateway's OPA has loaded the change (`stop-all` and `pause` act on the host first, §8) (it reads it back on `/run/mcp-gateway/opa.sock`, for up to 20 s), so the change is in force when the command returns |

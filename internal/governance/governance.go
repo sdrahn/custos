@@ -660,6 +660,10 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 		f["TOKENS_IN"] = strconv.Itoa(int(resp.UsageMetadata.PromptTokenCount))
 		f["TOKENS_OUT"] = strconv.Itoa(int(resp.UsageMetadata.CandidatesTokenCount))
 	}
+	// The answer reached model.max_output_tokens and was cut off.
+	if resp != nil && resp.FinishReason == genai.FinishReasonMaxTokens {
+		f["CUT_OFF"] = "max_output_tokens"
+	}
 	if resp != nil && resp.Content != nil {
 		var text strings.Builder
 		for _, p := range resp.Content.Parts {
@@ -682,7 +686,11 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 			g.mu.Unlock()
 		}
 	}
-	g.log.Log(journal.ModelCall, "Model call to "+g.cfg.Model.Name, f)
+	msg := "Model call to " + g.cfg.Model.Name
+	if f["CUT_OFF"] != "" {
+		msg += ": the answer was cut off at model.max_output_tokens"
+	}
+	g.log.Log(journal.ModelCall, msg, f)
 	return nil, nil
 }
 

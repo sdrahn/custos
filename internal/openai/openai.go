@@ -72,6 +72,7 @@ type request struct {
 	Messages    []message `json:"messages"`
 	Tools       []toolDef `json:"tools,omitempty"`
 	Temperature *float32  `json:"temperature,omitempty"`
+	MaxTokens   int32     `json:"max_tokens,omitempty"`
 	Stream      bool      `json:"stream"`
 }
 
@@ -144,6 +145,9 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 		return nil, fmt.Errorf("model endpoint: HTTP %d: %.200s", res.StatusCode, b)
 	}
 	msg := r.Choices[0].Message
+	// "length": the answer reached max_tokens (model.max_output_tokens)
+	// and was cut off.
+	cutOff := r.Choices[0].FinishReason == "length"
 	content := &genai.Content{Role: genai.RoleModel}
 	if msg.Content != nil && *msg.Content != "" {
 		content.Parts = append(content.Parts, &genai.Part{Text: *msg.Content})
@@ -152,6 +156,10 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 		args := map[string]any{}
 		if tc.Function.Arguments != "" {
 			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				if cutOff {
+					return nil, fmt.Errorf("model endpoint: the answer was cut off after %d tokens (model.max_output_tokens), in the arguments of %s",
+						r.Usage.CompletionTokens, tc.Function.Name)
+				}
 				return nil, fmt.Errorf("model endpoint: arguments of %s are not a JSON object", tc.Function.Name)
 			}
 		}
@@ -161,8 +169,13 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 		}
 		content.Parts = append(content.Parts, &genai.Part{FunctionCall: &genai.FunctionCall{ID: id, Name: tc.Function.Name, Args: args}})
 	}
+	var finish genai.FinishReason
+	if cutOff {
+		finish = genai.FinishReasonMaxTokens
+	}
 	return &model.LLMResponse{
 		Content:      content,
+		FinishReason: finish,
 		TurnComplete: true,
 		UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
 			PromptTokenCount: r.Usage.PromptTokens, CandidatesTokenCount: r.Usage.CompletionTokens,
@@ -173,6 +186,10 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 func (m *Model) request(req *model.LLMRequest) request {
 	out := request{Model: m.Name, Temperature: m.Temperature}
 	if req.Config != nil {
+		// model.max_output_tokens. max_tokens, not OpenAI's newer
+		// max_completion_tokens: the servers Custos is used with (vLLM,
+		// Ollama, llama.cpp, LM Studio) all read max_tokens.
+		out.MaxTokens = req.Config.MaxOutputTokens
 		if si := req.Config.SystemInstruction; si != nil {
 			if t := text(si); t != "" {
 				out.Messages = append(out.Messages, message{Role: "system", Content: &t})

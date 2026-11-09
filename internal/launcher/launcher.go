@@ -124,6 +124,11 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 	if cfg.Model.Temperature != nil {
 		gcc.Temperature = cfg.Model.Temperature
 	}
+	// model.max_output_tokens: each provider takes it from the request
+	// (the OpenAI-compatible one as max_tokens).
+	if n := cfg.Model.MaxOutputTokens; n > 0 {
+		gcc.MaxOutputTokens = int32(n)
+	}
 	report, err := l.Governor.NewReportTool()
 	if err != nil {
 		return nil, err

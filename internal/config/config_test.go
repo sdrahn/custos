@@ -34,9 +34,12 @@ func TestParse(t *testing.T) {
 	if c.Model.Timeout() != 0 {
 		t.Errorf("default timeout %s", c.Model.Timeout())
 	}
-	c2, err := Parse([]byte(strings.Replace(sample, `endpoint: "https://ai.example/v1"}`, `endpoint: "https://ai.example/v1", timeout_seconds: 1800}`, 1)))
-	if err != nil || c2.Model.Timeout().Minutes() != 30 {
-		t.Errorf("timeout_seconds: %v %v", c2, err)
+	c2, err := Parse([]byte(strings.Replace(sample, `endpoint: "https://ai.example/v1"}`, `endpoint: "https://ai.example/v1", timeout_seconds: 1800, max_output_tokens: 2048}`, 1)))
+	if err != nil || c2.Model.Timeout().Minutes() != 30 || c2.Model.MaxOutputTokens != 2048 {
+		t.Errorf("timeout_seconds, max_output_tokens: %v %v", c2, err)
+	}
+	if c.Model.MaxOutputTokens != 0 {
+		t.Errorf("default max_output_tokens %d", c.Model.MaxOutputTokens)
 	}
 }
 
@@ -50,6 +53,7 @@ func TestParseErrors(t *testing.T) {
 		"gemini key":   {"version: 1\nname: ab\nmodel: {provider: gemini, name: m}\ngateway: {servers: [a]}", "API key"},
 		"client tools": {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\ninteraction: {client_tools: allow}", "client_tools"},
 		"timeout":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, timeout_seconds: -1}\ngateway: {servers: [a]}", "model.timeout_seconds: -1"},
+		"max output":   {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, max_output_tokens: -1}\ngateway: {servers: [a]}", "model.max_output_tokens: -1"},
 	} {
 		_, err := Parse([]byte(tc.yaml))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

@@ -449,6 +449,16 @@ printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server
 check "with probe read-only, PROBE runs without an approval" eventually 30 runs_with t1 PROBE 'probe ok'
 check "journal: tool.result ok for custos-test__probe" eventually 10 journal_has t1 tool.result '.AGENT_TOOL == "custos-test__probe" and .AGENT_OUTCOME == "ok"'
 check "journal: model.call says how long the call took" eventually 10 journal_has t1 model.call '(.AGENT_DURATION_MS // "" | test("^[0-9]+$"))'
+# model.max_output_tokens: the model server is asked for at most that
+# much (max_tokens), and an answer cut off there is recorded as such.
+f=$(config tmo custos-test)
+sed -i 's|endpoint: "http://127.0.0.1:8008/v1"}|endpoint: "http://127.0.0.1:8008/v1", max_output_tokens: 64}|' "$f"
+agent-admin delete tmo >/dev/null 2>&1
+agent-admin create tmo --from "$f" >/dev/null
+check "model.max_output_tokens reaches the model server, which cuts the answer off there" eventually 30 runs_with tmo "WRITE ON" 'I keep writing'
+check "journal: model.call records the cut-off (CUT_OFF)" eventually 10 journal_has tmo model.call '.AGENT_CUT_OFF == "max_output_tokens"'
+check "journal: an answer not cut off has no CUT_OFF" journal_has t1 model.call '.AGENT_CUT_OFF == null'
+agent-admin delete tmo >/dev/null 2>&1
 check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
 # Ended activities outlive the launcher (its idle exit): the next one,
 # started by the socket, lists them.
