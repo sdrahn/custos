@@ -119,6 +119,9 @@ type Activity struct {
 	// Response is the model's last text in full (Summary is its start),
 	// at most ResponseMax bytes. GET /v1/activities leaves it out.
 	Response string `json:"response,omitempty"`
+	// ReportNudged: the playbook run's model answered without a report,
+	// and the host asked it once to file one (report_diagnosis).
+	ReportNudged bool `json:"report_nudged,omitempty"`
 }
 
 // SummaryMax and ResponseMax bound an activity's summary and response.
@@ -198,6 +201,8 @@ type invocation struct {
 	// steps are the playbook steps the host runs, next the next one.
 	steps []Step
 	next  int
+	// nudged: the host asked for the report once (reportNudge).
+	nudged bool
 }
 
 // History is how many ended activities are kept in memory; the journal
@@ -221,6 +226,7 @@ type Governor struct {
 	resume   chan struct{}     // closed on Resume
 	reasons  map[string]string // function call id -> rationale
 	hostStep map[string]int    // function call id -> playbook step
+	nudges   map[string]bool   // function call id -> the host's report nudge
 	// historyPath keeps them across restarts (Keep); historyErr is the
 	// last failure to write it.
 	historyPath, historyErr string
@@ -238,6 +244,7 @@ func New(cfg *config.Config, log journal.Logger) *Governor {
 		expect:   map[string]Start{},
 		reasons:  map[string]string{},
 		hostStep: map[string]int{},
+		nudges:   map[string]bool{},
 		resume:   make(chan struct{}),
 	}
 }
@@ -690,12 +697,70 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 	if f["CUT_OFF"] != "" {
 		msg += ": the answer was cut off at model.max_output_tokens"
 	}
+	nudge := g.reportNudge(cctx.InvocationID(), resp, err)
+	if nudge != nil {
+		f["REPORT_NUDGE"] = "1"
+		msg += "; it answered without a report, and the host asks for one"
+	}
 	g.log.Log(journal.ModelCall, msg, f)
+	if nudge != nil {
+		return nudge, nil
+	}
 	return nil, nil
+}
+
+// ReportNudgeText is the host's answer to its own report_diagnosis call
+// (reportNudge): what the model is asked to do.
+const ReportNudgeText = "Not recorded: you answered in text, and a diagnosis counts only as a report. Call " + ReportTool +
+	" now with what you found: a summary, your hypotheses with your confidence, the evidence quoted exactly from the " +
+	"tool outputs above, and a plan. Do not call any other tool."
+
+// reportNudge is the answer the model gave with, after its text, the
+// host's call of report_diagnosis (CONTRACT.md §14c): once per activity,
+// when a playbook run's model answered without a report and without a
+// tool call, and the run was not stopped. The call does not run the
+// tool: beforeTool answers it with ReportNudgeText, so the model is
+// asked once more, within the activity's limits, to file its findings.
+// Small models often answer a playbook in prose.
+func (g *Governor) reportNudge(invID string, resp *model.LLMResponse, err error) *model.LLMResponse {
+	if err != nil || resp == nil || resp.Content == nil {
+		return nil
+	}
+	for _, p := range resp.Content.Parts {
+		if p.FunctionCall != nil {
+			return nil
+		}
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	in := g.inv[invID]
+	if in == nil || in.act.Playbook == "" || in.act.Report != nil || in.nudged || in.stopped || in.cancelled || in.next < len(in.steps) {
+		return nil
+	}
+	in.nudged = true
+	in.act.ReportNudged = true
+	id := "custos-report-nudge-" + invID
+	g.nudges[id] = true
+	g.reasons[id] = "The host asks for the report: the model answered the playbook without one."
+	parts := append([]*genai.Part{}, resp.Content.Parts...)
+	parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{ID: id, Name: ReportTool, Args: map[string]any{}}})
+	out := *resp
+	out.Content = &genai.Content{Role: genai.RoleModel, Parts: parts}
+	return &out
 }
 
 func (g *Governor) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[string]any) (map[string]any, error) {
 	if t.Name() == ReportTool {
+		// The host's own nudge (reportNudge): answered here, the tool
+		// does not run.
+		g.mu.Lock()
+		nudge := g.nudges[tctx.FunctionCallID()]
+		delete(g.nudges, tctx.FunctionCallID())
+		delete(g.reasons, tctx.FunctionCallID())
+		g.mu.Unlock()
+		if nudge {
+			return map[string]any{"error": ReportNudgeText}, nil
+		}
 		return nil, nil // the host's own, recorded as diagnosis.report
 	}
 	f := g.toolFields(tctx, t.Name(), args)

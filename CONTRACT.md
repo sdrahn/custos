@@ -183,6 +183,7 @@ started them.
 | `summary` | the agent's last text, at most 500 bytes (cut at a character, marked `…`) |
 | `response` | the agent's last text in full, at most 32 KiB (cut as `summary`), as the model wrote it: often Markdown. **Self-asserted by the agent**; a console renders it as text, never as HTML. Only in `GET /v1/activities/{id}` and an ended activity a `wait` returns, not in `GET /v1/activities` |
 | `playbook` | the diagnostic playbook the activity runs (§14c), if any |
+| `report_nudged` | `true` when the activity's model answered its playbook without a report and the host asked it once to file one (§14c, the report nudge); absent otherwise |
 
 Arguments never appear in activities or the journal (only
 `args_sha256`); tools' outputs only as `calls[].preceding`, never in the
@@ -941,6 +942,7 @@ and without the `AGENT_` prefix):
 | `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` (`DURATION_MS`: how long the call took, also when it failed) |
 | `AGENT_PROMPT_BYTES` | `model.call` with `OUTCOME=error`: the size of the conversation sent (text and tool results), as the failed call reports no tokens. A failed call's record has `OUTCOME=error` and the error as `REASON`; an answered one has no `OUTCOME` |
 | `AGENT_CUT_OFF` | `model.call`: `max_output_tokens` when the answer reached `model.max_output_tokens` (§14) and was cut off; absent otherwise |
+| `AGENT_REPORT_NUDGE` | `model.call`: `1` when this answer of a playbook run had no report and no tool call, and the host asked for the report (§14c); absent otherwise |
 
 | `AGENT_EVENT` | `MESSAGE_ID` |
 |---|---|
@@ -1348,6 +1350,19 @@ do not count toward `max_llm_calls`; they count toward `max_tool_calls`
 and the activity's time. The model is told the steps were run, with their arguments, and the
 unit, and gets their outputs; it may call further tools it is offered,
 also a step's tool with other arguments, and it reports.
+
+**The report nudge** (#155). When the model answers a playbook run
+without a report and without a tool call (its answer in prose, as small
+models often do), the host asks it once more, in the same activity: it
+adds its own call of `report_diagnosis` (no arguments) to the model's
+answer and answers that call itself, without running the tool, with
+"Not recorded: you answered in text, and a diagnosis counts only as a
+report. Call report_diagnosis now …". The model's text stays in the
+conversation. Once per activity, after the steps, not when the activity
+was stopped or cancelled; the next model call counts toward
+`max_llm_calls` as any. The activity says so (`report_nudged`, §4) and
+so does the answer's `model.call` record (`AGENT_REPORT_NUDGE`, §10). It
+is no call of the agent's: not in `calls`, no `tool.call`.
 
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,

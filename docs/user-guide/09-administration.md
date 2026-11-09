@@ -405,6 +405,12 @@ is not in what that tool returned in this activity is marked
 **unverified**, whatever the model says. Trust a hypothesis by its
 verified evidence, not by its confidence.
 
+A model that answers a playbook in prose instead, as small models often
+do, is asked once more, in the same activity, to file its report; the
+activity then has `"report_nudged": true`. If it still answers in
+prose, the activity ends without a report, and its answer is in
+`response`.
+
 ```bash
 curl -s --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities/ACTIVITY | jq .report
 journalctl -o json AGENT_NAME=NAME AGENT_EVENT=diagnosis.report | jq -r .AGENT_REPORT | jq .

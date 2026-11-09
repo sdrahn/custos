@@ -32,6 +32,12 @@ removed.
 
 ### Added
 
+- The report nudge (#155): a model that answers a playbook run in prose,
+  without a report and without a tool call, is asked once more, in the
+  same activity, to file it with `report_diagnosis`. The activity says
+  so (`report_nudged`), and so does the answer's `model.call` record
+  (`AGENT_REPORT_NUDGE`). `model-eval.sh` shows which runs were asked
+  and counts the reports filed after it.
 - A playbook step takes the call's arguments (`args`), and `{unit}` in
   them is the unit the activity is about: the request's new `"unit"`
   (`POST /v1/activities`), or for an event that runs a playbook the unit
