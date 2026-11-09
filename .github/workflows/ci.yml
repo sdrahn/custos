@@ -509,7 +509,8 @@ jobs:
   # with each model of test/vm/eval-models served by Ollama on the runner:
   # the bundled diagnostics install's playbooks against planted faults
   # (report filed, quotes verified, fault found, plan safe, duration) and
-  # the prompt-injection cases. On CPUs, so with --no-think. For each
+  # the prompt-injection cases. On CPUs, so with --no-think and a time
+  # limit per run (--limit). For each
   # release's tag and when run by hand; the table of all models is in the
   # job models-table's summary and log, the JSON in the artifacts.
   models-list:
@@ -593,7 +594,9 @@ jobs:
           SUITE: models
           MODEL: ${{ matrix.model }}
           SYSTEMD_MCP: ${{ runner.temp }}/bin/systemd-mcp
-          EVAL_ARGS: --no-think
+          # 20 minutes a run: four runs and seven injection cases (at most
+          # 10 minutes each) fit the job's time on CPUs, whatever the model.
+          EVAL_ARGS: --no-think --limit 1200
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
         name: The results in the log

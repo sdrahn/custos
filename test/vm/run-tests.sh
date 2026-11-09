@@ -1152,8 +1152,26 @@ n0=$(journal pb invocation.start | jq -s 'map(select(.AGENT_ORIGIN == "schedule"
 check "the schedule runs its playbook" bash -c "agent-admin trigger pb_probe"
 check "journal: the scheduled activity ran the playbook" eventually 30 bash -c \
 	"[ \$(journalctl -o json --no-pager --since '@$t0' AGENT_NAME=pb AGENT_EVENT=invocation.start | jq -s 'map(select(.AGENT_ORIGIN == \"schedule\" and .AGENT_PLAYBOOK == \"probe-check\")) | length') -gt $n0 ]"
+# A step's arguments go to the host's call through the gateway; {unit} is
+# the unit the request names, and a unit is only a unit name.
+cat >/etc/custos/playbooks/unit-check.yaml <<'EOF'
+unit-check:
+  title: Unit check
+  steps:
+    - {tool: custos-test__probe, why: "The probe."}
+    - {tool: custos-test__read_note, why: "The unit's note.", args: {name: "{unit}"}}
+  look_for: anything.
+EOF
+printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: read_note, read_only: true}' | agent-admin permissions pb
+unit_sha=$(printf '%s' '{"name":"web.service"}' | sha256sum | cut -d' ' -f1)
+check "a playbook step with the request's unit: the host calls read_note as step 2" eventually 30 bash -c \
+	"$(declare -f api); api pb /v1/activities -X POST -d '{\"playbook\":\"unit-check\",\"unit\":\"web.service\",\"wait\":true}' |
+		jq -e '.calls | map(select(.tool == \"custos-test__read_note\" and .playbook_step == 2)) | length == 1' >/dev/null"
+check "journal: the step's call has the unit in its arguments (ARGS_SHA256)" eventually 10 journal_has pb tool.call \
+	".AGENT_TOOL == \"custos-test__read_note\" and .AGENT_PLAYBOOK_STEP == \"2\" and .AGENT_ARGS_SHA256 == \"$unit_sha\""
+check "a unit that is not a unit name is refused (400)" code_is 400 api pb /v1/activities -X POST -d '{"playbook":"unit-check","unit":"../web"}'
 check "agent-admin delete pb" agent-admin delete pb
-rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml
+rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml /etc/custos/playbooks/unit-check.yaml
 
 section "Events"
 # CONTRACT.md §14, §15: an event starts an activity when a unit it names

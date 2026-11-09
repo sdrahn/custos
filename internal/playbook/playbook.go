@@ -6,6 +6,7 @@ package playbook
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,12 +42,79 @@ type Playbook struct {
 	Error string `yaml:"-" json:"error,omitempty"`
 }
 
-// Step is a tool to call, server__tool as the gateway names it.
+// Step is a tool to call, server__tool as the gateway names it, with
+// its arguments. A string in Args may name {unit}, the unit the activity
+// is about; such a step runs only when the activity names a unit.
 type Step struct {
-	Tool     string `yaml:"tool" json:"tool"`
-	Why      string `yaml:"why" json:"why"`
-	Optional bool   `yaml:"optional,omitempty" json:"optional,omitempty"`
+	Tool     string         `yaml:"tool" json:"tool"`
+	Why      string         `yaml:"why" json:"why"`
+	Args     map[string]any `yaml:"args,omitempty" json:"args,omitempty"`
+	Optional bool           `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
+
+// Unit is the placeholder in a step's arguments for the unit the
+// activity is about.
+const Unit = "{unit}"
+
+// NeedsUnit reports whether the step's arguments name {unit}.
+func (s Step) NeedsUnit() bool { return mentions(s.Args, Unit) }
+
+// ArgsFor are the step's arguments with {unit} replaced by unit; a
+// fresh copy, never nil.
+func (s Step) ArgsFor(unit string) map[string]any {
+	out, _ := replace(s.Args, unit).(map[string]any)
+	if out == nil {
+		out = map[string]any{}
+	}
+	return out
+}
+
+func mentions(v any, s string) bool {
+	switch v := v.(type) {
+	case string:
+		return strings.Contains(v, s)
+	case map[string]any:
+		for _, x := range v {
+			if mentions(x, s) {
+				return true
+			}
+		}
+	case []any:
+		for _, x := range v {
+			if mentions(x, s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func replace(v any, unit string) any {
+	switch v := v.(type) {
+	case string:
+		return strings.ReplaceAll(v, Unit, unit)
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, x := range v {
+			out[k] = replace(x, unit)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, x := range v {
+			out[i] = replace(x, unit)
+		}
+		return out
+	}
+	return v
+}
+
+// unitRE is a unit an activity may be about: a plain unit name, as an
+// event watches (config's eventUnitRE), or a template instance.
+var unitRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,190}\.(service|socket|mount|swap|timer|path|target|scope|slice|device|automount)$`)
+
+// ValidUnit reports whether s is a unit name an activity may name.
+func ValidUnit(s string) bool { return unitRE.MatchString(s) }
 
 var (
 	nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)
@@ -99,12 +167,15 @@ func (p *Playbook) check() error {
 		if strings.TrimSpace(s.Why) == "" {
 			return fmt.Errorf("steps[%d].why: missing", i)
 		}
-		if !s.Optional {
+		if _, err := json.Marshal(s.Args); err != nil {
+			return fmt.Errorf("steps[%d].args: %w", i, err)
+		}
+		if !s.Optional && !s.NeedsUnit() {
 			required++
 		}
 	}
 	if required == 0 {
-		return errors.New("steps: at least one that is not optional")
+		return errors.New("steps: at least one that is not optional and does not need a unit")
 	}
 	return nil
 }
@@ -166,34 +237,46 @@ func (p *Playbook) Missing(offered map[string]bool) []string {
 }
 
 // Run are the steps the host runs, in order: all of them but the
-// optional ones not offered.
-func (p *Playbook) Run(offered map[string]bool) []Step {
+// optional ones not offered, and without a unit those that need one;
+// their arguments with the unit in place of {unit}.
+func (p *Playbook) Run(offered map[string]bool, unit string) []Step {
 	var out []Step
 	for _, s := range p.Steps {
-		if s.Optional && !offered[s.Tool] {
+		if (s.Optional && !offered[s.Tool]) || (unit == "" && s.NeedsUnit()) {
 			continue
 		}
+		s.Args = s.ArgsFor(unit)
 		out = append(out, s)
 	}
 	return out
 }
 
 // Prompt is what the model is given to run the playbook: its steps (the
-// optional ones only when offered), what to look for, and the person's
-// own words, if any. The host makes the steps' calls itself before the
-// model's first turn (CONTRACT.md §14c), so the model reads their
-// outputs rather than having to issue the calls.
-func (p *Playbook) Prompt(offered map[string]bool, extra string) string {
+// optional ones only when offered, those that need a unit only with
+// one), the unit, what to look for, and the person's own words, if any.
+// The host makes the steps' calls itself before the model's first turn
+// (CONTRACT.md §14c), so the model reads their outputs rather than
+// having to issue the calls.
+func (p *Playbook) Prompt(offered map[string]bool, unit, extra string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Run the diagnostic playbook %q (%s).\n", p.Name, p.Title)
 	if p.Description != "" {
 		b.WriteString(p.Description + "\n")
 	}
-	b.WriteString("\nThe host calls these tools for you, in this order, and you get their outputs; they only read:\n")
-	for n, s := range p.Run(offered) {
-		fmt.Fprintf(&b, "%d. %s: %s\n", n+1, s.Tool, s.Why)
+	if unit != "" {
+		b.WriteString("The unit in question: " + unit + "\n")
 	}
-	b.WriteString("\nDo not call them again. You may call further tools you are offered if the outputs leave a question open.\n")
+	b.WriteString("\nThe host calls these tools for you, in this order, and you get their outputs; they only read:\n")
+	for n, s := range p.Run(offered, unit) {
+		fmt.Fprintf(&b, "%d. %s", n+1, s.Tool)
+		if len(s.Args) > 0 {
+			a, _ := json.Marshal(s.Args)
+			fmt.Fprintf(&b, " %s", a)
+		}
+		fmt.Fprintf(&b, ": %s\n", s.Why)
+	}
+	b.WriteString("\nDo not repeat these calls. If the outputs leave a question open, call a tool you are offered " +
+		"with arguments that answer it (for example the journal of one unit).\n")
 	b.WriteString("\nLook for: " + strings.TrimSpace(p.LookFor) + "\n")
 	b.WriteString("\nThen report with the tool report_diagnosis: what you found, your root-cause hypotheses with how " +
 		"confident you are, the tool output each one rests on (quote it exactly), and a written remediation plan for " +

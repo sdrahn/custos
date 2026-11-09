@@ -11,8 +11,8 @@ network-config:
     - {tool: custos-net__network_addresses, why: "The interfaces, their state and addresses."}
     - {tool: custos-net__network_routes, why: "The routes, the default route first."}
     - {tool: custos-net__listening_sockets, why: "The ports services listen on."}
-    - {tool: systemd__get_file, why: "/etc/resolv.conf, the name servers.", optional: true}
-    - {tool: systemd__list_log, why: "NetworkManager's or wicked's journal.", optional: true}
+    - {tool: systemd__get_file, why: "/etc/resolv.conf, the name servers.", args: {path: /etc/resolv.conf, show_content: true}, optional: true}
+    - {tool: systemd__list_log, why: "NetworkManager's or wicked's journal.", args: {unit: ["NetworkManager|wicked"], count: 50}, optional: true}
   look_for: >
     An interface that is down or without an address, no default route or
     two of them, no name server, a service that listens only on localhost

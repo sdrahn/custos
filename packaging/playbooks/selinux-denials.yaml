@@ -9,7 +9,7 @@ selinux-denials:
     - "systemd-mcp"
   steps:
     - {tool: exec__selinux_status, why: "The mode and the loaded policy."}
-    - {tool: systemd__list_log, why: "Denials (avc denied) in the journal, and setroubleshoot's analysis."}
+    - {tool: systemd__list_log, why: "Denials (avc denied) in the journal, and setroubleshoot's analysis.", args: {pattern: "avc: +denied|SELinux is preventing|setroubleshoot", count: 300}}
   look_for: >
     A mode other than enforcing; denials, with the source and target
     contexts and the permission; a file with a wrong label (restorecon) as

@@ -300,7 +300,7 @@ call, in which order, and what to look for. Custos ships eleven, in
 | Playbook | Looks at |
 |---|---|
 | `failed-units` | failed systemd units and why they failed |
-| `service-health` | one service (name it in the request): state, log, unit file, pending restart |
+| `service-health` | one service (name it as `unit`): its state, exit status and restarts, its own log and systemd's account of it |
 | `disk-pressure` | full file systems and inodes, snapshots, "No space left on device" |
 | `memory-pressure` | memory and swap, pressure stalls, load, OOM kills |
 | `journal-errors` | errors since the last boot, by source |
@@ -317,11 +317,15 @@ curl -s --unix-socket /run/agents/NAME/api.sock http://agent/v1/playbooks |
   jq '.playbooks | map_values(select(.runnable)) | keys'   # those NAME can run
 curl --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities \
   -d '{"playbook": "failed-units", "wait": true}'   # run one now
+curl --unix-socket /run/agents/NAME/api.sock http://agent/v1/activities \
+  -d '{"playbook": "service-health", "unit": "nginx.service"}'   # about one unit
 ```
 
-Or from a schedule, with `playbook:` instead of (or with) `prompt:`
-([chapter 5](05-configuration.md#schedules)). The agent's host calls each
-step's tool itself, in order, before the model's first turn, so a model
+Or from a schedule or an event, with `playbook:` instead of (or with)
+`prompt:` ([chapter 5](05-configuration.md#schedules)); an event's
+activity is about the unit that failed. The agent's host calls each
+step's tool itself, in order and with the step's arguments, before the
+model's first turn, so a model
 that is unreliable at issuing tool calls still gets every output. Each
 call goes through the gateway, which decides it as any other call: a
 playbook grants nothing. The activity marks these calls as playbook
@@ -369,10 +373,22 @@ empty one hides it:
 web-health:
   title: Web server health
   steps:
-    - {tool: systemd__list_loaded_units, why: "The state of nginx and php-fpm."}
-    - {tool: systemd__list_log, why: "Their recent errors."}
+    - {tool: systemd__list_loaded_units, why: "The state of nginx and php-fpm.",
+       args: {patterns: [nginx.service, php-fpm.service], state: all, properties: true}}
+    - {tool: systemd__list_log, why: "Their recent errors.", args: {unit: ["nginx|php-fpm"], count: 50}}
+    - {tool: systemd__list_log, why: "The unit's own journal.", args: {unit: ["{unit}"], exact_unit: true, count: 50}}
   look_for: Restarts, 5xx errors, a full upstream pool.
 ```
+
+`args` are the call's arguments, as the tool takes them; a step without
+them calls the tool without arguments, which for many tools means their
+defaults: `systemd__list_loaded_units` without `state` lists only the
+active units, and `systemd__list_log` without `unit` or `pattern` the
+last 100 lines of the whole journal. Ask for what the playbook needs,
+and little more: the model reads every output, and a small model reads
+slowly and loses its way in a long one. `{unit}` in an argument is the
+unit the activity is about (`"unit"` in the request, or the unit that
+failed for an event); a step with it runs only when there is one.
 
 `agent-admin playbooks` lists a file that does not parse with its error.
 

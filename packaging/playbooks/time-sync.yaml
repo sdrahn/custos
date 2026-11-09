@@ -8,9 +8,10 @@ time-sync:
     - "exec: time_status (exec.d-diagnostics.yaml)"
     - "systemd-mcp"
   steps:
-    - {tool: exec__time_status, why: "The clock, the time zone and NTPSynchronized."}
-    - {tool: systemd__list_loaded_units, why: "The state of chronyd or systemd-timesyncd."}
-    - {tool: systemd__list_log, why: "The time service's journal.", optional: true}
+    - {tool: exec__time_status, why: "The clock, the time zone, NTP and NTPSynchronized."}
+    - {tool: systemd__list_loaded_units, why: "The state of chronyd and systemd-timesyncd.", args: {patterns: [chronyd.service, systemd-timesyncd.service], state: all}}
+    - {tool: systemd__list_log, why: "The time service's journal.", args: {unit: ["chronyd|systemd-timesyncd"], count: 30}, optional: true}
   look_for: >
-    NTPSynchronized=no, a time service that is not active, servers it
-    cannot reach, and a large step of the clock.
+    NTPSynchronized=no, NTP=no (synchronization turned off), a time
+    service that is not active, servers it cannot reach, and a large step
+    of the clock.

@@ -89,7 +89,7 @@ func TestMissingAndPrompt(t *testing.T) {
 	if m := p.Missing(map[string]bool{"exec__disk_usage": true}); len(m) != 0 {
 		t.Errorf("an optional step counts as missing: %v", m)
 	}
-	pr := p.Prompt(map[string]bool{"exec__disk_usage": true}, "/var in particular")
+	pr := p.Prompt(map[string]bool{"exec__disk_usage": true}, "", "/var in particular")
 	for _, want := range []string{`"disk-pressure"`, "1. exec__disk_usage: Space per file system.", "Look for: A file system above 90 %.",
 		"quote it", "Change nothing yourself", "The administrator adds: /var in particular"} {
 		if !strings.Contains(pr, want) {
@@ -99,15 +99,78 @@ func TestMissingAndPrompt(t *testing.T) {
 	if strings.Contains(pr, "snapper__list_snapshots") {
 		t.Error("an optional step that is not offered is in the prompt")
 	}
-	if r := p.Run(map[string]bool{"exec__disk_usage": true}); len(r) != 1 || r[0].Tool != "exec__disk_usage" {
+	if r := p.Run(map[string]bool{"exec__disk_usage": true}, ""); len(r) != 1 || r[0].Tool != "exec__disk_usage" {
 		t.Errorf("run %v", r)
 	}
-	if r := p.Run(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}); len(r) != 2 || r[1].Tool != "snapper__list_snapshots" {
+	if r := p.Run(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}, ""); len(r) != 2 || r[1].Tool != "snapper__list_snapshots" {
 		t.Errorf("run with the optional step offered %v", r)
 	}
-	if pr := p.Prompt(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}, ""); !strings.Contains(pr, "2. snapper__list_snapshots") ||
+	if pr := p.Prompt(map[string]bool{"exec__disk_usage": true, "snapper__list_snapshots": true}, "", ""); !strings.Contains(pr, "2. snapper__list_snapshots") ||
 		strings.Contains(pr, "administrator adds") {
 		t.Errorf("with the optional step offered:\n%s", pr)
+	}
+}
+
+// A step's arguments go to the call, {unit} replaced by the activity's
+// unit; a step that needs a unit runs only with one, and a playbook
+// needs a step that runs without.
+func TestArgsAndUnit(t *testing.T) {
+	const svc = `service-health:
+  title: Health of a service
+  steps:
+    - {tool: systemd__list_loaded_units, why: Failed units., args: {state: failed}}
+    - {tool: systemd__list_log, why: Its journal., args: {unit: ["{unit}"], count: 50, exact_unit: true}}
+  look_for: Restarts.
+`
+	doc, err := Parse([]byte(svc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := doc["service-health"]
+	offered := map[string]bool{"systemd__list_loaded_units": true, "systemd__list_log": true}
+	if p.Steps[0].NeedsUnit() || !p.Steps[1].NeedsUnit() {
+		t.Errorf("needs a unit: %v %v", p.Steps[0].NeedsUnit(), p.Steps[1].NeedsUnit())
+	}
+	if r := p.Run(offered, ""); len(r) != 1 || r[0].Args["state"] != "failed" {
+		t.Errorf("without a unit %+v", r)
+	}
+	r := p.Run(offered, "nginx.service")
+	if len(r) != 2 {
+		t.Fatalf("with a unit %+v", r)
+	}
+	if u, _ := r[1].Args["unit"].([]any); len(u) != 1 || u[0] != "nginx.service" || r[1].Args["count"] != 50 {
+		t.Errorf("args %#v", r[1].Args)
+	}
+	if u, _ := p.Steps[1].Args["unit"].([]any); u[0] != "{unit}" {
+		t.Errorf("the playbook was changed: %#v", p.Steps[1].Args)
+	}
+	pr := p.Prompt(offered, "nginx.service", "")
+	for _, want := range []string{"The unit in question: nginx.service", `2. systemd__list_log {"count":50,"exact_unit":true,"unit":["nginx.service"]}: Its journal.`,
+		"Do not repeat these calls"} {
+		if !strings.Contains(pr, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, pr)
+		}
+	}
+	if pr := p.Prompt(offered, "", ""); strings.Contains(pr, "systemd__list_log") || strings.Contains(pr, "unit in question") {
+		t.Errorf("without a unit:\n%s", pr)
+	}
+	if a := (Step{}).ArgsFor("x"); a == nil || len(a) != 0 {
+		t.Errorf("no args: %#v", a)
+	}
+	// Only steps that need a unit: refused.
+	only := strings.Replace(svc, "args: {state: failed}", `args: {patterns: ["{unit}"]}`, 1)
+	if _, err := Parse([]byte(only)); err == nil || !strings.Contains(err.Error(), "does not need a unit") {
+		t.Errorf("only steps that need a unit: %v", err)
+	}
+	for _, u := range []string{"nginx.service", "getty@tty1.service", "srv-data.mount"} {
+		if !ValidUnit(u) {
+			t.Errorf("%s: not valid", u)
+		}
+	}
+	for _, u := range []string{"", "nginx", "../x.service", "a b.service", ".x.service", "x.service\n"} {
+		if ValidUnit(u) {
+			t.Errorf("%q: valid", u)
+		}
 	}
 }
 
@@ -142,6 +205,59 @@ func TestShippedPlaybooks(t *testing.T) {
 	sort.Strings(want)
 	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Errorf("shipped %v, the contract lists %v", names, want)
+	}
+}
+
+// The arguments of the shipped playbooks' systemd steps are those
+// systemd-mcp (0.3.5) takes, with values it accepts: a call it refuses
+// shows the model an error instead of the host's state.
+func TestShippedSystemdArgs(t *testing.T) {
+	takes := map[string]map[string]string{
+		"systemd__list_loaded_units": {"state": "string", "patterns": "list", "properties": "bool", "include_description": "bool", "verbose": "bool"},
+		"systemd__get_file":          {"path": "string", "show_content": "bool", "offset": "int", "limit": "int"},
+		"systemd__list_log":          {"count": "int", "offset": "int", "from": "string", "to": "string", "pattern": "string", "unit": "list", "exact_unit": "bool", "allboots": "bool"},
+	}
+	states := map[string]bool{"active": true, "inactive": true, "loaded": true, "not-found": true, "all": true, "failed": true}
+	pbs, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
+	for _, f := range pbs {
+		b, _ := os.ReadFile(f)
+		doc, _ := Parse(b)
+		for _, p := range doc {
+			for i, s := range p.Steps {
+				if strings.HasPrefix(s.Tool, "exec__") || strings.HasPrefix(s.Tool, "custos-net__") {
+					if len(s.Args) > 0 {
+						t.Errorf("%s: step %d: %s takes no arguments", f, i+1, s.Tool)
+					}
+					continue
+				}
+				want, ok := takes[s.Tool]
+				if !ok {
+					continue
+				}
+				for k, v := range s.Args {
+					var got string
+					switch v := v.(type) {
+					case string:
+						got = "string"
+						if _, err := regexp.Compile(v); k == "pattern" && err != nil {
+							t.Errorf("%s: step %d: pattern: %v", f, i+1, err)
+						}
+					case int:
+						got = "int"
+					case bool:
+						got = "bool"
+					case []any:
+						got = "list"
+					}
+					if want[k] != got {
+						t.Errorf("%s: step %d: %s takes no %s %s", f, i+1, s.Tool, got, k)
+					}
+				}
+				if st, ok := s.Args["state"].(string); ok && !states[st] {
+					t.Errorf("%s: step %d: state %q", f, i+1, st)
+				}
+			}
+		}
 	}
 }
 

@@ -430,6 +430,9 @@ type StartRequest struct {
 	// Playbook names a diagnostic playbook to run (CONTRACT.md §14c);
 	// Prompt is then optional and added to it.
 	Playbook string `json:"playbook"`
+	// Unit is the systemd unit the playbook is about: the steps that
+	// need one run with it (§14c).
+	Unit string `json:"unit"`
 }
 
 type Trace struct {
@@ -446,12 +449,16 @@ func (l *Launcher) startActivity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "want {\"prompt\": …} or {\"playbook\": …}", http.StatusBadRequest)
 		return
 	}
+	if req.Unit != "" && (req.Playbook == "" || !playbook.ValidUnit(req.Unit)) {
+		http.Error(w, "unit: a systemd unit name, with a playbook", http.StatusBadRequest)
+		return
+	}
 	st := governance.Start{}
 	prompt := req.Prompt
 	if req.Playbook != "" {
 		var status int
 		var err error
-		if prompt, st.Steps, status, err = l.playbookPrompt(r.Context(), req.Playbook, req.Prompt); err != nil {
+		if prompt, st.Steps, status, err = l.playbookPrompt(r.Context(), req.Playbook, req.Unit, req.Prompt); err != nil {
 			http.Error(w, err.Error(), status)
 			return
 		}
@@ -636,7 +643,7 @@ func peekJSON(r *http.Request, v any) (*http.Request, error) {
 // host runs before the model's first turn: refused when the playbook is
 // unknown or broken (400), or when the gateway does not offer this agent
 // a tool of a step that is not optional (422).
-func (l *Launcher) playbookPrompt(ctx context.Context, name, extra string) (string, []governance.Step, int, error) {
+func (l *Launcher) playbookPrompt(ctx context.Context, name, unit, extra string) (string, []governance.Step, int, error) {
 	if !playbook.ValidName(name) {
 		return "", nil, http.StatusBadRequest, fmt.Errorf("playbook: %q is not a playbook name", name)
 	}
@@ -660,10 +667,10 @@ func (l *Launcher) playbookPrompt(ctx context.Context, name, extra string) (stri
 			name, l.cfg.Name, strings.Join(m, ", "))
 	}
 	var steps []governance.Step
-	for _, s := range p.Run(offered) {
-		steps = append(steps, governance.Step{Tool: s.Tool, Why: s.Why})
+	for _, s := range p.Run(offered, unit) {
+		steps = append(steps, governance.Step{Tool: s.Tool, Why: s.Why, Args: s.Args})
 	}
-	return p.Prompt(offered, extra), steps, 0, nil
+	return p.Prompt(offered, unit, extra), steps, 0, nil
 }
 
 // PlaybookOffer is a playbook as GET /v1/playbooks shows it to this

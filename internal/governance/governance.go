@@ -165,10 +165,11 @@ type Start struct {
 	Started func(id string)
 }
 
-// Step is a playbook step the host runs: a tool called without
-// arguments, and why.
+// Step is a playbook step the host runs: a tool, its arguments (nil:
+// none), and why.
 type Step struct {
 	Tool, Why string
+	Args      map[string]any
 }
 
 // ClientTool marks tools defined by an AG-UI frontend (§11).
@@ -579,9 +580,19 @@ func (g *Governor) beforeModel(cctx agent.CallbackContext, _ *model.LLMRequest) 
 	}, nil
 }
 
+// stepArgs is a copy of a step's arguments (the call may be changed by
+// what handles it; the step stays as it is), never nil.
+func stepArgs(a map[string]any) map[string]any {
+	out := make(map[string]any, len(a))
+	if b, err := json.Marshal(a); err == nil && len(a) > 0 {
+		json.Unmarshal(b, &out)
+	}
+	return out
+}
+
 // hostCall is the turn the host takes in place of the model to make a
 // playbook's next step (CONTRACT.md §14c): the step's tool, called
-// without arguments, one step a turn so that they run in order. ADK runs
+// with the step's arguments, one step a turn so that they run in order. ADK runs
 // it as it would a call of the model's, so the gateway's policy, the
 // approvals and every record apply to it unchanged; the step's "why" is
 // its rationale. No model is called and no model.call is recorded.
@@ -594,7 +605,7 @@ func (g *Governor) hostCall(invocation string, in *invocation) *model.LLMRespons
 	g.reasons[id] = fmt.Sprintf("Playbook %s, step %d of %d: %s", in.act.Playbook, in.next, len(in.steps), s.Why)
 	return &model.LLMResponse{
 		Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{
-			FunctionCall: &genai.FunctionCall{ID: id, Name: s.Tool, Args: map[string]any{}},
+			FunctionCall: &genai.FunctionCall{ID: id, Name: s.Tool, Args: stepArgs(s.Args)},
 		}}},
 	}
 }
