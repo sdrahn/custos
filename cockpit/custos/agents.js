@@ -293,8 +293,6 @@ tabs.agents = {
 /* categoriesSection: the agent's task categories (§6a), their mode and
  * envelope, their readiness (agent-admin readiness, which reads the
  * journal: through the root bridge), and promote and demote. */
-const ENVELOPE_TEMPLATE = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: UTC}\n";
-
 function windowsText(c) {
     return ((c && c.envelope && c.envelope.windows) || []).map(w =>
         (w.days ? w.days.join(",") : "every day") + " " + w.from + "–" + w.to + " " + (w.tz || "UTC")).join("; ");
@@ -372,7 +370,7 @@ function categoriesSection(a, data) {
             which.value = n;
             k.fill();
             form.open = true;
-            k.env.focus();
+            form.scrollIntoView({ block: "nearest" });
         });
         cells[n] = { ready: el("td", { class: "muted" }, "…"), over: el("td", { class: "muted" }), inc: el("td", { class: "muted" }), props: el("td", { class: "muted" }) };
         tbody.append(el("tr", { id: "category-" + n }, el("td", { class: "mono" }, n),
@@ -443,6 +441,8 @@ function categoriesSection(a, data) {
             cells[n].inc.textContent = pctText(m.incident_rate) + " (" + m.incidents + ") of max " + pctText(th.incident_rate || 0);
             cells[n].props.textContent = m.proposals + " in " + m.observed_days.toFixed(1) + " days · " + m.tools + " tools, " + m.distinct_calls + " distinct calls";
         }
+        k.readiness = r.categories || {};
+        k.showReady();
         diagnosticsEvidence(box, r);
     }).catch(ex => {
         for (const n of names) cells[n].ready.textContent = "unknown";
@@ -490,19 +490,31 @@ function promoteForm(a, names, states) {
         old.states = states;
         return old;
     }
-    const k = { key, states, dirty: false };
+    const k = { key, states, dirty: false, readiness: {} };
     k.reason = el("input", { id: "category-reason", type: "text", placeholder: "Reason (recorded)", "aria-label": "Reason" });
-    k.env = el("textarea", { id: "category-envelope", rows: "5", spellcheck: "false", "aria-label": "Envelope (YAML)" });
+    // The envelope as a form (#163); "Edit as YAML" keeps the text.
+    k.ed = envelopeEditor(() => { k.dirty = true });
+    k.env = k.ed.text;
     k.despite = el("input", { id: "category-despite", type: "checkbox" });
     k.which = el("select", { id: "category-select", "aria-label": "Category" },
         ...names.filter(n => categoryUsable(n) && n !== "diagnostics").map(n => el("option", { value: n }, n)));
+    // The chosen category's readiness, from the tab's agent-admin
+    // readiness: why "despite its readiness" would be needed.
+    k.ready = el("p", { id: "promote-readiness", class: "muted" });
+    k.showReady = () => {
+        const m = k.readiness[k.which.value];
+        k.ready.replaceChildren(...(!m ? ["Readiness: not read yet."]
+            : m.ready ? [el("span", { class: "badge badge-ok" }, "ready"), " Its record meets the readiness criteria."]
+            : [el("span", { class: "badge badge-waiting" }, "not ready"), " " + (m.unmet || []).join("; ") +
+               ". Promote it anyway only with \"despite its readiness\" and a reason."]));
+    };
     k.fill = () => {
         const c = k.states[k.which.value];
-        k.env.value = c && c.envelope ? JSON.stringify(c.envelope, null, 2) + "\n" : ENVELOPE_TEMPLATE;
+        k.ed.set(c && c.envelope ? c.envelope : null);
         k.dirty = false;
+        k.showReady();
     };
     k.which.addEventListener("change", k.fill);
-    k.env.addEventListener("input", () => { k.dirty = true });
     k.fill();
     // After an action that used them: the next render starts afresh.
     k.used = out => {
@@ -514,18 +526,22 @@ function promoteForm(a, names, states) {
     };
     const go = el("button", null, "Promote");
     go.addEventListener("click", () => {
+        const v = k.ed.value();
+        // What the form can tell is wrong, before agent-admin does.
+        if (v.errors.length) {
+            k.ed.node.querySelector("#envelope-errors").scrollIntoView({ block: "nearest" });
+            return;
+        }
         const args = ["promote", a.name, k.which.value, "--envelope", "-"];
         if (k.despite.checked) args.push("--despite-readiness");
         if (k.reason.value.trim()) args.push("--reason", k.reason.value.trim());
         // Kept, the button outlives the action, which disables it.
-        act(go, "Promoting " + k.which.value, () => admin(args, k.env.value).then(k.used)).finally(() => { go.disabled = false });
+        act(go, "Promoting " + k.which.value, () => admin(args, v.text).then(k.used)).finally(() => { go.disabled = false });
     });
     k.form = el("details", { id: "promote-form" }, el("summary", null, "Promote a category"),
-        el("p", { class: "muted" }, "The envelope: its windows (days mon…sun, from and to as HH:MM, tz); optionally a rate (calls: N, per: 1s, 1m or 1h: " +
-           "beyond it, each of a tool's calls waits for an approval, and reaching it three times in a day demotes the category) and rollback " +
-           "(on: tool_error, limit_exceeded, health_check_failed; health_check: a command). agent-admin checks it and refuses a " +
-           "category that is not ready, unless you promote it despite its readiness, with a reason."),
-        el("div", { class: "toolbar" }, k.which), k.env,
+        el("p", { class: "muted" }, "Within its envelope a bounded category's changes run without an approval; outside it they need one. " +
+           "agent-admin checks the envelope and refuses a category that is not ready, unless you promote it despite its readiness, with a reason."),
+        el("div", { class: "toolbar" }, el("label", null, "Category ", k.which)), k.ready, k.ed.node,
         el("label", null, k.despite, " Promote despite its readiness (needs a reason)"),
         el("div", { class: "actions" }, go));
     promoteForms.set(a.name, k);

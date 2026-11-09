@@ -9,6 +9,14 @@ removed.
 
 ### Changed
 
+- Cockpit's **Promote…** and **Change envelope…** open a form for the
+  envelope instead of a YAML text (#163): windows with the days as
+  checkboxes (and *every day*, *weekdays*, *weekend*), from and to, and
+  the time zone, the host's at first; an optional rate; the conditions
+  that demote the category at once, with the health check's command.
+  The form says the envelope in words, checks it before sending it, and
+  shows the category's readiness. **Edit as YAML** keeps the text, and
+  an envelope with parts the form does not show opens there.
 - The demonstration videos follow one problem through the agentic loop
   (#149), with a strip below the pages that lights up each stage. A
   service fails, and its event starts web-doctor (observe). Its report

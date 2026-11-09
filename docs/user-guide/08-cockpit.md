@@ -165,9 +165,16 @@ Selecting an agent shows:
   mode and windows, its readiness (ready or not, and what is not met;
   the override and incident rates against their limits; the proposals),
   **Demote** for a bounded one, and **Promote…** (for a bounded one
-  **Change envelope…**), which opens a form with the envelope. A
-  category that is not ready is refused unless you promote it despite
-  its readiness, with a reason. Once a category has been promoted, *To
+  **Change envelope…**), which opens a form for the envelope: windows
+  (the days as checkboxes, with *every day*, *weekdays* and *weekend*;
+  from and to; the time zone, the host's at first), an optional rate
+  (calls per tool per second, minute or hour) and the conditions that
+  demote it at once (a tool call fails, the rate is exceeded, a health
+  check fails, with its command). It says the envelope in words, checks
+  it before anything is sent, and shows the category's readiness.
+  **Edit as YAML** is the same envelope as text, for what the form does
+  not show. A category that is not ready is refused unless you promote
+  it despite its readiness, with a reason. Once a category has been promoted, *To
   review* lists the actions it took without an approval, with **Fine**
   and **Should not have run**. **Demote** and **Should not have run**
   take the reason from the *Reason (recorded)* field (Demote's default:

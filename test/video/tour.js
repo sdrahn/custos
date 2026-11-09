@@ -377,11 +377,17 @@ const pointer = () => {
             subs.stage("Promote");
             await click(custos().locator("#promote-form summary"));
             await custos().locator("#category-select").selectOption("config-lifecycle");
-            const env = custos().locator("#category-envelope");
-            await env.fill("");
-            await type(env, "windows: [{days: [mon, tue, wed, thu, fri, sat, sun], from: '00:00', to: '23:59', tz: UTC}]\n" +
-                "rate: {calls: 5, per: 1h}");
-            await show(env, t.envelope);
+            // The envelope form (#163): every day, all day, UTC, at most
+            // 5 restarts per hour.
+            const win = custos().locator("#envelope-windows .envelope-window").first();
+            await click(win.locator("button:text-is('every day')"));
+            await win.locator(".from").fill("00:00");
+            await win.locator(".to").fill("23:59");
+            await win.locator(".tz").selectOption("UTC");
+            await click(custos().locator("#envelope-rate"));
+            await custos().locator("#envelope-rate-calls").fill("5");
+            await custos().locator("#envelope-rate-per").selectOption("1h");
+            await show(custos().locator("#envelope-editor"), t.envelope);
             await click(custos().locator("#promote-form button:text-is('Promote')"));
             await categoryMode("bounded");
             await show(category(), t.promote);

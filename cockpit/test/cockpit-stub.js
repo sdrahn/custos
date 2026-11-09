@@ -401,6 +401,8 @@
         {
             opts = opts || {};
             log.push(["spawn", args.join(" "), (opts.environ || []).join(" "), "", opts.superuser || ""]);
+            // The host's time zone (the promote form's windows).
+            if (args[0] === "timedatectl") return Promise.resolve("Europe/Berlin\n");
             if (args[0] === "agent-admin") {
                 const [cmd, name, arg] = args.slice(1);
                 if (cmd === "show") return Promise.resolve(JSON.stringify(posture));
@@ -590,6 +592,7 @@
                                          ", or promote with --despite-readiness --reason TEXT")).then(ok, bad);
                                  }
                                  d.categories = d.categories || {};
+                                 window.__promoted = input; // the envelope sent, as sent
                                  d.categories[arg] = { mode: "bounded", envelope: JSON.parse(JSON.stringify(require_yaml(input))),
                                      promoted_by: by + " " + new Date().toISOString(), promotion: "p-test" };
                              }
