@@ -1480,7 +1480,8 @@ if command -v custos-setup >/dev/null; then
 		done
 		# reboot_status (update-status): whether a reboot is pending, and
 		# the running kernel among the installed ones, as the agent's user.
-		# reboot_says <start>: its stdout starts so and names the kernels.
+		# reboot_says <start> [<or>]: its stdout starts so (or has <or>) and
+		# names the kernels.
 		reboot_says() {
 			local a
 			a=$(run_activity health-check "CALL exec__reboot_status")
@@ -1488,8 +1489,8 @@ if command -v custos-setup >/dev/null; then
 			# is cut short, and repeats the script's own text), which
 			# GET /v1/activities/{id} has.
 			a=$(api health-check "/v1/activities/$(jq -r .id <<<"$a")")
-			jq -e --arg k "$(uname -r)" --arg start "$1" '(.response // "" | ltrimstr("done: ") | fromjson | .output.stdout) |
-				startswith($start) and contains("Running kernel: " + $k + "\n") and
+			jq -e --arg k "$(uname -r)" --arg start "$1" --arg or "${2:-}" '(.response // "" | ltrimstr("done: ") | fromjson | .output.stdout) |
+				(startswith($start) or ($or != "" and contains($or))) and contains("Running kernel: " + $k + "\n") and
 				(split("Installed kernels: ")[1] | split(" ") | index($k) != null)' <<<"$a" >/dev/null ||
 				{ echo "    | the activity: $(jq -c '{state, response: (.response // "" | .[-400:])}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
 		}
@@ -1497,9 +1498,11 @@ if command -v custos-setup >/dev/null; then
 			check "exec__reboot_status: a reboot is pending, with the running kernel among the installed ones" reboot_says "A reboot is pending"
 		else
 			check "exec__reboot_status: no reboot is pending, with the running kernel among the installed ones" reboot_says "No reboot is pending"
-			# The command sees /run: an update that needs a reboot shows.
+			# /run/reboot-needed: the command sees it, or says that it cannot
+			# tell (the exec server's sandbox may have a /run of its own);
+			# never that nothing waits.
 			touch /run/reboot-needed
-			check "exec__reboot_status sees /run/reboot-needed: a reboot is pending" reboot_says "A reboot is pending"
+			check "exec__reboot_status with /run/reboot-needed: a reboot is pending, or it says it cannot see it" reboot_says "A reboot is pending" "is not visible to this command"
 			rm -f /run/reboot-needed
 		fi
 		# Custos's server custos-net: the network commands in the host's
