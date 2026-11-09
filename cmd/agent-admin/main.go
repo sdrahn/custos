@@ -45,9 +45,12 @@ const usage = `usage: agent-admin COMMAND …
   disable CATEGORY… | --all              disable task categories again; --all: back to diagnostics-only.
                                          Refused while an agent has permissions in them or one promoted
   diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
-  seal --agents                          make the host's seal cover the agents' data and their token issuers
+  seal --agents [--accept NAME…]         make the host's seal cover the agents' data and their token issuers
                                          (CONTRACT.md §6b): signs them; a change outside agent-admin then
-                                         denies that agent everything
+                                         denies that agent everything. Once it has, a file that does not match
+                                         the seal is signed only when --accept names it (_http: the issuers)
+  seal --rekey [--accept NAME…]          a new key for the seal (a lost one): signs again what matches the
+                                         seal, and what --accept names (_enablement: the categories' state)
   issuers [--add ISSUER…] [--remove ISSUER…]
                                          the token issuers trusted for agents over HTTPS (_http.yaml); signed
                                          on a host whose seal covers them
@@ -203,10 +206,21 @@ func run(a *admin.Admin, args []string) error {
 	case "diagnostics-only":
 		return a.InitDiagnosticsOnly(by())
 	case "seal":
-		if len(args) != 1 || args[0] != "--agents" {
-			return fmt.Errorf("seal: --agents\n%s", usage)
+		if len(args) == 0 || (args[0] != "--agents" && args[0] != "--rekey") {
+			return fmt.Errorf("seal: --agents or --rekey\n%s", usage)
 		}
-		return a.SealAgents()
+		var accept []string
+		for i := 1; i < len(args); i++ {
+			if args[i] != "--accept" || i+1 >= len(args) {
+				return fmt.Errorf("seal: %q: want --accept NAME\n%s", args[i], usage)
+			}
+			accept = append(accept, args[i+1])
+			i++
+		}
+		if args[0] == "--rekey" {
+			return a.Rekey(by(), accept)
+		}
+		return a.SealAgents(accept)
 	case "issuers":
 		var add, remove []string
 		for i := 0; i < len(args); i++ {

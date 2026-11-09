@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -122,24 +124,14 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 	}
 	to.ChangedBy = by + " " + a.Now().UTC().Format(time.RFC3339Nano)
 	to.Record = id
-	key, err := a.sealKey()
+	key, err := a.enablementKey()
 	if err != nil {
 		return err
 	}
 	if to.Signature, err = sign(key, to); err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	buf.WriteString("# The task categories this host may use (custos CONTRACT.md §6b), written\n" +
-		"# by agent-admin. Change it only with agent-admin enable or disable: a change\n" +
-		"# without its record is reported as tampered, and one its signature does not\n" +
-		"# cover counts as diagnostics-only (the seal, _seal.yaml).\n")
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(map[string]*Enablement{"_enablement": to}); err != nil {
-		return err
-	}
-	if err := writeFile(a.p(GatewayEnablement), buf.Bytes(), 0o644); err != nil {
+	if err := a.writeEnablementFile(to); err != nil {
 		return err
 	}
 	// The seal after the state: in between the gateway sees a signed
@@ -159,6 +151,43 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 		"SEALED": "1",
 	})
 	return a.waitPolicy("mcp/agents/_enablement/record", func(v any) bool { return v == id })
+}
+
+// writeEnablementFile writes the state as it is (signed or not).
+func (a *Admin) writeEnablementFile(to *Enablement) error {
+	var buf bytes.Buffer
+	buf.WriteString("# The task categories this host may use (custos CONTRACT.md §6b), written\n" +
+		"# by agent-admin. Change it only with agent-admin enable or disable: a change\n" +
+		"# without its record is reported as tampered, and one its signature does not\n" +
+		"# cover counts as diagnostics-only (the seal, _seal.yaml).\n")
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(map[string]*Enablement{"_enablement": to}); err != nil {
+		return err
+	}
+	return writeFile(a.p(GatewayEnablement), buf.Bytes(), 0o644)
+}
+
+// enablementKey is the key a change of the state is signed with: the
+// seal's, when the host has one (a missing credential is an error, never
+// a new key: security review 0.6, N2), else a new one, which seals the
+// host.
+func (a *Admin) enablementKey() (*ecdsa.PrivateKey, error) {
+	pub, _, err := a.sealInfo()
+	if err != nil {
+		return nil, err
+	}
+	if pub == "" {
+		return a.sealKey()
+	}
+	k, err := a.existingSealKey()
+	if err != nil {
+		return nil, fmt.Errorf("%w (a lost key: agent-admin seal --rekey)", err)
+	}
+	if !matchesSeal(k, pub) {
+		return nil, fmt.Errorf("the seal's key (%s) does not match the seal (%s): agent-admin seal --rekey", filepath.Join(CredstoreDir, SealCredential), GatewaySeal)
+	}
+	return k, nil
 }
 
 // InitDiagnosticsOnly makes a fresh host diagnostics-only (the bundled

@@ -221,7 +221,10 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 			}
 		}
 	}
-	if on("health_check_failed") {
+	// The health check runs as root: only from data the seal covers
+	// (security review 0.6, N1). Data that does not match it is denied
+	// everything by the gateway already.
+	if on("health_check_failed") && (d.Tampered == "" || strings.HasPrefix(d.Tampered, "an earlier version")) {
 		check := a.HealthCheck
 		if check == nil {
 			check = runHealthCheck

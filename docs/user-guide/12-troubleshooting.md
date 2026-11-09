@@ -147,8 +147,8 @@ anyway. Check in this order:
 | `the agent's mode M is unknown`, `the mode M of task category C is unknown` | the agent data was edited by hand | `agent-admin mode`, `agent-admin promote`/`demote` |
 | `a role is bound to the agent's user: …` | step 5 | remove the binding |
 | `an agent's subject from an issuer not trusted for agents` | an OpenShell agent's token from another issuer ([chapter 11](11-openshell.md#issuers)) | `agent-admin issuers --add ISSUER` |
-| `the agent's data does not match its seal (changed outside agent-admin): …` | the agent's gateway data was edited by hand on a sealed host ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) | `agent-admin show NAME` says what; write it again with `agent-admin` (`permissions`, `mode`, `owners`), or `agent-admin seal --agents` to sign it as it is |
-| `the agents' token issuers (_http.yaml) do not match their seal …` | `_http.yaml` was edited by hand on a sealed host | `agent-admin issuers --add`/`--remove` |
+| `the agent's data does not match its seal (changed outside agent-admin): …` | the agent's gateway data was edited by hand on a sealed host ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) | `agent-admin show NAME` says what. Put the file back as `agent-admin` wrote it, or accept it as it is with `agent-admin seal --agents --accept NAME`; until then `agent-admin` refuses other changes to the agent (a pause or a demotion is still written, unsigned) |
+| `the agents' token issuers (_http.yaml) do not match their seal …` | `_http.yaml` was edited by hand on a sealed host | check it, then accept it with `agent-admin seal --agents --accept _http`, or remove issuers with `agent-admin issuers --remove` (written unsigned until accepted) |
 | `no matching permission` | no permission names the tool | add the permission (step 2) |
 
 

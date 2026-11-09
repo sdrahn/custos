@@ -269,7 +269,7 @@ func (a *Admin) create(name string, b []byte) (err error) {
 		return err
 	}
 	// Supervised by default, and nothing allowed until listed (§6).
-	if err := a.writeGateway(name, &GatewayData{Mode: "supervised", Permissions: []map[string]any{}}); err != nil {
+	if err := a.writeGateway(name, &GatewayData{Mode: "supervised", Permissions: []map[string]any{}}, false); err != nil {
 		return err
 	}
 	if err := a.syncEvents(cfg); err != nil {
@@ -825,11 +825,15 @@ func (a *Admin) readGateway(name string) (*GatewayData, error) {
 	return doc[name], nil
 }
 
-func (a *Admin) writeGateway(name string, d *GatewayData) error {
+// writeGateway writes the agent's gateway data. reduces: the change only
+// takes from the agent (a pause, a demotion, a lower mode), which a
+// sealed host writes even when the data does not verify, or the key
+// cannot be used (unsigned then; gatewayYAML).
+func (a *Admin) writeGateway(name string, d *GatewayData, reduces bool) error {
 	if d.Permissions == nil {
 		d.Permissions = []map[string]any{}
 	}
-	b, recordData, err := a.gatewayYAML(name, d)
+	b, recordData, err := a.gatewayYAML(name, d, reduces)
 	if err != nil {
 		return err
 	}
@@ -894,6 +898,9 @@ func (a *Admin) who() string {
 	return "root"
 }
 
+// modeRank orders the modes by what they let an agent do.
+var modeRank = map[string]int{"advisory": 0, "supervised": 1, "bounded": 2}
+
 // SetMode sets the autonomy mode, enforced by the gateway.
 func (a *Admin) SetMode(name, mode string) error {
 	if err := checkName(name); err != nil {
@@ -908,8 +915,9 @@ func (a *Admin) SetMode(name, mode string) error {
 	if err != nil {
 		return err
 	}
+	lower := modeRank[mode] < modeRank[d.Mode]
 	d.Mode = mode
-	return a.writeGateway(name, d)
+	return a.writeGateway(name, d, lower)
 }
 
 // ownerRE is an owner rule: the gateway's approver forms but "self"
@@ -950,7 +958,7 @@ func (a *Admin) SetOwners(name string, owners []string) error {
 		return err
 	}
 	d.Owners = out
-	if err := a.writeGateway(name, d); err != nil {
+	if err := a.writeGateway(name, d, false); err != nil {
 		return err
 	}
 	if len(out) == 0 {
@@ -982,7 +990,7 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 		return err
 	}
 	d.Permissions = perms
-	return a.writeGateway(name, d)
+	return a.writeGateway(name, d, false)
 }
 
 // parsePermissions reads and checks a YAML list of gateway permissions.
@@ -1061,7 +1069,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 		// The host first: a pause holds there whatever the gateway's
 		// policy does, and a slow OPA delays nothing (security review M3).
 		herr := a.Control(sock, path)
-		if err := a.writeGateway(name, d); err != nil {
+		if err := a.writeGateway(name, d, true); err != nil {
 			if herr == nil {
 				return fmt.Errorf("agent %s is paused on its host, but the gateway's data: %w", name, err)
 			}
@@ -1073,7 +1081,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 		return nil
 	}
 	// Resuming: the gateway first, so the host never runs ahead of it.
-	if err := a.writeGateway(name, d); err != nil {
+	if err := a.writeGateway(name, d, false); err != nil {
 		return err
 	}
 	if err := a.Control(sock, path); err != nil {

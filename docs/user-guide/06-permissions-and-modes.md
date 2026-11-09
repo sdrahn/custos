@@ -239,6 +239,17 @@ before Custos 0.6, run once, after checking the agents' data with
 agent-admin seal --agents
 ```
 
+`agent-admin` does not build on data the seal does not cover: while an
+agent's data was changed by hand, `agent-admin` refuses to change it
+(a pause or a demotion is still written, unsigned, which the gateway
+denies everything). Put the file back as `agent-admin` wrote it, or
+check it and accept it as it is with
+`agent-admin seal --agents --accept NAME` (`_http` for the issuers).
+If the seal's key is lost (a reset TPM, a disk moved to another
+machine), changes fail until `agent-admin seal --rekey` makes a new key:
+it signs again what still matches the seal, and what you accept with
+`--accept`.
+
 `agent-admin diagnostics-only` makes a freshly installed host
 diagnostics-only; the installer's setup runs it. It refuses a host that
 has an enablement state already, or an agent with permissions outside

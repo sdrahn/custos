@@ -68,6 +68,21 @@ removed.
 
 ### Fixed
 
+- Security review 0.6 (`docs/security-review-0.6.md`) of the seal of
+  the agents' data: any `agent-admin` write, and `seal --agents`, signed
+  an agent's data edited by hand as it was, which the gateway then
+  counted and `show` no longer reported (N1); a missing key made
+  `enable` or `disable` sign everything on disk with a new one (N2); a
+  pause or a demotion failed when the key could not be used (N3).
+  `agent-admin` now builds only on data that verifies: other changes are
+  refused, a pause, a demotion or a lower mode is written unsigned; `seal
+  --agents --accept NAME` signs a file as it is after a person checked it;
+  a missing key is an error, and `seal --rekey` makes a new one, signing
+  again only what verifies or is accepted. Each signature names its
+  record, time and host (N4), and `show` reports an earlier record and
+  another host's. The evaluator runs no health check from data that does
+  not verify. `idp-client` and `check-token` name `agent-admin issuers`,
+  and say when `_http.yaml` does not match its seal.
 - `update-status` could not see a reboot or restart that an update waits
   for: its only required step, `systemd__check_restart_reload`, reports
   only on restarts systemd-mcp started itself. Its new step

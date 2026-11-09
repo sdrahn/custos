@@ -1289,12 +1289,19 @@ check "show: dg's data changed by hand does not match its seal" posture_is '.age
 check "the gateway denies dg everything, its diagnostics call too" eventually 30 effect_is dg probe deny
 if gateway_reasons; then
 	check "the denial's reason: the agent's data does not match its seal" reason_is dg probe \
-		"the agent's data does not match its seal (changed outside agent-admin): every call is denied until agent-admin writes it again (agent-admin seal --agents)"
+		"the agent's data does not match its seal (changed outside agent-admin): every call is denied until an administrator checks it and accepts it (agent-admin seal --agents --accept dg)"
 else
 	skip "the denial's reason (this mcp-gateway's policy has no deny_reasons)"
 fi
-check "agent-admin writes dg's data again" dg_perms
-check "signed again, the gateway allows dg's diagnostics call" eventually 30 effect_is dg probe allow
+# agent-admin does not build on data that does not match the seal
+# (security review 0.6, N1): a change is refused, a pause is written
+# unsigned; putting back what agent-admin wrote restores dg.
+check "agent-admin refuses to change dg's data that does not match the seal" not dg_perms
+check "agent-admin pause dg still works, written unsigned" bash -c "agent-admin pause dg && ! grep -Eq '^ +signature: ' '$dgdata'"
+cp "$work/dg-signed.yaml" "$dgdata"
+check "show: put back as agent-admin wrote it, dg's data matches its seal" posture_is '.agents.dg | has("tampered") | not'
+check "agent-admin resume dg (signed again)" agent-admin resume dg
+check "the gateway allows dg's diagnostics call again" eventually 30 effect_is dg probe allow
 check "agent-admin mode dg advisory" agent-admin mode dg advisory
 cp "$work/dg-signed.yaml" "$dgdata"
 check "show: an earlier signed version of dg's data put back is reported" posture_is '.agents.dg.tampered | contains("an earlier version was put back")'
@@ -1422,7 +1429,8 @@ check "agent-admin disable on a diagnostics-only host has nothing to do" not age
 cp "$work/dg-patch.yaml" "$dgdata"
 # A host whose seal does not cover the agents' data yet (sealed before
 # #158, or as here): agent-admin seal --agents signs it as it is on file.
-check "agent-admin seal --agents" agent-admin seal --agents
+check "agent-admin seal --agents refuses dg's data written past the seal" not agent-admin seal --agents
+check "agent-admin seal --agents --accept dg" agent-admin seal --agents --accept dg
 check "show: the seal covers agent data again, dg signed, nothing tampered" posture_is \
 	'.agents_sealed == true and (has("seal_tampered") | not) and (.agents.dg | has("tampered") | not)'
 check "dg's data is signed again" grep -Eq '^ +signature: ' "$dgdata"

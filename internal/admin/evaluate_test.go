@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sdrahn/custos/internal/journal"
+	"github.com/sdrahn/custos/internal/readiness"
 )
 
 // fakeJournal holds an agent's records and the gateway's decisions, as
@@ -389,5 +390,27 @@ func TestOverrideRateFromTheGatewayAlone(t *testing.T) {
 		if len(d) != 1 || d[0].Category != "patch-errata" || !strings.Contains(d[0].Reason, "override rate 100.0 %") {
 			t.Errorf("%s: demotions %v", name, d)
 		}
+	}
+}
+
+// The health check runs as root: never from data that does not match the
+// seal (security review 0.6, N1); an earlier signed version still counts.
+func TestHealthCheckOnlyFromSealedData(t *testing.T) {
+	a, _, _, _ := promoted(t, "rollback: {on: [health_check_failed], health_check: 'touch /tmp/pwned'}\n")
+	var ran []string
+	a.HealthCheck = func(cmd string) error { ran = append(ran, cmd); return errors.New("exit status 1") }
+	p, err := a.Show()
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, _ := a.Thresholds()
+	d := p.Agents["patch-pilot"]
+	d.Tampered = "it does not match its seal (changed outside agent-admin): the gateway denies the agent everything"
+	if why := a.demotionReason(d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); why != "" || len(ran) != 0 {
+		t.Errorf("data that does not verify: %q, ran %q", why, ran)
+	}
+	d.Tampered = "an earlier version was put back: it is signed, but not the latest agent-admin wrote"
+	if why := a.demotionReason(d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); !strings.Contains(why, "health_check_failed") || len(ran) != 1 {
+		t.Errorf("an earlier signed version: %q, ran %q", why, ran)
 	}
 }

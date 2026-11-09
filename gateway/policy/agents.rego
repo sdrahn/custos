@@ -304,7 +304,7 @@ agent_denials contains "an agent's subject from an issuer not trusted for agents
 }
 
 # An issuer _http.yaml lists, which the seal does not cover.
-agent_denials contains "the agents' token issuers (_http.yaml) do not match their seal (changed outside agent-admin): no issuer is trusted until agent-admin issuers writes them again" if {
+agent_denials contains "the agents' token issuers (_http.yaml) do not match their seal (changed outside agent-admin): no issuer is trusted until an administrator checks them and accepts them (agent-admin seal --agents --accept _http)" if {
 	input.principal.transport == "http"
 	startswith(input.principal.sub, "agent-")
 	input.principal.iss in object.get(object.get(data.mcp.agents, "_http", {}), "issuers", [])
@@ -340,7 +340,7 @@ agent_denials contains "the agent is paused (agent-admin resume)" if {
 
 # The agent's data does not match the seal: everything is denied, as on
 # a pause, until agent-admin writes it again.
-agent_denials contains "the agent's data does not match its seal (changed outside agent-admin): every call is denied until agent-admin writes it again (agent-admin seal --agents)" if {
+agent_denials contains sprintf("the agent's data does not match its seal (changed outside agent-admin): every call is denied until an administrator checks it and accepts it (agent-admin seal --agents --accept %s)", [agent_name]) if {
 	agent_principal
 	not input.discovery
 	agent_data

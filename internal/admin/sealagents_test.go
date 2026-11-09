@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,13 +81,20 @@ func TestSealAgentData(t *testing.T) {
 	if tm := p.Agents["patch-pilot"].Tampered; !strings.Contains(tm, "never signed") {
 		t.Errorf("unsigned: %q", tm)
 	}
-	// agent-admin writing it again restores it.
-	if err := a.SetMode("patch-pilot", "supervised"); err != nil {
+	// agent-admin does not build on it (security review 0.6, N1): a
+	// change is refused until it is accepted, which signs it as it is.
+	if err := a.SetMode("patch-pilot", "supervised"); err == nil || !strings.Contains(err.Error(), "seal --agents --accept patch-pilot") {
+		t.Errorf("a change of data that does not verify: %v", err)
+	}
+	if err := a.SealAgents(nil); err == nil || !strings.Contains(err.Error(), "patch-pilot") {
+		t.Errorf("seal --agents without --accept: %v", err)
+	}
+	if err := a.SealAgents([]string{"patch-pilot"}); err != nil {
 		t.Fatal(err)
 	}
 	p, _ = a.Show()
 	if tm := p.Agents["patch-pilot"].Tampered; tm != "" {
-		t.Errorf("written again: %q", tm)
+		t.Errorf("accepted: %q", tm)
 	}
 
 	// Another agent's signed data under this name does not count.
@@ -157,7 +165,7 @@ func TestIssuers(t *testing.T) {
 // without a seal is refused.
 func TestSealAgentsLater(t *testing.T) {
 	a, _, _ := withCategoriesRec(t)
-	if err := a.SealAgents(); err == nil || !strings.Contains(err.Error(), "no seal") {
+	if err := a.SealAgents(nil); err == nil || !strings.Contains(err.Error(), "no seal") {
 		t.Errorf("without a seal: %v", err)
 	}
 	a, mem := diagnosticsHost(t)
@@ -184,7 +192,13 @@ func TestSealAgentsLater(t *testing.T) {
 	}
 	var out bytes.Buffer
 	a.Out = &out
-	if err := a.SealAgents(); err != nil {
+	// The file was written while the seal's agent part was gone, and
+	// agent-admin sealed agent data here before: it is signed only when
+	// accepted (security review 0.6, N1).
+	if err := a.SealAgents(nil); err == nil || !strings.Contains(err.Error(), "patch-pilot") {
+		t.Errorf("seal --agents without --accept after the agent part was removed: %v", err)
+	}
+	if err := a.SealAgents([]string{"patch-pilot"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "the seal covers the agents' data now: 1 agent and the token issuers signed") {
@@ -197,10 +211,26 @@ func TestSealAgentsLater(t *testing.T) {
 	if !p.AgentsSealed || p.Agents["patch-pilot"].Tampered != "" || p.SealTampered != "" {
 		t.Errorf("show after: %+v %q", p.Agents["patch-pilot"], p.SealTampered)
 	}
-	// A missing key is an error, never a new key.
+	// A missing key is an error, never a new key: for a change that gives
+	// the agent more, and for the categories' state (security review
+	// 0.6, N2); a change that only takes from it is written unsigned
+	// (N3): the gateway denies the agent everything.
 	os.Remove(a.p(filepath.Join(CredstoreDir, SealCredential)))
-	if err := a.SetMode("patch-pilot", "advisory"); err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Errorf("without the key: %v", err)
+	if err := a.SetOwners("patch-pilot", []string{"user:alice"}); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("owners without the key: %v", err)
+	}
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("enable without the key: %v", err)
+	}
+	if _, err := os.Stat(a.p(filepath.Join(CredstoreDir, SealCredential))); err == nil {
+		t.Error("a new key was made")
+	}
+	if err := a.SetMode("patch-pilot", "advisory"); err != nil {
+		t.Errorf("a lower mode without the key: %v", err)
+	}
+	b, _ = os.ReadFile(a.gatewayFile("patch-pilot"))
+	if strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "mode: advisory") {
+		t.Errorf("a lower mode without the key is written unsigned:\n%s", b)
 	}
 }
 
@@ -211,5 +241,115 @@ func TestCountAgents(t *testing.T) {
 		if got := countAgents(n); got != want {
 			t.Errorf("%d: %q, want %q", n, got, want)
 		}
+	}
+}
+
+// A pause or a demotion of an agent whose data does not verify is still
+// written, unsigned, so that the gateway denies it everything (security
+// review 0.6, N1, N3); adding an issuer to an _http.yaml that does not
+// verify is refused, removing one is written unsigned.
+func TestReducingWrites(t *testing.T) {
+	a, mem := diagnosticsHost(t)
+	a.JournalJSON = dataJournal(mem)
+	file := a.gatewayFile("patch-pilot")
+	b, _ := os.ReadFile(file)
+	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
+	var out bytes.Buffer
+	a.Out = &out
+	if err := a.Pause("patch-pilot", "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(file)
+	if strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "paused: true") || !strings.Contains(out.String(), "written unsigned") {
+		t.Errorf("a pause of data that does not verify:\n%s\n%s", b, out.String())
+	}
+	if err := a.Pause("patch-pilot", "alice", false); err == nil {
+		t.Error("a resume of data that does not verify was written")
+	}
+
+	const iss = "https://idp.example.com/realms/mcp"
+	if err := a.Issuers([]string{iss, "https://two.example.com"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := os.ReadFile(a.p(GatewayHTTPIssuers))
+	os.WriteFile(a.p(GatewayHTTPIssuers), []byte(strings.Replace(string(h), iss, "https://evil.example.com", 1)), 0o644)
+	if err := a.Issuers([]string{"https://three.example.com"}, nil); err == nil || !strings.Contains(err.Error(), "--accept _http") {
+		t.Errorf("adding to issuers that do not verify: %v", err)
+	}
+	if err := a.Issuers(nil, []string{"https://two.example.com"}); err != nil {
+		t.Errorf("removing from issuers that do not verify: %v", err)
+	}
+	if h, _ = os.ReadFile(a.p(GatewayHTTPIssuers)); strings.Contains(string(h), "signature: ") {
+		t.Errorf("written signed:\n%s", h)
+	}
+	if got, why := a.trustedIssuers(); got != nil || !strings.Contains(why, "does not match its seal") {
+		t.Errorf("trusted issuers %v %q", got, why)
+	}
+}
+
+// Freshness (security review 0.6, N4): each signature names its record,
+// time and host; show reports a signed file that is not the latest record,
+// and one signed on another host.
+func TestSealFreshness(t *testing.T) {
+	a, mem := diagnosticsHost(t)
+	a.JournalJSON = dataJournal(mem)
+	writeFile(a.p("/etc/machine-id"), []byte("aaaa\n"), 0o444)
+	if err := a.SetMode("patch-pilot", "supervised"); err != nil {
+		t.Fatal(err)
+	}
+	pub, _, _ := a.sealInfo()
+	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	got, ok := verifyEntry(pub, "patch-pilot", b)
+	if !ok || got["host"] != "aaaa" || !strings.HasPrefix(fmt.Sprint(got["record"]), "d-") || got["at"] == nil {
+		t.Fatalf("payload %v %v", got, ok)
+	}
+	if recs := records(mem, journal.GatewayData); recs[len(recs)-1].Fields["DATA_RECORD"] != got["record"] {
+		t.Errorf("the record is not journaled: %+v", recs[len(recs)-1].Fields)
+	}
+	writeFile(a.p("/etc/machine-id"), []byte("bbbb\n"), 0o444)
+	p, _ := a.Show()
+	if tm := p.Agents["patch-pilot"].Tampered; !strings.Contains(tm, "signed on another host (machine-id aaaa)") {
+		t.Errorf("another host: %q", tm)
+	}
+}
+
+// seal --rekey (security review 0.6, N2): a new key, with which it signs
+// again what verifies against the seal so far, and what is accepted;
+// nothing changes when something else is in the way.
+func TestRekey(t *testing.T) {
+	a, mem := diagnosticsHost(t)
+	a.JournalJSON = dataJournal(mem)
+	old, _, _ := a.sealInfo()
+	os.Remove(a.p(filepath.Join(CredstoreDir, SealCredential)))
+	file := a.gatewayFile("patch-pilot")
+	b, _ := os.ReadFile(file)
+	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
+	if err := a.Rekey("root", nil); err == nil || !strings.Contains(err.Error(), "patch-pilot") {
+		t.Errorf("rekey with data that does not verify: %v", err)
+	}
+	if pub, _, _ := a.sealInfo(); pub != old {
+		t.Fatal("the seal changed though the rekey was refused")
+	}
+	os.WriteFile(file, b, 0o644) // put back as agent-admin wrote it
+	if err := a.Rekey("root", nil); err != nil {
+		t.Fatal(err)
+	}
+	pub, agents, _ := a.sealInfo()
+	if pub == old || !agents {
+		t.Fatalf("no new seal: agents %v", agents)
+	}
+	if !a.entryVerified(pub, "patch-pilot") || !a.entryVerified(pub, HTTPIssuersName) {
+		t.Error("not signed with the new key")
+	}
+	e, _ := a.GetEnablement()
+	if !verifySeal(pub, e) {
+		t.Error("the categories' state is not signed with the new key")
+	}
+	p, _ := a.Show()
+	if p.Enablement.Tampered != "" || p.Agents["patch-pilot"].Tampered != "" {
+		t.Errorf("show after the rekey: %q %q", p.Enablement.Tampered, p.Agents["patch-pilot"].Tampered)
+	}
+	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
+		t.Errorf("enable with the new key: %v", err)
 	}
 }
