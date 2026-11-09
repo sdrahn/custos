@@ -119,19 +119,19 @@ on a host you use. CI measures the models of `test/vm/eval-models` the
 same way for each release (job `models`).
 
 What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
-(4 vCPUs, 16 GB, no GPU), `/no_think` (which Ollama ignored),
+(4 vCPUs, 16 GB, no GPU), `reasoning_effort: none`,
 `max_output_tokens: 2048`, four planted faults, 20 minutes per run:
 
 | Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
 |---|---|---|---|---|---|---|
-| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 630 s | 1/7 |
-| Qwen3 4B | 0/4 | 0/4 | 0 | – | 557 s | 0/6 |
-| Qwen3 8B | 2/4 | 2/4 | 0 | 5/5 | 1202 s | 1/7 |
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 827 s | 0/7 |
+| Qwen3 4B | 1/4 | 0/4 | 0 | 2/2 | 711 s | 0/7 |
+| Qwen3 8B | 2/4 | 2/4 | 0 | 4/4 | 1200 s | 2/7 |
 
 8B named the unsynchronized clock and the full file system with
-verified quotes; its other runs ran out of time. 1.7B and 4B thought up
-to the output limit. On a CPU even 8B is too slow: plan
-for a model server with a GPU and a larger model, and measure it with
+verified quotes; its other runs ran out of time. 4B named the fault in
+prose three times but filed no report for it. On a CPU even 8B is too
+slow: plan for a model server with a GPU and a larger model, and measure it with
 `model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
