@@ -32,6 +32,10 @@ removed.
 
 ### Added
 
+- `{unit_re}` in a playbook step's arguments: the unit escaped for a
+  regular expression (security review 0.6, N5). `service-health`'s
+  journal pattern uses it, so that `nginx.service` no longer also matches
+  `nginxXservice`.
 - A playbook step takes the call's arguments (`args`), and `{unit}` in
   them is the unit the activity is about: the request's new `"unit"`
   (`POST /v1/activities`), or for an event that runs a playbook the unit

@@ -302,3 +302,20 @@ func TestShippedExecCommands(t *testing.T) {
 		}
 	}
 }
+
+// {unit_re} is the unit escaped for a regular expression (security
+// review 0.6, N5): its dots match only dots. It needs a unit like {unit}.
+func TestUnitRE(t *testing.T) {
+	s := Step{Tool: "systemd__list_log", Why: "w", Args: map[string]any{"pattern": "{unit_re}|Failed to start {unit}"}}
+	if !s.NeedsUnit() {
+		t.Error("{unit_re} needs a unit")
+	}
+	got := s.ArgsFor("nginx@a.b.service")["pattern"]
+	if got != `nginx@a\.b\.service|Failed to start nginx@a.b.service` {
+		t.Errorf("pattern %q", got)
+	}
+	re := regexp.MustCompile(got.(string))
+	if re.MatchString("nginx@aXbXservice") || !re.MatchString("x nginx@a.b.service y") {
+		t.Error("the escaped unit matches what it should not, or not itself")
+	}
+}
