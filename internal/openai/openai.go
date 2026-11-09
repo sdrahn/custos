@@ -26,6 +26,9 @@ type Model struct {
 	Name        string
 	APIKey      string
 	Temperature *float32
+	// ReasoningEffort is the request's reasoning_effort (model.
+	// reasoning_effort): none, low, medium, high; "": not sent.
+	ReasoningEffort string
 	// Timeout bounds one request (0: none; the caller's context, the
 	// activity's limit, does). HTTP, if set, is used as it is.
 	Timeout time.Duration
@@ -43,10 +46,14 @@ func (l llm) GenerateContent(ctx context.Context, req *model.LLMRequest, stream 
 }
 
 type message struct {
-	Role       string     `json:"role"`
-	Content    *string    `json:"content"`
-	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role      string     `json:"role"`
+	Content   *string    `json:"content"`
+	ToolCalls []toolCall `json:"tool_calls,omitempty"`
+	// The model's thinking, in an answer: Ollama's reasoning, or
+	// reasoning_content (vLLM, llama.cpp, DeepSeek). Never sent back.
+	Reasoning        string `json:"reasoning,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
+	ToolCallID       string `json:"tool_call_id,omitempty"`
 }
 
 type toolCall struct {
@@ -73,7 +80,10 @@ type request struct {
 	Tools       []toolDef `json:"tools,omitempty"`
 	Temperature *float32  `json:"temperature,omitempty"`
 	MaxTokens   int32     `json:"max_tokens,omitempty"`
-	Stream      bool      `json:"stream"`
+	// ReasoningEffort: model.reasoning_effort. Ollama (0.12) maps none to
+	// think: false; OpenAI's reasoning models and vLLM read it too.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	Stream          bool   `json:"stream"`
 }
 
 type response struct {
@@ -149,6 +159,12 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 	// and was cut off.
 	cutOff := r.Choices[0].FinishReason == "length"
 	content := &genai.Content{Role: genai.RoleModel}
+	// The thinking, as a thought: kept out of the answer's text (the
+	// summary, the response) and never sent back, but counted
+	// (model.call's THOUGHT_BYTES).
+	if t := msg.Reasoning + msg.ReasoningContent; t != "" {
+		content.Parts = append(content.Parts, &genai.Part{Text: t, Thought: true})
+	}
 	if msg.Content != nil && *msg.Content != "" {
 		content.Parts = append(content.Parts, &genai.Part{Text: *msg.Content})
 	}
@@ -184,7 +200,7 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 }
 
 func (m *Model) request(req *model.LLMRequest) request {
-	out := request{Model: m.Name, Temperature: m.Temperature}
+	out := request{Model: m.Name, Temperature: m.Temperature, ReasoningEffort: m.ReasoningEffort}
 	if req.Config != nil {
 		// model.max_output_tokens. max_tokens, not OpenAI's newer
 		// max_completion_tokens: the servers Custos is used with (vLLM,

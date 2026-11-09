@@ -53,6 +53,14 @@ removed.
   (`AGENT_CUT_OFF`). It is kept when Cockpit saves the model defaults.
   `model-eval.sh --max-output TOKENS` sets it (CI: 2048) and counts the
   cut-off calls.
+- `model.reasoning_effort` (provider `openai`): how much a model that
+  thinks before it answers should think, sent as `reasoning_effort`
+  (#155). Ollama thinks by default with a model that can, whatever the
+  prompt says; `none` turns that off. The thinking a server returns
+  apart from the answer (`reasoning`, `reasoning_content`) is no longer
+  dropped unseen: it stays out of the answer, and the `model.call`
+  record counts it (`AGENT_THOUGHT_BYTES`). `model-eval.sh --no-think`
+  sets `none` and counts the thinking per run.
 - The seal covers each agent's gateway data and the agents' token
   issuers too (#158, the rest of security review M5). `agent-admin`
   signs them as it writes them; the gateway denies an agent whose data
@@ -66,6 +74,20 @@ removed.
 
 ### Fixed
 
+- `update-status` could not see a reboot or restart that an update waits
+  for: its only required step, `systemd__check_restart_reload`, reports
+  only on restarts systemd-mcp started itself. Its new step
+  `exec__reboot_status` (a read-only diagnostic command) says a reboot
+  is pending when a kernel newer than the running one is installed
+  (from rpm) or `/run/reboot-needed` exists (zypper and
+  transactional-update write it after an update that needs a reboot),
+  and lists the running and the installed kernels. The exec server's
+  sandbox does not show the host's `/run/reboot-needed`, so without a
+  newer kernel it says that file may not be visible rather than that
+  nothing waits. Which services wait for a restart
+  (`zypper ps`) is not shown: it needs to read other users' processes,
+  and the command runs as the agent's user. health-check no longer has
+  `check_restart_reload`.
 - The shipped playbooks showed the model the wrong things (#155): their
   steps were called without arguments, so `failed-units` listed the
   *active* units (systemd-mcp's default) and never the failed one, and

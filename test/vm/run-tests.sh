@@ -458,6 +458,13 @@ agent-admin create tmo --from "$f" >/dev/null
 check "model.max_output_tokens reaches the model server, which cuts the answer off there" eventually 30 runs_with tmo "WRITE ON" 'I keep writing'
 check "journal: model.call records the cut-off (CUT_OFF)" eventually 10 journal_has tmo model.call '.AGENT_CUT_OFF == "max_output_tokens"'
 check "journal: an answer not cut off has no CUT_OFF" journal_has t1 model.call '.AGENT_CUT_OFF == null'
+# The model's thinking (model.reasoning_effort): Ollama returns it apart
+# from the answer, and reasoning_effort: none turns it off.
+check "a model's thinking is not the answer" eventually 30 runs_with tmo THINK 'thought about it'
+check "journal: model.call counts the thinking (THOUGHT_BYTES)" eventually 10 journal_has tmo model.call '(.AGENT_THOUGHT_BYTES // "0" | tonumber) > 0'
+sed -i 's|max_output_tokens: 64}|max_output_tokens: 64, reasoning_effort: none}|' "$f"
+check "agent-admin edit tmo: reasoning_effort none" agent-admin edit tmo --from "$f"
+check "model.reasoning_effort none reaches the model server, which does not think" eventually 30 runs_with tmo THINK 'thinking off'
 agent-admin delete tmo >/dev/null 2>&1
 check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
 # Ended activities outlive the launcher (its idle exit): the next one,
@@ -1483,6 +1490,33 @@ if command -v custos-setup >/dev/null; then
 				exec_failed="$exec_failed $tool"
 			}
 		done
+		# reboot_status (update-status): whether a reboot is pending, and
+		# the running kernel among the installed ones, as the agent's user.
+		# reboot_says <start> [<or>]: its stdout starts so (or has <or>) and
+		# names the kernels.
+		reboot_says() {
+			local a
+			a=$(run_activity health-check "CALL exec__reboot_status")
+			# The command's stdout, from the whole response (the summary
+			# is cut short, and repeats the script's own text), which
+			# GET /v1/activities/{id} has.
+			a=$(api health-check "/v1/activities/$(jq -r .id <<<"$a")")
+			jq -e --arg k "$(uname -r)" --arg start "$1" --arg or "${2:-}" '(.response // "" | ltrimstr("done: ") | fromjson | .output.stdout) |
+				(startswith($start) or ($or != "" and contains($or))) and contains("Running kernel: " + $k + "\n") and
+				(split("Installed kernels: ")[1] | split(" ") | index($k) != null)' <<<"$a" >/dev/null ||
+				{ echo "    | the activity: $(jq -c '{state, response: (.response // "" | .[-400:])}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+		}
+		if [ -e /run/reboot-needed ]; then
+			check "exec__reboot_status: a reboot is pending, with the running kernel among the installed ones" reboot_says "A reboot is pending"
+		else
+			check "exec__reboot_status: no reboot is pending for a kernel, with the running kernel among the installed ones" reboot_says "No reboot is pending"
+			# /run/reboot-needed: the command sees it, or says that it cannot
+			# tell (the exec server's sandbox may have a /run of its own);
+			# never that nothing waits.
+			touch /run/reboot-needed
+			check "exec__reboot_status with /run/reboot-needed: a reboot is pending, or it says it may not see it" reboot_says "A reboot is pending" "may not be visible to this command"
+			rm -f /run/reboot-needed
+		fi
 		# Custos's server custos-net: the network commands in the host's
 		# network namespace (network_view: host, mcp-gateway R7), which
 		# the exec server's instances do not see.

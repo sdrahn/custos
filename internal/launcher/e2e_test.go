@@ -674,6 +674,20 @@ func TestModelCallRecords(t *testing.T) {
 	}
 }
 
+// The model's thinking (model.reasoning_effort): counted on its
+// model.call record, and kept out of the activity's answer.
+func TestModelThinking(t *testing.T) {
+	e := newEnv(t, testutil.Thinking("Let me look at the updates first.", "Two updates."))
+	_, b := e.do("POST", "/v1/activities", "0:root", map[string]any{"prompt": "check updates", "wait": true})
+	if !strings.Contains(string(b), `"state":"finished"`) || !strings.Contains(string(b), "Two updates.") || strings.Contains(string(b), "Let me look") {
+		t.Fatalf("activity %s", b)
+	}
+	mc := e.log.Events(journal.ModelCall)
+	if len(mc) != 1 || mc[0].Fields["THOUGHT_BYTES"] != "33" {
+		t.Errorf("model.call %+v", mc)
+	}
+}
+
 // The reference launcher passes the contract's checks (test/contract), as
 // the second host does (test/vm/secondhost, #112).
 func TestContract(t *testing.T) {

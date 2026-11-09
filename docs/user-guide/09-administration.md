@@ -311,7 +311,7 @@ call, in which order, and what to look for. Custos ships eleven, in
 | `network-config` | interfaces, routes, name servers, listening ports (no reachability test: the tools have no network) |
 | `boot-health` | the last boot's duration and slow or failed units |
 | `package-consistency` | unsatisfied package dependencies |
-| `update-status` | pending updates and patches, and restarts they wait for (installs nothing) |
+| `update-status` | pending updates and patches, and whether one waits for a reboot (installs nothing) |
 
 ```bash
 agent-admin playbooks | jq 'map_values(.title)'     # the playbooks

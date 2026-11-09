@@ -34,8 +34,8 @@ func TestParse(t *testing.T) {
 	if c.Model.Timeout() != 0 {
 		t.Errorf("default timeout %s", c.Model.Timeout())
 	}
-	c2, err := Parse([]byte(strings.Replace(sample, `endpoint: "https://ai.example/v1"}`, `endpoint: "https://ai.example/v1", timeout_seconds: 1800, max_output_tokens: 2048}`, 1)))
-	if err != nil || c2.Model.Timeout().Minutes() != 30 || c2.Model.MaxOutputTokens != 2048 {
+	c2, err := Parse([]byte(strings.Replace(sample, `endpoint: "https://ai.example/v1"}`, `endpoint: "https://ai.example/v1", timeout_seconds: 1800, max_output_tokens: 2048, reasoning_effort: none}`, 1)))
+	if err != nil || c2.Model.Timeout().Minutes() != 30 || c2.Model.MaxOutputTokens != 2048 || c2.Model.ReasoningEffort != "none" {
 		t.Errorf("timeout_seconds, max_output_tokens: %v %v", c2, err)
 	}
 	if c.Model.MaxOutputTokens != 0 {
@@ -45,15 +45,17 @@ func TestParse(t *testing.T) {
 
 func TestParseErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"version":      {"version: 2\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}", "version: 2"},
-		"name":         {"version: 1\nname: Bad\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}", "name:"},
-		"unknown key":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\nlimitz: {}", "limitz"},
-		"no servers":   {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}", "gateway.servers"},
-		"tool server":  {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a], tools: [b__x]}", `gateway.tools: "b__x": its server "b" is not in gateway.servers: add b to gateway.servers`},
-		"gemini key":   {"version: 1\nname: ab\nmodel: {provider: gemini, name: m}\ngateway: {servers: [a]}", "API key"},
-		"client tools": {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\ninteraction: {client_tools: allow}", "client_tools"},
-		"timeout":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, timeout_seconds: -1}\ngateway: {servers: [a]}", "model.timeout_seconds: -1"},
-		"max output":   {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, max_output_tokens: -1}\ngateway: {servers: [a]}", "model.max_output_tokens: -1"},
+		"version":          {"version: 2\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}", "version: 2"},
+		"name":             {"version: 1\nname: Bad\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}", "name:"},
+		"unknown key":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\nlimitz: {}", "limitz"},
+		"no servers":       {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}", "gateway.servers"},
+		"tool server":      {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a], tools: [b__x]}", `gateway.tools: "b__x": its server "b" is not in gateway.servers: add b to gateway.servers`},
+		"gemini key":       {"version: 1\nname: ab\nmodel: {provider: gemini, name: m}\ngateway: {servers: [a]}", "API key"},
+		"client tools":     {"version: 1\nname: ab\nmodel: {provider: vertex, name: m}\ngateway: {servers: [a]}\ninteraction: {client_tools: allow}", "client_tools"},
+		"timeout":          {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, timeout_seconds: -1}\ngateway: {servers: [a]}", "model.timeout_seconds: -1"},
+		"max output":       {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, max_output_tokens: -1}\ngateway: {servers: [a]}", "model.max_output_tokens: -1"},
+		"reasoning":        {"version: 1\nname: ab\nmodel: {provider: openai, name: m, endpoint: \"http://x\", reasoning_effort: off}\ngateway: {servers: [a]}", "model.reasoning_effort: \"off\""},
+		"reasoning gemini": {"version: 1\nname: ab\nmodel: {provider: vertex, name: m, reasoning_effort: none}\ngateway: {servers: [a]}", "model.reasoning_effort: only for provider openai"},
 	} {
 		_, err := Parse([]byte(tc.yaml))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

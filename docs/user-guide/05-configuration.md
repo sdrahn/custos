@@ -27,6 +27,7 @@ model:
   temperature: 0.2               # optional
   timeout_seconds: 1800          # optional
   max_output_tokens: 2048        # optional
+  reasoning_effort: none         # optional
 instruction: |
   You keep this host patched. Look before you change anything.
 gateway:
@@ -75,6 +76,8 @@ grow with each tool result ([chapter 12](12-troubleshooting.md#model)).
 `max_output_tokens` bounds one answer in tokens (absent or `0`: the
 server's limit). A small model may write without end; a limit cuts it
 off (`AGENT_CUT_OFF` in `model.call`). 2048 fits a diagnosis report.
+`reasoning_effort`: how much a model thinks, `none` to `high`; Ollama
+thinks unless it is `none`.
 `credential` is the **name** of a secret stored with
 `agent-admin set-credential`, such as `model-key`, never the key itself
 ([below](#model-credentials)). An unknown key in `model:`, such as
@@ -88,8 +91,7 @@ order, a model on-premises, then one in your own cloud account, then a
 vendor's service; [chapter 14](14-network.md#inference) says what each
 sees and every other network flow.
 
-`model.endpoint` is only for `openai`: with `gemini` or `vertex` it is
-an error (`model.endpoint: only for provider openai`).
+`model.endpoint` and `reasoning_effort` are only for `openai`.
 
 ### Which model is good enough {#model-size}
 
@@ -117,20 +119,19 @@ on a host you use. CI measures the models of `test/vm/eval-models` the
 same way for each release (job `models`).
 
 What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
-(4 vCPUs, 16 GB, no GPU), thinking off, `max_output_tokens: 2048`, four
-planted faults, at most 20 minutes per diagnosis run:
+(4 vCPUs, 16 GB, no GPU), `reasoning_effort: none`,
+`max_output_tokens: 2048`, four planted faults, 20 minutes per run:
 
 | Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
 |---|---|---|---|---|---|---|
-| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 630 s | 1/7 |
-| Qwen3 4B | 0/4 | 0/4 | 0 | – | 557 s | 0/6 |
-| Qwen3 8B | 2/4 | 2/4 | 0 | 5/5 | 1202 s | 1/7 |
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 827 s | 0/7 |
+| Qwen3 4B | 1/4 | 0/4 | 0 | 2/2 | 711 s | 0/7 |
+| Qwen3 8B | 2/4 | 2/4 | 0 | 4/4 | 1200 s | 2/7 |
 
-8B filed reports for the unsynchronized clock and the full file system,
-each naming the fault with quotes Custos verified; its other runs
-ran out of time. 1.7B and 4B wrote to the output limit with neither an
-answer nor a tool call. On a CPU even 8B is too slow: plan
-for a model server with a GPU and a larger model, and measure it with
+8B named the unsynchronized clock and the full file system with
+verified quotes; its other runs ran out of time. 4B named the fault in
+prose three times but filed no report for it. On a CPU even 8B is too
+slow: plan for a model server with a GPU and a larger model, and measure it with
 `model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
