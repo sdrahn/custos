@@ -332,8 +332,11 @@ that is unreliable at issuing tool calls still gets every output. Each
 call goes through the gateway, which decides it as any other call: a
 playbook grants nothing. The activity marks these calls as playbook
 steps (`playbook_step`), with the step's *why* as their reason; the
-model reads their outputs, may call further tools it is offered, and
-reports. When the gateway does not offer the agent a step's tool,
+model reads their outputs, may call the playbook's tools again (with
+other arguments) and further tools the playbook names (`tools`), and
+reports. In a playbook run the model is shown only those: a small model
+reads every tool it is shown, each with its description, before it
+answers. When the gateway does not offer the agent a step's tool,
 the playbook is refused before anything runs (`422`, naming the tools);
 steps marked `optional` are left out instead. The agent then reports
 what it found, its hypotheses and a remediation plan for you; it changes
@@ -379,6 +382,7 @@ web-health:
        args: {patterns: [nginx.service, php-fpm.service], state: all, properties: true}}
     - {tool: systemd__list_log, why: "Their recent errors.", args: {unit: ["nginx|php-fpm"], count: 50}}
     - {tool: systemd__list_log, why: "The unit's own journal.", args: {unit: ["{unit}"], exact_unit: true, count: 50}}
+  tools: [systemd__get_file]   # optional: further tools the model may call
   look_for: Restarts, 5xx errors, a full upstream pool.
 ```
 
