@@ -1483,7 +1483,11 @@ if command -v custos-setup >/dev/null; then
 		reboot_says() {
 			local a
 			a=$(run_activity health-check "CALL exec__reboot_status")
-			jq -e --arg k "$(uname -r)" '.summary | (contains("reboot is pending") or contains("No reboot is pending")) and contains("Running kernel: " + $k) and contains("Installed kernels: ") and (split("Installed kernels: ")[1] | contains($k))' <<<"$a" >/dev/null ||
+			# The command's stdout, from the whole response (the summary
+			# is cut short, and repeats the script's own text).
+			jq -e --arg k "$(uname -r)" '(.response // "" | ltrimstr("done: ") | fromjson | .output.stdout) |
+				(startswith("A reboot is pending") or startswith("No reboot is pending")) and contains("Running kernel: " + $k + "\n") and
+				(split("Installed kernels: ")[1] | split(" ") | index($k) != null)' <<<"$a" >/dev/null ||
 				{ echo "    | the activity: $(jq -c '{state, summary}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
 		}
 		check "exec__reboot_status says whether a reboot is pending, with the running kernel among the installed ones" reboot_says
