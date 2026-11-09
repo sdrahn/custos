@@ -1260,13 +1260,14 @@ seal=/etc/mcp-gateway/policy/agents/_seal.yaml
 issuers=/etc/mcp-gateway/policy/agents/_http.yaml
 posture_is() { agent-admin show | jq -e "$1" >/dev/null; }
 check "the seal covers the agents' data (agents: true)" grep -q '^  agents: true' "$seal"
-check "dg's data is signed" grep -q '^  signature: ' "$dgdata"
-check "the agents' token issuers are signed" grep -q '^  signature: ' "$issuers"
+check "dg's data is signed" grep -Eq '^ +signature: ' "$dgdata"
+check "the agents' token issuers are signed" grep -Eq '^ +signature: ' "$issuers"
 check "show: the seal covers agent data, nothing tampered" posture_is \
 	'.agents_sealed == true and (.agents.dg | has("tampered") | not) and (has("issuers_tampered") | not)'
 check "journal: gateway.data for dg, by root" eventually 10 promotion_record gateway.data '.AGENT_DATA == "dg" and (.AGENT_DATA_SHA256 | length == 64)'
 cp "$dgdata" "$work/dg-signed.yaml"
-sed -i 's/^  mode: supervised$/  mode: advisory/' "$dgdata"
+sed -i -E 's/^( +)mode: supervised$/\1mode: advisory/' "$dgdata"
+grep -Eq '^ +mode: advisory$' "$dgdata" || echo "the hand edit of $dgdata did not apply" >&2
 check "show: dg's data changed by hand does not match its seal" posture_is '.agents.dg.tampered | contains("does not match its seal")'
 check "the gateway denies dg everything, its diagnostics call too" eventually 30 effect_is dg probe deny
 if gateway_reasons; then
@@ -1283,7 +1284,7 @@ check "show: an earlier signed version of dg's data put back is reported" postur
 check "agent-admin mode dg supervised" agent-admin mode dg supervised
 check "show: dg's data is the latest again" posture_is '.agents.dg | has("tampered") | not'
 check "agent-admin issuers --add" agent-admin issuers --add https://agents.example.test
-check "the issuers are signed, with the issuer" bash -c "grep -q 'agents.example.test' '$issuers' && grep -q '^  signature: ' '$issuers'"
+check "the issuers are signed, with the issuer" bash -c "grep -q 'agents.example.test' '$issuers' && grep -Eq '^ +signature: ' '$issuers'"
 cp "$issuers" "$work/issuers.yaml"
 sed -i 's|agents.example.test|evil.example.test|' "$issuers"
 check "show: issuers changed by hand do not match their seal" posture_is '.issuers_tampered | contains("trusts no issuer")'
@@ -1407,7 +1408,7 @@ cp "$work/dg-patch.yaml" "$dgdata"
 check "agent-admin seal --agents" agent-admin seal --agents
 check "show: the seal covers agent data again, dg signed, nothing tampered" posture_is \
 	'.agents_sealed == true and (has("seal_tampered") | not) and (.agents.dg | has("tampered") | not)'
-check "dg's data is signed again" grep -q '^  signature: ' "$dgdata"
+check "dg's data is signed again" grep -Eq '^ +signature: ' "$dgdata"
 # Every category enabled decides as a host without enablement state (the
 # broader install).
 check "agent-admin enable --all" agent-admin enable --all
