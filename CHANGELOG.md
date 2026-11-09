@@ -88,6 +88,14 @@ removed.
 
 ### Fixed
 
+- The OpenShell relay's check that it talks to root's port forward read
+  the first entry of the kernel's socket table with the connection's
+  addresses, which can be an earlier connection's TIME_WAIT entry,
+  listed with uid 0. A local user's listener on the forward's port could
+  so pass as root's and get the agent's secret; and the check failed
+  where the listener is not root's, which broke 0.5.0's build on aarch64
+  for SLE 16.0 and 16.1. Only a connected entry counts now (security
+  review 0.6, P9).
 - Security review 0.6 (`docs/security-review-0.6.md`) of the seal of
   the agents' data: any `agent-admin` write, and `seal --agents`, signed
   an agent's data edited by hand as it was, which the gateway then
