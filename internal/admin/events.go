@@ -152,7 +152,7 @@ func (a *Admin) Event(instance string) error {
 		"origin": map[string]any{"kind": "event", "by": by, "event": event},
 	}
 	if ev.Playbook != "" {
-		body["playbook"] = ev.Playbook
+		body["playbook"], body["unit"] = ev.Playbook, unit
 	}
 	if err := a.Start(sock, body); err != nil {
 		a.record(journal.EventSkipped, name, fmt.Sprintf("Event %s of agent %s for %s: the agent did not start it: %v", event, name, unit, err),

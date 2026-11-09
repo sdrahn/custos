@@ -83,6 +83,23 @@ func TestEventDropIns(t *testing.T) {
 	}
 }
 
+// An event that runs a playbook names the unit that failed, for the
+// playbook's steps that need one (§14c).
+func TestEventPlaybookUnit(t *testing.T) {
+	a, _, started := eventAdmin(t)
+	f := filepath.Join(t.TempDir(), "b.yaml")
+	os.WriteFile(f, []byte(strings.Replace(eventYml, `prompt: "The unit {unit} failed.",`, `playbook: service-health,`, 1)), 0o644)
+	if err := a.Edit("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Event("patch-pilot_web-down_php-fpm.service"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*started) != 1 || (*started)[0]["playbook"] != "service-health" || (*started)[0]["unit"] != "php-fpm.service" {
+		t.Errorf("started %v", *started)
+	}
+}
+
 // An event starts the activity as root with origin event, its {unit}
 // filled in and systemd's account of the failure added; then it is
 // damped for that unit within the interval, not for another unit.
@@ -106,6 +123,9 @@ func TestEventStartsAndDamps(t *testing.T) {
 	}
 	if b["prompt"] != "The unit nginx.service failed.\n\n(systemd: nginx.service failed: result exit-code, exited 1.)" {
 		t.Errorf("prompt %q", b["prompt"])
+	}
+	if _, ok := b["unit"]; ok || b["playbook"] != nil {
+		t.Errorf("without a playbook, no unit: %v", b)
 	}
 	if s, _ := os.ReadFile(a.p(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !strings.HasPrefix(string(s), "2026-11-07T10:00:00Z") {
 		t.Errorf("state %q", s)

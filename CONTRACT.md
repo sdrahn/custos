@@ -276,7 +276,7 @@ by `SO_PEERCRED`.
 | `GET /v1/activities` | supervisors, root | `{"activities": [activity…]}`, running first, then ended, newest first. Ended activities, with their reports, outlive the host process (an idle exit, a restart): the reference host keeps up to 200 of the last 30 days in its state directory (§13) |
 | `GET /v1/playbooks` | supervisors, root | the host's playbooks (§14c) as this agent may run them now: `{"playbooks": {"<name>": {"title", "description"?, "runnable", "missing"?, "error"?}}}`; `runnable` when the gateway offers it the tool of every step that is not `optional`, else `missing` names the tools it lacks; `error` for a file that does not parse. `502` when the gateway's tools cannot be listed |
 | `GET /v1/activities/{id}` | supervisors, root; an agent only for activities it delegated | one activity |
-| `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?, "playbook"? (§14c; draft, O16)}`: `202 {"id","session"}`, or with `wait` the ended activity; `409` while paused |
+| `POST /v1/activities` | root (schedules, events, api); supervisors (`api`); agents (`delegation`, §9) | `{"prompt", "session"?, "user"? (root only), "origin"? (root only), "trace"? (agents only), "wait"?, "playbook"? (§14c; draft, O16), "unit"? (with `playbook`: the systemd unit it is about, §14c)}`: `202 {"id","session"}`, or with `wait` the ended activity; `400` for a `unit` that is no unit name or comes without `playbook`; `409` while paused |
 | `POST /v1/activities/{id}/cancel` | root; the activity's user or originator | ends a running activity: `204`, `409` if not running |
 | `POST /v1/pause`, `POST /v1/resume` | root | holds every activity before its next model or tool call and refuses new ones (§8) / lets them go on |
 
@@ -1256,15 +1256,21 @@ disk-pressure:
   steps:
     - {tool: exec__disk_usage, why: "Space and inodes used per file system."}
     - {tool: snapper__list_snapshots, why: "Snapshots that keep deleted data.", optional: true}
+    - {tool: systemd__list_log, why: "Errors about a full disk.",
+       args: {pattern: "No space left on device", count: 300}, optional: true}
   look_for: >
     A file system above 90 % of its space or inodes; the journal,
     snapshots, package caches and logs under /var as the usual causes.
 ```
 
 Unknown keys are errors. A playbook has a `title`, `look_for` and at
-least one step that is not `optional`; each step a `tool`
-(`<server>__<tool>`, as the gateway names it) and a `why`. A playbook
-name has the form of an agent name.
+least one step that is not `optional` and does not need a unit; each
+step a `tool` (`<server>__<tool>`, as the gateway names it) and a
+`why`, and optionally `args`, the call's arguments (an object; without
+it, none). A string in `args` may contain `{unit}`, the systemd unit the
+activity is about: such a step needs a unit and runs only when the
+activity names one, `{unit}` replaced by it. A playbook name has the
+form of an agent name.
 
 Each step is a tool the agent calls through the gateway (§6), which
 decides it like any other call: a playbook grants nothing. A playbook is
@@ -1276,8 +1282,11 @@ it found.
 
 An activity runs a playbook when `POST /v1/activities` names it
 (`"playbook"`, §5; the `prompt` is then optional and added to it) or a
-schedule names it (`playbook:` in `schedules`, §14; its `prompt` is then
-optional too). The host gives the model the steps, `look_for` and the
+schedule or an event names it (`playbook:` in `schedules` or `events`,
+§14; their `prompt` is then optional too). The activity's unit is the
+request's `"unit"` (a unit name: letters, digits and `:_.@-`, with a
+unit type's suffix), or for an event the unit that failed; a schedule's
+activity has none. The host gives the model the steps, `look_for` and the
 request for a report, records the playbook in the activity (`playbook`,
 §4) and in `invocation.start` (`AGENT_PLAYBOOK`, §10), and answers `404`
 for an unknown playbook, `400` for one that does not parse, and `422`
@@ -1286,8 +1295,8 @@ when a step's tool is not offered, naming the tools; nothing runs then.
 that a console offers only those. An OpenShell agent reads the
 playbooks of its sandbox's image.
 
-The host makes the steps' calls itself, in order and without
-arguments, before the model's first turn: the steps are fixed and read
+The host makes the steps' calls itself, in order and with the steps'
+`args`, before the model's first turn: the steps are fixed and read
 only, and a model that has to issue them may fail to (a call it cuts
 off). Each goes through the gateway like a call of the model's, with
 the same decision, approvals and records; its rationale is
@@ -1296,8 +1305,9 @@ the same decision, approvals and records; its rationale is
 not searched for signs of a prompt injection (the model chose nothing).
 The host's turns are no model calls: no `model.call` record, and they
 do not count toward `max_llm_calls`; they count toward `max_tool_calls`
-and the activity's time. The model is told the steps were run and gets
-their outputs; it may call further tools it is offered, and it reports.
+and the activity's time. The model is told the steps were run, with their arguments, and the
+unit, and gets their outputs; it may call further tools it is offered,
+also a step's tool with other arguments, and it reports.
 
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,
@@ -1350,7 +1360,9 @@ fails, systemd starts that unit, which runs `agent-admin event
 <name>_<event>_<unit>`: it posts the event's prompt, `{unit}` filled in
 and systemd's account of the failure added (`MONITOR_SERVICE_RESULT`,
 `MONITOR_EXIT_CODE`, `MONITOR_EXIT_STATUS`), as root with
-`origin: {kind: event, by: "unit-failure:<unit>", event: <event>}`.
+`origin: {kind: event, by: "unit-failure:<unit>", event: <event>}`,
+and with its playbook, if any, the unit as the activity's `unit`
+(§14c).
 It is damped per event and unit: it starts nothing while the event's
 activity for the unit still runs, nor within `min_interval_seconds`
 (default 600) after it last started one, and records each skip

@@ -11,7 +11,7 @@ memory-pressure:
     - {tool: exec__memory_usage, why: "Memory and swap in use."}
     - {tool: exec__pressure_stall, why: "How long tasks waited for memory, CPU and I/O."}
     - {tool: exec__load_average, why: "The load over 1, 5 and 15 minutes.", optional: true}
-    - {tool: systemd__list_log, why: "OOM kills (the kernel's and systemd-oomd's).", optional: true}
+    - {tool: systemd__list_log, why: "OOM kills (the kernel's and systemd-oomd's).", args: {pattern: "Out of memory|oom-kill|oom_reaper|Killed process|systemd-oomd", count: 300}, optional: true}
   look_for: >
     Little available memory with swap in use, memory pressure (some/full
     avg10 or avg60 above a few percent), OOM kills and which processes

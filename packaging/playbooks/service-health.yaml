@@ -7,11 +7,12 @@ service-health:
   needs:
     - "systemd-mcp"
   steps:
-    - {tool: systemd__list_loaded_units, why: "The service's state, and of the units it depends on."}
-    - {tool: systemd__list_log, why: "The service's recent journal."}
-    - {tool: systemd__get_file, why: "Its unit file and drop-ins.", optional: true}
-    - {tool: systemd__check_restart_reload, why: "Whether it waits for a restart or reload after an update.", optional: true}
+    - {tool: systemd__list_loaded_units, why: "The service's state, exit status, restart setting and unit file.", args: {patterns: ["{unit}"], state: all, properties: true}}
+    - {tool: systemd__list_loaded_units, why: "The units that failed, among them those it depends on.", args: {state: failed}}
+    - {tool: systemd__list_log, why: "The service's own recent journal.", args: {unit: ["{unit}"], exact_unit: true, count: 50}}
+    - {tool: systemd__list_log, why: "systemd's account of it: starts, exits and restarts.", args: {pattern: "{unit}", count: 300}}
   look_for: >
-    Restarts and failures, errors and warnings in its log, a pending
-    restart after an update, dependencies that are not active, and
-    changes in its configuration.
+    Restarts and failures (the restart counter, the exit status), the
+    error the service itself logs before it exits, dependencies that are
+    not active, and changes in its configuration. The unit file is at its
+    FragmentPath (systemd__get_file reads it).

@@ -22,8 +22,31 @@ removed.
   low, and a subtitle says so. custos-tests' scripted model answers
   that event's prompt with a probe, a report and a restart.
 
+### Added
+
+- A playbook step takes the call's arguments (`args`), and `{unit}` in
+  them is the unit the activity is about: the request's new `"unit"`
+  (`POST /v1/activities`), or for an event that runs a playbook the unit
+  that failed (#155). A step that needs a unit runs only with one.
+- `model-eval.sh --limit SECONDS`, each run's time limit (CI: 20
+  minutes, so the job ends in its time with any model), and per run the
+  model's calls: how many, the largest prompt, the tokens written and
+  the longest call. A run that ends in prose keeps the answer and
+  whether it names the fault.
+
 ### Fixed
 
+- The shipped playbooks showed the model the wrong things (#155): their
+  steps were called without arguments, so `failed-units` listed the
+  *active* units (systemd-mcp's default) and never the failed one, and
+  the journal steps read the last 100 lines of the whole journal, mostly
+  Custos's and the gateway's own. Their steps now ask for what they look
+  for: the failed units with their exit status, the journal's lines
+  about failures, the time services by name, the full disk's and the OOM
+  killer's messages, the denials. `service-health` reads the named
+  unit's state, its own journal and systemd's account of its restarts;
+  it no longer calls `check_restart_reload`, which only reports on a
+  restart the server itself started.
 - A field being typed in on the Agents tab (the promote form's envelope,
   its reason, a kept editor) lost the keyboard focus at each refresh,
   every five seconds: what was typed next went nowhere. The refresh now

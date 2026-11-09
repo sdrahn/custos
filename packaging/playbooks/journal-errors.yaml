@@ -7,8 +7,8 @@ journal-errors:
   needs:
     - "systemd-mcp"
   steps:
-    - {tool: systemd__list_log, why: "The journal's messages of priority error and worse."}
-    - {tool: systemd__list_loaded_units, why: "The state of the units the errors come from."}
+    - {tool: systemd__list_log, why: "The journal's recent errors and failures.", args: {pattern: "[Ee]rror|[Ff]ailed|denied|segfault|Call Trace", count: 100}}
+    - {tool: systemd__list_loaded_units, why: "The units that failed.", args: {state: failed}}
   look_for: >
     Errors that repeat, those from failed units, kernel errors (I/O,
     file system, hardware), authentication failures, and the first error

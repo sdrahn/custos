@@ -11,7 +11,7 @@ disk-pressure:
     - {tool: exec__disk_usage, why: "Space and inodes used per file system."}
     - {tool: snapper__list_snapshots, why: "Snapshots that keep deleted data.", optional: true}
     - {tool: tukit__list_snapshots, why: "Snapshots of a transactional system.", optional: true}
-    - {tool: systemd__list_log, why: "Errors about a full disk (No space left on device).", optional: true}
+    - {tool: systemd__list_log, why: "Errors about a full disk.", args: {pattern: "No space left on device|Disk quota exceeded", count: 300}, optional: true}
   look_for: >
     A file system above 90 % of its space or inodes; the journal,
     snapshots, package caches and logs under /var as the usual causes;

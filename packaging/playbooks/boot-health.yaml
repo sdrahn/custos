@@ -10,8 +10,8 @@ boot-health:
   steps:
     - {tool: exec__boot_time, why: "The time of each boot phase."}
     - {tool: exec__boot_blame, why: "The units that took longest."}
-    - {tool: systemd__list_loaded_units, why: "Units that failed at boot."}
-    - {tool: systemd__list_log, why: "Errors early in the boot.", optional: true}
+    - {tool: systemd__list_loaded_units, why: "Units that failed.", args: {state: failed}}
+    - {tool: systemd__list_log, why: "Failures and timeouts in the journal.", args: {pattern: "Failed to start|Dependency failed|Timed out|timed out|Failed with result", count: 300}, optional: true}
   look_for: >
     A boot much slower than usual, units that took more than 10 seconds,
     units that failed, a wait for a network or a device that never came.

@@ -16,6 +16,7 @@ import (
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/playbook"
 	"github.com/sdrahn/custos/internal/testutil"
+	"google.golang.org/genai"
 )
 
 func playbooks(t *testing.T) string {
@@ -32,6 +33,8 @@ func playbooks(t *testing.T) string {
 		"    - {tool: fs__read_file, why: A file., optional: true}\n  look_for: Security patches.\n")
 	put("files", "files:\n  title: Files\n  steps:\n    - {tool: fs__read_file, why: A file.}\n  look_for: Anything.\n")
 	put("broken", "broken: {title: x}\n")
+	put("unit-updates", "unit-updates:\n  title: Updates of a unit\n  steps:\n    - {tool: zypp__list_updates, why: All., args: {all: true}}\n"+
+		"    - {tool: zypp__list_updates, why: The unit's., args: {for: [\"{unit}\"], limit: 5}}\n  look_for: Patches.\n")
 	return root
 }
 
@@ -104,6 +107,50 @@ func TestPlaybookActivity(t *testing.T) {
 	}
 	if n := len(e.log.Events(journal.ModelCall)); n != 1 {
 		t.Errorf("%d model.call records, want 1: the host's turn is no model call", n)
+	}
+}
+
+// A step's arguments go to the host's call; {unit} is the activity's
+// unit, and a step that needs one runs only with it. A unit is a unit
+// name, and only with a playbook.
+func TestPlaybookUnit(t *testing.T) {
+	stepArgs := func(cs []*genai.Content) []map[string]any {
+		var out []map[string]any
+		for _, c := range cs {
+			for _, p := range c.Parts {
+				if fc := p.FunctionCall; fc != nil && fc.Name == "zypp__list_updates" {
+					out = append(out, fc.Args)
+				}
+			}
+		}
+		return out
+	}
+	e := newEnvPlaybooks(t, playbooks(t), testutil.Text("Report."), testutil.Text("Report."))
+	res, b := e.do("POST", "/v1/activities", "", map[string]any{"playbook": "unit-updates", "unit": "nginx.service", "wait": true})
+	if res.StatusCode != 200 {
+		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	got, _ := json.Marshal(stepArgs(e.m.Calls[0].Contents))
+	if string(got) != `[{"all":true},{"for":["nginx.service"],"limit":5}]` {
+		t.Errorf("the steps' arguments: %s", got)
+	}
+	sent := e.m.Calls[0].Contents[0].Parts[0].Text
+	if !strings.Contains(sent, "The unit in question: nginx.service") || !strings.Contains(sent, `2. zypp__list_updates {"for":["nginx.service"],"limit":5}`) {
+		t.Errorf("the model was not told the unit:\n%s", sent)
+	}
+	// Without a unit, the step that needs one does not run.
+	e.do("POST", "/v1/activities", "", map[string]any{"playbook": "unit-updates", "wait": true})
+	if got, _ := json.Marshal(stepArgs(e.m.Calls[1].Contents)); string(got) != `[{"all":true}]` {
+		t.Errorf("without a unit: %s", got)
+	}
+	for _, body := range []map[string]any{
+		{"playbook": "unit-updates", "unit": "../../etc/passwd"},
+		{"playbook": "unit-updates", "unit": "nginx"},
+		{"prompt": "hello", "unit": "nginx.service"},
+	} {
+		if res, b := e.do("POST", "/v1/activities", "", body); res.StatusCode != 400 || !strings.Contains(string(b), "unit") {
+			t.Errorf("%v: %d %s", body, res.StatusCode, b)
+		}
 	}
 }
 
