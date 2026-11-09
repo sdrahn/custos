@@ -233,7 +233,7 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
     await step("a refused action keeps its error", async () => {
         await go("/agents/patch-pilot");
         await frame().locator("#promote-form").waitFor({ timeout: 60000 });
-        await frame().locator("#promote-form summary").click();
+        await frame().locator("#promote-form > summary").click();
         await frame().locator("#category-select").selectOption("patch-errata");
         await frame().locator("#promote-form button:text-is('Promote')").click();
         const error = frame().locator("#error");

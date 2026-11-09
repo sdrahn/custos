@@ -375,7 +375,7 @@ const pointer = () => {
         });
         await scene("promote: autonomy within an envelope", async () => {
             subs.stage("Promote");
-            await click(custos().locator("#promote-form summary"));
+            await click(custos().locator("#promote-form > summary"));
             await custos().locator("#category-select").selectOption("config-lifecycle");
             // The envelope form (#163): every day, all day, UTC, at most
             // 5 restarts per hour.
