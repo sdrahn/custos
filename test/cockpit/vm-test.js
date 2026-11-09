@@ -233,7 +233,7 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
     await step("a refused action keeps its error", async () => {
         await go("/agents/patch-pilot");
         await frame().locator("#promote-form").waitFor({ timeout: 60000 });
-        await frame().locator("#promote-form summary").click();
+        await frame().locator("#promote-form > summary").click();
         await frame().locator("#category-select").selectOption("patch-errata");
         await frame().locator("#promote-form button:text-is('Promote')").click();
         const error = frame().locator("#error");
@@ -246,6 +246,34 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
         check(!(await error.isVisible()), "Dismiss clears it");
         check(vm("agent-admin show patch-pilot | jq -e '(.agents[\"patch-pilot\"].categories // {})[\"patch-errata\"].mode != \"bounded\"' >/dev/null") !== null,
               "patch-errata stayed supervised");
+    });
+
+    // The envelope as a form (#163): what it builds is what agent-admin
+    // promote stores, in the host's time zone.
+    await step("promote with the envelope form", async () => {
+        await go("/agents/patch-pilot");
+        await frame().locator("#category-patch-errata button:text-is('Promote…')").click({ timeout: 60000 });
+        const zone = (vm("timedatectl show -p Timezone --value") || "UTC").trim() || "UTC";
+        await frame().locator("#envelope-windows .tz").waitFor({ timeout: 30000 });
+        // The zone is read once from timedatectl, then preset.
+        for (let i = 0; i < 30 && (await frame().locator("#envelope-windows .tz").inputValue()) !== zone; i++) await page.waitForTimeout(1000);
+        await frame().locator("#envelope-windows .envelope-window button:text-is('weekend')").click();
+        await frame().locator("#envelope-windows .from").fill("01:00");
+        await frame().locator("#envelope-rate").check();
+        await frame().locator("#envelope-rate-calls").fill("10");
+        await frame().locator("#envelope-rollback-tool_error").check();
+        await frame().locator("#category-despite").check();
+        await frame().locator("#category-reason").fill("the form, in a real Cockpit");
+        await frame().locator("#promote-form button:text-is('Promote')").click();
+        await frame().locator("#category-patch-errata").getByText("bounded (promoted)").waitFor({ timeout: 60000 });
+        await shot("promote-form");
+        const env = vm("agent-admin show patch-pilot | jq -c '.agents[\"patch-pilot\"].categories[\"patch-errata\"].envelope'");
+        check(env !== null && env.trim() === JSON.stringify({ windows: [{ days: ["sat", "sun"], from: "01:00", to: "04:00", tz: zone }],
+            rate: { calls: 10, per: "1h" }, rollback: { on: ["tool_error"] } }),
+              "agent-admin promote stored the envelope the form built, in the host's time zone (" + (env || "").trim() + ")");
+        await frame().locator("#category-patch-errata button:text-is('Demote')").click();
+        await frame().locator("#category-patch-errata").getByText("supervised").waitFor({ timeout: 60000 });
+        check(true, "and Demote returns it to supervised");
     });
 
     await step("a refused configuration shows its error", async () => {

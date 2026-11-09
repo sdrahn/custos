@@ -288,43 +288,97 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await spawned("agent-admin demote disk-watch config-lifecycle --reason a patch broke nginx")).length === 1,
           "Demote demotes through agent-admin, with the reason");
     await page.click("#category-security-response button:text-is('Promote…')");
+    // The envelope is a form (#163): a window on Saturday, 02:00–04:00, in
+    // the host's time zone (timedatectl), and no YAML to write.
+    await page.waitForFunction(() => document.querySelector("#envelope-windows .tz") &&
+        document.querySelector("#envelope-windows .tz").value === "Europe/Berlin");
+    const win = () => page.$$eval("#envelope-windows .envelope-window", rows => rows.map(r => ({
+        days: [...r.querySelectorAll(".day input")].filter(c => c.checked).map(c => c.value),
+        from: r.querySelector(".from").value, to: r.querySelector(".to").value, tz: r.querySelector(".tz").value })));
     check(await page.$eval("#promote-form", d => d.open) && (await page.inputValue("#category-select")) === "security-response" &&
-          (await page.inputValue("#category-envelope")).includes("windows:"), "Promote… opens the form for that category, with an envelope");
-    // The form, the envelope being written and the reason outlive the
-    // tab's refreshes (every 5 s): before, a refresh closed the form and
-    // lost both.
-    const envKept = (await page.inputValue("#category-envelope")) + "# written slowly\n";
-    await page.fill("#category-envelope", envKept);
+          JSON.stringify(await win()) === JSON.stringify([{ days: ["sat"], from: "02:00", to: "04:00", tz: "Europe/Berlin" }]) &&
+          await page.isHidden("#category-envelope"),
+          "Promote… opens the form for that category: a window as a form, in the host's time zone, no YAML to write");
+    check((await page.textContent("#promote-readiness")).includes("not ready") &&
+          (await page.textContent("#promote-readiness")).includes("observed 0.0 days of 14"),
+          "the form says why the category is not ready, from its readiness");
+    // Shortcuts and time inputs instead of day names and HH:MM strings.
+    await page.click("#envelope-windows .envelope-window button:text-is('weekdays')");
+    await page.fill("#envelope-windows .from", "01:00");
+    // The form and what is being written in it outlive the tab's
+    // refreshes (every 5 s): before, a refresh closed the form and lost it.
     await page.fill("#category-reason", "kept across a refresh");
     await page.waitForTimeout(6000);
-    check(await page.$eval("#promote-form", d => d.open) && (await page.inputValue("#category-envelope")) === envKept &&
+    check(await page.$eval("#promote-form", d => d.open) &&
+          JSON.stringify(await win()) === JSON.stringify([{ days: ["mon", "tue", "wed", "thu", "fri"], from: "01:00", to: "04:00", tz: "Europe/Berlin" }]) &&
           (await page.inputValue("#category-reason")) === "kept across a refresh" &&
           (await page.inputValue("#category-select")) === "security-response",
           "the promote form stays open, with the envelope and the reason being written, across a refresh");
+    // Rate and rollback: a number, a choice and checkboxes.
+    await page.check("#envelope-rate");
+    await page.fill("#envelope-rate-calls", "5");
+    await page.check("#envelope-rollback-tool_error");
+    await page.check("#envelope-rollback-health_check_failed");
+    check(!(await page.isHidden("#envelope-health-check")), "a health check asks for its command");
     // So does the keyboard focus: what is typed after a refresh still
     // goes into the field, where the caret was.
-    await page.focus("#category-envelope");
-    await page.$eval("#category-envelope", t => t.setSelectionRange(t.value.length, t.value.length));
+    await page.focus("#envelope-health-check");
     await page.waitForTimeout(6000);
-    await page.keyboard.type("# typed after a refresh");
-    check((await page.evaluate(() => document.activeElement && document.activeElement.id)) === "category-envelope" &&
-          (await page.inputValue("#category-envelope")) === envKept + "# typed after a refresh",
-          "the field being typed in keeps the focus and the caret across a refresh");
+    await page.keyboard.type("systemctl is-active nginx");
+    check((await page.evaluate(() => document.activeElement && document.activeElement.id)) === "envelope-health-check" &&
+          (await page.inputValue("#envelope-health-check")) === "systemctl is-active nginx",
+          "the field being typed in keeps the focus across a refresh");
+    check((await page.textContent("#envelope-summary")).includes("weekdays 01:00–04:00 Europe/Berlin; at most 5 calls per tool per hour; " +
+          "demoted at once when a tool call of the category fails, or a health check fails"), "the envelope is said in words");
+    // What the form can tell is wrong is said before anything is sent.
+    const promotes = async () => (await calls()).filter(c => c[0] === "spawn" && c[1].startsWith("agent-admin promote disk-watch security-response")).length;
+    const before = await promotes();
+    await page.fill("#envelope-windows .from", "05:00");
+    await page.fill("#envelope-rate-calls", "0");
+    await page.click("#promote-form button:text-is('Promote')");
+    await page.waitForTimeout(300);
+    const errs = await page.textContent("#envelope-errors");
+    check(errs.includes("from must be before to") && errs.includes("a whole number of calls") && (await promotes()) === before,
+          "a window that ends before it starts, or a rate of 0, is refused in the form, nothing is sent");
+    await page.fill("#envelope-windows .from", "01:00");
+    await page.fill("#envelope-rate-calls", "5");
+    await page.click("#envelope-windows .envelope-window button:text-is('Remove')");
+    check((await page.textContent("#envelope-always")).includes("at any time"), "without a window, the form says the category acts at any time");
+    await page.click("#envelope-add-window");
+    await page.click("#envelope-windows .envelope-window button:text-is('weekdays')");
+    await page.fill("#envelope-windows .from", "01:00");
+    // The YAML switch: the same envelope as text, and back.
+    await page.click("#envelope-yaml-toggle");
+    const asYAML = JSON.parse(await page.inputValue("#category-envelope"));
+    check(asYAML.windows[0].from === "01:00" && asYAML.rate.calls === 5 && asYAML.rollback.health_check === "systemctl is-active nginx",
+          "Edit as YAML shows the form's envelope as text");
+    await page.click("#envelope-yaml-toggle");
+    check(!(await page.isHidden("#envelope-form")) && JSON.stringify((await win())[0].days) === JSON.stringify(["mon", "tue", "wed", "thu", "fri"]),
+          "and back to the form, unchanged");
     await page.fill("#category-reason", "");
     await page.click("#promote-form button:text-is('Promote')");
     await page.waitForFunction(() => document.querySelector("#error").textContent.includes("is not ready"));
     check((await page.textContent("#error")).includes("security-response is not ready (observed 0.0 days of 14"),
           "a category that is not ready is refused, saying why");
-    await page.click("#agent-row-disk-watch button");
-    await page.waitForSelector("#category-security-response");
-    await page.click("#category-security-response button:text-is('Promote…')");
     await page.check("#category-despite");
     await page.fill("#category-reason", "a year by hand, the journal keeps a week");
     await page.click("#promote-form button:text-is('Promote')");
     await page.waitForFunction(() => document.querySelector("#category-security-response").cells[1].textContent === "bounded (promoted)");
     const prom = (await calls()).filter(c => c[0] === "spawn" && c[1].startsWith("agent-admin promote disk-watch security-response"));
-    check(prom.length === 2 && prom[1][1] === "agent-admin promote disk-watch security-response --envelope - --despite-readiness --reason a year by hand, the journal keeps a week" &&
-          prom[1][4] === "require", "promote despite its readiness, with the reason, through the root bridge");
+    check(prom.length === before + 2 && prom[prom.length - 1][1] === "agent-admin promote disk-watch security-response --envelope - --despite-readiness --reason a year by hand, the journal keeps a week" &&
+          prom[prom.length - 1][4] === "require", "promote despite its readiness, with the reason, through the root bridge");
+    check(JSON.stringify(JSON.parse(await page.evaluate(() => window.__promoted))) === JSON.stringify({
+        windows: [{ days: ["mon", "tue", "wed", "thu", "fri"], from: "01:00", to: "04:00", tz: "Europe/Berlin" }],
+        rate: { calls: 5, per: "1h" }, rollback: { on: ["tool_error", "health_check_failed"], health_check: "systemctl is-active nginx" } }),
+          "agent-admin promote gets the envelope the form built");
+    if (shots) await page.screenshot({ path: path.join(shots, "promote-form.png"), fullPage: true });
+    // Change envelope… fills the form from the category's envelope.
+    await page.click("#category-security-response button:text-is('Change envelope…')");
+    check(JSON.stringify((await win())[0]) === JSON.stringify({ days: ["mon", "tue", "wed", "thu", "fri"], from: "01:00", to: "04:00", tz: "Europe/Berlin" }) &&
+          await page.isChecked("#envelope-rate") && (await page.inputValue("#envelope-rate-calls")) === "5" &&
+          await page.isChecked("#envelope-rollback-tool_error") && (await page.inputValue("#envelope-health-check")) === "systemctl is-active nginx",
+          "Change envelope… fills the form from the category's envelope");
+    await page.evaluate(() => { document.querySelector("#promote-form").open = false });
 
     // Policy tab: the posture and the what-if, on fresh data.
     await page.goto(url + "?policy#/policy");

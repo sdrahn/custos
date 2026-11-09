@@ -226,3 +226,17 @@ button.danger-text { color: var(--danger); }
 .md th, .md td { border: 1px solid var(--border); padding: 0.25rem 0.6rem; text-align: left; vertical-align: top; }
 .md th { background: var(--page); }
 .md blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; color: var(--muted); }
+
+/* The promote form's envelope (#163). */
+#envelope-editor h4 { margin: 0.75rem 0 0.25rem; }
+.envelope-windows { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.envelope-window { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border); border-radius: 6px; }
+.envelope-window .days { display: inline-flex; gap: 0.25rem; }
+.envelope-window .day { display: inline-flex; align-items: center; gap: 0.15rem; }
+.envelope-window .shortcuts { display: inline-flex; gap: 0.5rem; }
+#envelope-editor label.rollback { display: block; }
+#envelope-editor .envelope-health input { width: 24rem; max-width: 100%; }
+#envelope-errors:empty { display: none; }
+#envelope-preview { background: var(--page); padding: 0.5rem; border-radius: 4px; }
+#category-envelope { width: 100%; }
