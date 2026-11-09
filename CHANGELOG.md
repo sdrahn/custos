@@ -58,7 +58,7 @@ removed.
   `exec__reboot_status` (a read-only diagnostic command) says whether
   `/run/reboot-needed` exists, which zypper and transactional-update
   write after an update that needs a reboot, and lists the running and
-  the installed kernels. Which services wait for a restart (`zypper ps`)
+  the installed kernels (from rpm). Which services wait for a restart (`zypper ps`)
   is not shown: it needs to read other users' processes, and the
   command runs as the agent's user. health-check no longer has
   `check_restart_reload`.
