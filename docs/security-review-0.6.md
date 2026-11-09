@@ -206,6 +206,7 @@ explicit option; fix all):
 | P6 | info | fixed in #172 |
 | P7 | info | fixed in #172 |
 | P8 | info | fixed in #172 |
+| P9 | medium (a local user) | fixed in #176 |
 
 ### P1 — low — custos-setup offered a server that holds a capability, and offered it again after it was removed
 
@@ -316,6 +317,35 @@ CPU per result.
 the copy with the notice.
 
 *Fix (#172):* CONTRACT.md's AG-UI section says so.
+
+### P9 — medium (a local user) — the relay's owner check could read a closed connection's entry
+
+Found by OBS, not by the review: 0.5.0's `%check` failed on aarch64 for
+SLE 16.0 and 16.1 (`TestRelayToAgent`, `TestRelayOnlyToTheForward`).
+
+*Where:* `internal/relay/peer.go`, `peerUID`.
+
+The relay sends the agent's secret, and every prompt, only to a socket
+root owns: OpenShell's port forward (the 0.5 review's H3). It reads the
+owner from `/proc/net/tcp`, from the first entry with the connection's
+addresses. That entry can be an earlier connection's: after the server
+side closed it, it stays as TIME_WAIT, which the kernel lists with uid
+0, and on loopback a new connection may reuse its ports
+(`tcp_tw_reuse`). The scenario:
+
+1. A local user binds the forward's port while no forward runs.
+2. The user's listener closes the relay's first connection itself.
+3. The relay's next connection reuses those ports and reads the
+   TIME_WAIT entry: uid 0, root's.
+4. The relay sends the secret to that user.
+
+The same entry made the tests fail where the listener is not root's,
+which is what OBS showed.
+
+*Fix (#176):* only an entry in a connected state counts (ESTABLISHED,
+or SYN_RECV until the handshake ends), never TIME_WAIT or CLOSE.
+`TestPeerUIDSkipsTimeWait` puts a TIME_WAIT entry with uid 0 before the
+connected one; it fails without the fix.
 
 ### Checked and sound
 
