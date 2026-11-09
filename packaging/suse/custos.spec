@@ -113,7 +113,7 @@ Requires:       %{name} = %{version}
 Requires:       mcp-gateway-exec-server
 # update-status's services to restart (pending_restarts): a server with
 # CAP_SYS_PTRACE, so installing it is the administrator's choice;
-# custos-setup links its profile when it is installed.
+# custos-setup --restarts links its profile.
 Suggests:       mcp-gateway-restarts-server
 Recommends:     %{name}-cockpit = %{version}
 Recommends:     %{name}-selinux = %{version}

@@ -47,7 +47,9 @@ commands:
     # /usr/lib/modules. zypper and transactional-update write
     # /run/reboot-needed after an update that needs a reboot; the
     # command sees whether it exists from mcp-gateway 1.16 on (its
-    # domain may stat files in /run, not read them).
+    # domain may stat files in /run, not read them); when it cannot see
+    # it, the answer says so, never that nothing waits (security review
+    # 0.6, P3).
     # Which services wait for a restart (zypper ps) is not here: it reads
     # other users' processes, and the command runs as the agent's user.
     # mcp-gateway's server restarts (pending_restarts) does that.
@@ -58,12 +60,17 @@ commands:
         running=$(uname -r)
         kernels=$(rpm -q --whatprovides kernel-uname-r --qf '[%{PROVIDENAME}=%{PROVIDEVERSION}\n]' 2>/dev/null | sed -n 's/^kernel-uname-r=//p' | sort -uV)
         newest=$(printf '%s\n' "$kernels" | tail -n 1)
-        if [ -e /run/reboot-needed ]; then
+        # stat tells "no such file" from "cannot see it" (an older
+        # mcp-gateway-selinux), which test -e does not.
+        flag=$(LC_ALL=C /usr/bin/stat -c %n /run/reboot-needed 2>&1)
+        if [ "$flag" = /run/reboot-needed ]; then
           echo 'A reboot is pending: /run/reboot-needed exists (an update needs one).'
         elif [ -n "$newest" ] && [ "$newest" != "$running" ]; then
           echo "A reboot is pending: kernel $newest is installed, $running is running."
-        else
+        elif printf '%s' "$flag" | grep -q 'No such file'; then
           echo 'No reboot is pending: the newest installed kernel is running, and no update asked for one (/run/reboot-needed does not exist).'
+        else
+          echo "No reboot is pending for a kernel: the newest installed kernel is running. Whether another update asked for one cannot be seen: $flag"
         fi
         echo "Running kernel: $running"
         echo "Installed kernels: $(printf '%s\n' "$kernels" | tr '\n' ' ')"

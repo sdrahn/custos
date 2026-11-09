@@ -372,8 +372,14 @@ zypper install mcp-gateway-restarts-server
 ln -s /usr/share/mcp-gateway/profiles/restarts.yaml /etc/mcp-gateway/servers.d/restarts.yaml
 ```
 
-`custos-setup` does all three on the diagnostics-only install; the
-last one only when `mcp-gateway-restarts-server` is installed.
+`custos-setup` does the first two on the diagnostics-only install, and
+links `restarts` only with `--restarts`; without it, never again once
+you removed the link.
+
+Its answer goes to the model: each process that uses a replaced file,
+with its id, name (not its command line), user, unit, files and
+packages; after a glibc update, nearly all of them. Weigh that when the
+model runs elsewhere ([chapter 14](14-network.md#inference)).
 The agent needs `read_only` permissions for the tools, with
 `category: diagnostics` on a diagnostics-only host
 ([chapter 6](06-permissions-and-modes.md#diagnostics-only)), for example

@@ -110,8 +110,12 @@ removed.
   package `mcp-gateway-restarts-server`), lists the services and
   processes that still use files an update replaced, as `zypper ps`
   does. health-check may call both, and no longer has
-  `check_restart_reload`. `custos-setup` links the server's profile into
-  `/etc/mcp-gateway/servers.d/` when its package is installed (sdrahn/mcp-gateway#345).
+  `check_restart_reload`. `custos-setup --restarts` links the server's
+  profile into `/etc/mcp-gateway/servers.d/` (sdrahn/mcp-gateway#345);
+  without the option it offers no server that holds a capability
+  (security review 0.6, P1). Where the exec server's commands cannot
+  see `/run/reboot-needed`, `reboot_status` says so rather than that no
+  reboot is pending (P3).
 - `custos-setup` kept the diagnostic commands of 0.4.0 and 0.5.0 as an
   administrator's file, since it knew only 0.3.0's as shipped; it now
   replaces those too, unchanged, with the current ones.
