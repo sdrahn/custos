@@ -31,7 +31,8 @@ removed.
 - `model-eval.sh --limit SECONDS`, each run's time limit (CI: 20
   minutes, so the job ends in its time with any model), and per run the
   model's calls: how many, the largest prompt, the tokens written and
-  the longest call.
+  the longest call. A run that ends in prose keeps the answer and
+  whether it names the fault.
 
 ### Fixed
 

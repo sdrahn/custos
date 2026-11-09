@@ -113,21 +113,21 @@ on a host you use. CI measures the models of `test/vm/eval-models` the
 same way for each release (job `models`).
 
 What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
-(4 vCPUs, 16 GB, no GPU), thinking off, four planted faults, at most an
-hour per diagnosis run:
+(4 vCPUs, 16 GB, no GPU), thinking off, four planted faults, at most
+20 minutes per diagnosis run:
 
 | Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
 |---|---|---|---|---|---|---|
-| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 1442 s | 3/7 |
-| Qwen3 4B | 2/4 | 0/4 | 0 | 4/4 | 3600 s | 0/7 |
-| Qwen3 8B | 0/4 | 0/4 | 0 | – | 3600 s | not measured |
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 951 s | 2/7 |
+| Qwen3 4B | 0/4 | 0/4 | 0 | – | 1200 s | 0/7 |
+| Qwen3 8B | 0/4 | 0/4 | 0 | – | 1202 s | 1/7 |
 
-No model up to 8B found a planted fault there. 1.7B answers in prose
-and follows prompt injections; 4B files reports and follows none, but
-its reports blame the wrong cause; 8B on CPUs does not finish a run
-within the hour. Without a GPU, none of them is a diagnostician: plan
-for a model server with a GPU and a larger model, and measure it with
-`model-eval.sh` before you rely on it.
+No model up to 8B found a planted fault there. The prompts stay small
+(at most about 6,500 tokens), but 1.7B and 8B answer in prose instead
+of filing a report, and 4B's first answer in each run did not finish
+within the 20 minutes. Without a GPU, none of them is a diagnostician:
+plan for a model server with a GPU and a larger model, and measure it
+with `model-eval.sh` before you rely on it.
 
 ### The model for new agents {#model-defaults}
 
