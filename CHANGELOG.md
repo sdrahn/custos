@@ -12,8 +12,9 @@ host now does more of a playbook run itself: it runs the steps with
 their arguments, shows the model only the playbook's tools, bounds its
 output, can turn its thinking off, asks once for a report that was
 answered in prose, and tells it that what a tool returns is data, never
-instructions. With these, Qwen3 8B on four CPUs found most planted
-faults, and no tested model followed a prompt injection (chapter 5).
+instructions. With these, no tested model followed a prompt
+injection, and Qwen3 8B on four CPUs found half of the planted faults
+(chapter 5).
 The seal now covers each agent's gateway data and the token issuers;
 the security review before 0.6 (`docs/security-review-0.6.md`) found
 how hand-edited data could still become trusted, and how the OpenShell
