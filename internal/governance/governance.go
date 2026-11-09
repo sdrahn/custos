@@ -504,6 +504,9 @@ func (g *Governor) afterRun(ictx agent.InvocationContext) {
 	g.mu.Lock()
 	in := g.inv[ictx.InvocationID()]
 	delete(g.inv, ictx.InvocationID())
+	// A nudge whose call did not run (the activity ended first).
+	delete(g.nudges, nudgeID(ictx.InvocationID()))
+	delete(g.reasons, nudgeID(ictx.InvocationID()))
 	for id := range g.hostStep { // steps never made: the activity ended first
 		if strings.HasSuffix(id, "-"+ictx.InvocationID()) {
 			delete(g.hostStep, id)
@@ -722,6 +725,9 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 	return nil, nil
 }
 
+// nudgeID is the id of the host's report_diagnosis call (reportNudge).
+func nudgeID(invID string) string { return "custos-report-nudge-" + invID }
+
 // ReportNudgeText is the host's answer to its own report_diagnosis call
 // (reportNudge): what the model is asked to do.
 const ReportNudgeText = "Not recorded: you answered in text, and a diagnosis counts only as a report. Call " + ReportTool +
@@ -752,7 +758,7 @@ func (g *Governor) reportNudge(invID string, resp *model.LLMResponse, err error)
 	}
 	in.nudged = true
 	in.act.ReportNudged = true
-	id := "custos-report-nudge-" + invID
+	id := nudgeID(invID)
 	g.nudges[id] = true
 	g.reasons[id] = "The host asks for the report: the model answered the playbook without one."
 	parts := append([]*genai.Part{}, resp.Content.Parts...)
