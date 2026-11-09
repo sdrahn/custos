@@ -15,6 +15,9 @@ function selectedAgent() {
 function agentState(a) {
     const data = state.posture && state.posture.agents[a.name];
     if (a.stopped) return ["stopped", "failed"];
+    // The seal (§6b, #158): data changed outside agent-admin denies the
+    // agent everything; an earlier signed version still counts.
+    if (data && data.tampered && !data.tampered.startsWith("an earlier version")) return ["seal broken", "failed"];
     if (!a.status) return ["unreachable", "error"];
     if (a.status.paused || (data && data.paused)) return ["paused", "paused"];
     return a.status.running > 0 ? [a.status.running + " running", "running"] : ["idle (socket listening)", "finished"];
@@ -157,6 +160,8 @@ async function renderAgentDetail() {
                   a.status && a.status.model ? "model " + a.status.model : null].filter(Boolean).join(" · "))),
            el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, restart, stop, logs, del.open)),
         data && data.paused && data.paused_by ? el("p", { class: "muted" }, "Paused by " + data.paused_by + ".") : null,
+        data && data.tampered ? el("p", { class: "error-text", id: "agent-tampered" },
+            "Its gateway data was changed outside agent-admin: " + data.tampered + ".") : null,
         del.box);
 
     const mode = el("section", { class: "card" }, el("h2", null, "Autonomy mode"));
@@ -598,7 +603,11 @@ function renderEnablement() {
                 "The state was changed outside agent-admin: " + e.tampered + "." +
                 (e.sealed ? "" : " The gateway enforces what the file says now.")) : null,
             e ? el("p", { class: "muted" }, "Changed by " + (e.changed_by || "?") + " (record " + (e.record || "none") + ")." +
-               (e.sealed ? " Sealed: the gateway counts this state only with agent-admin's signature; edited by hand, the host is diagnostics-only." : "")) : null,
+               (e.sealed ? " Sealed: the gateway counts this state only with agent-admin's signature; edited by hand, the host is diagnostics-only." : "") +
+               (state.posture.agents_sealed ? " The seal covers each agent's gateway data and the agents' token issuers too: changed by hand, the agent is denied everything." : "")) : null,
+            state.posture.seal_tampered ? el("p", { class: "error-text", id: "seal-tampered" }, state.posture.seal_tampered + ".") : null,
+            state.posture.issuers_tampered ? el("p", { class: "error-text", id: "issuers-tampered" },
+                "The agents' token issuers were changed outside agent-admin: " + state.posture.issuers_tampered + ".") : null,
             list, enableForm, disableForm]));
     });
 }

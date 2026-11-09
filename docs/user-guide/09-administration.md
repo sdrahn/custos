@@ -39,6 +39,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin enable CATEGORY… \| --all` | enable task categories on a diagnostics-only host ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `agent-admin disable CATEGORY… \| --all` | disable task categories again; `--all`: back to diagnostics-only ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `agent-admin diagnostics-only` | make a freshly installed host diagnostics-only (the installer's setup runs it) |
+| `agent-admin seal --agents` | make a host sealed before 0.6 seal the agents' data and token issuers too ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
+| `agent-admin issuers [--add ISSUER] [--remove ISSUER]` | the token issuers trusted for agents over HTTPS ([chapter 11](11-openshell.md#issuers)) |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
 | `agent-admin idp-client NAME [--keycloak]` | the OAuth client an OpenShell agent needs at the identity provider; `--keycloak`: a script that creates it ([chapter 11](11-openshell.md#idp)) |
 | `agent-admin check-token NAME < secret` | get a token with that client and check its claims as the gateway will ([chapter 11](11-openshell.md#keycloak)) |

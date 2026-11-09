@@ -796,6 +796,12 @@ type GatewayData struct {
 	// Owners may approve the agent's calls (§7, O1): rules of the
 	// gateway's approver forms (owners.rego).
 	Owners []string `yaml:"owners,omitempty" json:"owners,omitempty"`
+	// Signature is agent-admin's over the data, with the seal (§6b, #158),
+	// on a host whose seal covers agent data.
+	Signature string `yaml:"signature,omitempty" json:"-"`
+	// Tampered: show's check against the seal and the agent's last
+	// gateway.data record; "" when both match.
+	Tampered string `yaml:"-" json:"tampered,omitempty"`
 }
 
 // gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
@@ -823,18 +829,18 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 	if d.Permissions == nil {
 		d.Permissions = []map[string]any{}
 	}
-	b, err := yaml.Marshal(map[string]*GatewayData{name: d})
+	b, recordData, err := a.gatewayYAML(name, d)
 	if err != nil {
 		return err
 	}
-	head := "# Written by agent-admin: the autonomy mode and permissions of agent " + name + "\n# (Custos CONTRACT.md §6). mcp-gateway's OPA reloads it by itself.\n"
 	from := []map[string]any{}
 	if prev, err := a.readGateway(name); err == nil && prev.Permissions != nil {
 		from = prev.Permissions
 	}
-	if err := writeFile(a.gatewayFile(name), append([]byte(head), b...), 0o644); err != nil {
+	if err := writeFile(a.gatewayFile(name), b, 0o644); err != nil {
 		return err
 	}
+	recordData()
 	a.recordPermissions(name, from, d.Permissions)
 	return a.waitPolicy("mcp/agents/"+name, func(v any) bool {
 		m, _ := v.(map[string]any)
@@ -842,6 +848,10 @@ func (a *Admin) writeGateway(name string, d *GatewayData) error {
 		paused, _ := m["paused"].(bool)
 		owners, _ := m["owners"].([]any)
 		if m == nil || m["mode"] != d.Mode || paused != d.Paused || len(perms) != len(d.Permissions) || len(owners) != len(d.Owners) {
+			return false
+		}
+		// Signed: this signature, so that the gateway has this file.
+		if sig, _ := m["signature"].(string); sig != d.Signature {
 			return false
 		}
 		for i, o := range d.Owners {
@@ -1261,6 +1271,15 @@ type Posture struct {
 	Control Control                 `json:"control"`
 	// Enablement is the enablement state (§6b); absent: every category.
 	Enablement *Enablement `json:"enablement,omitempty"`
+	// AgentsSealed: the host's seal covers the agents' data and the
+	// agents' token issuers (§6b, #158).
+	AgentsSealed bool `json:"agents_sealed"`
+	// IssuersTampered: _http.yaml does not match its seal, or is an
+	// earlier version; "" when it does or the seal does not cover it.
+	IssuersTampered string `json:"issuers_tampered,omitempty"`
+	// SealTampered: the seal no longer covers the agents' data, though
+	// the journal says agent-admin sealed it.
+	SealTampered string `json:"seal_tampered,omitempty"`
 }
 
 // Control is the emergency stop's state (_control.yaml, §8).
@@ -1321,6 +1340,9 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		return nil, err
 	}
 	if err := a.checkSealRemoved(p); err != nil {
+		return nil, err
+	}
+	if err := a.checkAgentSeals(p); err != nil {
 		return nil, err
 	}
 	return p, nil

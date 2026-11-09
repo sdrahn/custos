@@ -51,6 +51,9 @@ const (
 	CategoryRefused   = "category.refused"
 	// CategoriesDisabled: the way back from categories.enabled (#110).
 	CategoriesDisabled = "categories.disabled"
+	// GatewayData: agent-admin signed an agent's gateway data or the
+	// agents' token issuers with the seal (§6b).
+	GatewayData = "gateway.data"
 	// EventSkipped: an event (§14) started no activity (damped, or the
 	// agent refused).
 	EventSkipped = "event.skipped"
@@ -86,6 +89,7 @@ var MessageIDs = map[string]string{
 	CategoryRefused:    "6f3c0e1a9b2d4c58a7e1f2d3c4b5a673",
 	EventSkipped:       "6f3c0e1a9b2d4c58a7e1f2d3c4b5a674",
 	CategoriesDisabled: "6f3c0e1a9b2d4c58a7e1f2d3c4b5a675",
+	GatewayData:        "6f3c0e1a9b2d4c58a7e1f2d3c4b5a676",
 }
 
 // HostEvents are the events an agent host writes itself (CONTRACT.md
