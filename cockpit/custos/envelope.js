@@ -139,7 +139,7 @@ function envelopeEditor(changed) {
     const formPart = el("div", { id: "envelope-form" },
         el("h4", null, "When it may act without asking"), note, rows, el("div", { class: "actions" }, addWindow),
         el("h4", null, "Rate"),
-        el("label", null, rateOn, " At most ", calls, " calls per tool per ", per,
+        el("div", { class: "envelope-rate" }, el("label", null, rateOn, " At most"), " ", calls, " calls per tool per ", per,
            el("span", { class: "muted" }, " (beyond it, each call waits for an approval; reaching it three times in a day demotes the category)")),
         el("h4", null, "Demote at once when"),
         ...rollbacks.map(r => el("label", { class: "rollback" }, r.box, " " + r.text)), healthRow,

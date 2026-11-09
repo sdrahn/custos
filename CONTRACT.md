@@ -1312,6 +1312,14 @@ disk-pressure:
     snapshots, package caches and logs under /var as the usual causes.
 ```
 
+A playbook may name `tools`, further tools (`<server>__<tool>`) the
+model is offered in its runs. A run shows the model only the
+playbook's tools: its steps' and its `tools`, of those the gateway
+offers, and the host's report tool (#155); every other tool of the
+gateway's is left out of that activity's model calls, so that a small
+model's prompt stays small. An activity without a playbook shows every
+tool the configuration shows.
+
 Unknown keys are errors. A playbook has a `title`, `look_for` and at
 least one step that is not `optional` and does not need a unit; each
 step a `tool` (`<server>__<tool>`, as the gateway names it) and a
@@ -1355,8 +1363,8 @@ not searched for signs of a prompt injection (the model chose nothing).
 The host's turns are no model calls: no `model.call` record, and they
 do not count toward `max_llm_calls`; they count toward `max_tool_calls`
 and the activity's time. The model is told the steps were run, with their arguments, and the
-unit, and gets their outputs; it may call further tools it is offered,
-also a step's tool with other arguments, and it reports.
+unit, and gets their outputs; it may call the playbook's tools, also a
+step's tool with other arguments, and it reports.
 
 The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `memory-pressure` (including OOM kills), `journal-errors`,

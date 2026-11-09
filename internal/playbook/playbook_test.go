@@ -302,3 +302,21 @@ func TestShippedExecCommands(t *testing.T) {
 		}
 	}
 }
+
+// tools: further tools a run offers, server__tool; Offer is the steps'
+// and those, of the tools the gateway offers, without repeats.
+func TestTools(t *testing.T) {
+	p := &Playbook{Title: "t", LookFor: "x", Steps: []Step{{Tool: "a__one", Why: "w"}, {Tool: "b__two", Why: "w", Optional: true}},
+		Tools: []string{"c__three", "a__one", "d__four"}}
+	if err := p.check(); err != nil {
+		t.Fatal(err)
+	}
+	got := p.Offer(map[string]bool{"a__one": true, "c__three": true, "d__four": true, "e__five": true})
+	if strings.Join(got, " ") != "a__one c__three d__four" {
+		t.Errorf("offer %v", got)
+	}
+	p.Tools = []string{"no-server"}
+	if err := p.check(); err == nil || !strings.Contains(err.Error(), "tools[0]") {
+		t.Errorf("a tool without a server: %v", err)
+	}
+}
