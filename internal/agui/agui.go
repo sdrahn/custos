@@ -218,6 +218,12 @@ func newInput(msgs []Message, sess session.Session) (*genai.Content, error) {
 		if !ok {
 			resp = map[string]any{"result": result}
 		}
+		// A client tool's result is a tool's output like any other: the
+		// host's notice when it reads like instructions or has a
+		// custos_notice of its own (security review 0.6, P5).
+		if shown, _ := governance.WithNotice(name, resp); shown != nil {
+			resp = shown
+		}
 		parts = append([]*genai.Part{{FunctionResponse: &genai.FunctionResponse{ID: msgs[i].ToolCallID, Name: name, Response: resp}}}, parts...)
 	}
 	if len(parts) > 0 {

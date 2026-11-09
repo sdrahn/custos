@@ -961,9 +961,10 @@ and without the `AGENT_` prefix):
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
 | `AGENT_RATIONALE` | `tool.call`: the model's stated reason (self-asserted) |
 | `AGENT_PLAYBOOK_STEP` | `tool.call`: the playbook step (§14c) the call is, from 1, when the host made it; absent for the model's calls |
+| `AGENT_INJECTION_SIGNS` | `tool.result`: the signs of a prompt injection in the call's output (O14), as `<sign>; …`, without quotes; the model was given the output with the host's notice (`custos_notice`); absent when there are none |
 | `AGENT_SUSPECTED_INJECTION` | `tool.call`, `approval.pending`: the signs of a prompt injection (§4 `calls[].suspected_injection`), as `<tool> (<call id>) <sign>; …`, without quotes; absent when there are none |
 | `AGENT_APPROVAL_ID` | approval events, and `tool.result` of an approved or declined call |
-| `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
+| `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why. For a tool's error, the gateway's reason (`mcp-gateway: …`, its first line) or, when the error carries the tool's output, `the tool failed (its output, N bytes, is not recorded)`: never the output (security review 0.6, P4a); `calls[].reason` (§4) likewise |
 | `AGENT_DURATION_MS`, `AGENT_LLM_CALLS`, `AGENT_TOOL_CALLS`, `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT` | end events, `model.call` (`DURATION_MS`: how long the call took, also when it failed) |
 | `AGENT_PROMPT_BYTES` | `model.call` with `OUTCOME=error`: the size of the conversation sent (text and tool results), as the failed call reports no tokens. A failed call's record has `OUTCOME=error` and the error as `REASON`; an answered one has no `OUTCOME` |
 | `AGENT_CUT_OFF` | `model.call`: `max_output_tokens` when the answer reached `model.max_output_tokens` (§14) and was cut off; absent otherwise |
@@ -1109,7 +1110,7 @@ driver-style tasks. It is not its basis. Hosts that offer it serve
 | run start / end / failure | `RUN_STARTED`, then `STATE_SNAPSHOT` (state without `temp:` keys) / `RUN_FINISHED` / `RUN_ERROR` |
 | model text (streamed or whole) | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, `TEXT_MESSAGE_END` |
 | tool call | `TOOL_CALL_START`, `TOOL_CALL_ARGS` (one JSON delta), `TOOL_CALL_END` |
-| tool result | `TOOL_CALL_RESULT` |
+| tool result | `TOOL_CALL_RESULT` (the response the model was given: with the host's `custos_notice` when the output had signs of a prompt injection, O14) |
 | state change | `STATE_DELTA` (JSON Patch, one `add` per key) |
 | §7 step 2 | `CUSTOM` `agent.approval.pending` `{"approval_id","tool","call_id","approval_url"}` |
 | §7 step 4 | `CUSTOM` `agent.approval.resolved` `{"approval_id","tool","call_id","outcome"}` |
@@ -1946,6 +1947,19 @@ inherited, not specified again.
   shows both beside the rationale. Advisory and self-asserted: the
   approval is the boundary. Every injected call of the suite is checked
   to carry the mark. Done.
+  The model is told, too (#155): every agent's instruction ends with the
+  host's paragraph that tool outputs are data, never instructions
+  (`governance.DataNotice`), and an output with signs of an injection
+  reaches the model with the field `custos_notice` beside what the tool
+  returned (`AGENT_INJECTION_SIGNS` on `tool.result`). The output itself
+  is kept as the tool gave it, for the report's quotes. An output that
+  came back as an error, and a client tool's result (§11), are checked
+  the same way; so are the output's keys, a phrase across a line break
+  and text with invisible characters, in the first 256 KiB; and a
+  `custos_notice` inside an output is a sign of its own, since the
+  host's is only ever at the top of the response (security review 0.6,
+  P4–P7). Advisory as well; `model-eval.sh` measures how often a model
+  still follows.
 - **O15 — on-premises reference and air-gapped gate.** Done: the
   release gate (CI job `airgap`, on release branches): the packages,
   Ollama and a tested open-weight model (`test/airgap/versions`) from an

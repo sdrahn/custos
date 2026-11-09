@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sdrahn/custos/internal/governance"
 )
 
 func TestTools(t *testing.T) {
@@ -70,5 +71,15 @@ func TestCases(t *testing.T) {
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "read_note", Arguments: map[string]any{"name": "nope"}})
 	if err != nil || !res.IsError {
 		t.Errorf("unknown note: %+v %v", res, err)
+	}
+}
+
+// Every injection case reaches the model with the host's notice (#155):
+// the launcher finds a sign of an injection in each note.
+func TestCasesHaveSigns(t *testing.T) {
+	for _, c := range Cases {
+		if s := governance.SignsIn(c.Note); len(s) == 0 {
+			t.Errorf("case %s: no sign of an injection", c.ID)
+		}
 	}
 }

@@ -874,8 +874,14 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 		g.mu.Unlock()
 		return nil, nil // stopped by beforeTool: already recorded
 	}
-	if in := g.inv[tctx.InvocationID()]; in != nil && err == nil {
-		in.keepResult(call.CallID, call.Tool, result)
+	if in := g.inv[tctx.InvocationID()]; in != nil {
+		if err == nil {
+			in.keepResult(call.CallID, call.Tool, result)
+		} else {
+			// An output that came back as an error was read by the model
+			// all the same: the next call is checked against it (P4).
+			in.keepResult(call.CallID, call.Tool, map[string]any{"error": err.Error()})
+		}
 	}
 	now := g.now()
 	f["DURATION_MS"] = ms(now.Sub(call.Since))
@@ -885,7 +891,7 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 	} else if e, ok := result["error"].(string); ok {
 		errText = e
 	}
-	call.Ended, call.State, call.Reason = &now, "ok", errText
+	call.Ended, call.State, call.Reason = &now, "ok", reasonOf(errText)
 	if errText != "" {
 		call.State = "error"
 	}
@@ -897,7 +903,7 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 		call.Approval = outcome
 		g.publish(Event{Kind: EvApprovalResolved, Session: call.Session, Invocation: call.Invocation, CallID: call.CallID, Tool: call.Tool, ApprovalID: call.ApprovalID, Outcome: outcome})
 		af := copyFields(f)
-		af["APPROVAL_ID"], af["OUTCOME"], af["REASON"] = call.ApprovalID, outcome, errText
+		af["APPROVAL_ID"], af["OUTCOME"], af["REASON"] = call.ApprovalID, outcome, reasonOf(errText)
 		g.mu.Unlock()
 		g.log.Log(journal.ApprovalResolved, fmt.Sprintf("Approval %s for %s: %s", call.ApprovalID, call.Tool, outcome), af)
 		f["APPROVAL_ID"] = call.ApprovalID
@@ -906,10 +912,24 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 	}
 	f["OUTCOME"] = "ok"
 	if errText != "" {
-		f["OUTCOME"], f["REASON"] = "error", errText
+		f["OUTCOME"], f["REASON"] = "error", reasonOf(errText)
+	}
+	// An output that reads like instructions reaches the model with the
+	// host's notice next to it (#155), also one that came back as an
+	// error (P4); the journal names the signs.
+	var shown map[string]any
+	if t.Name() != ReportTool {
+		given := result
+		if err != nil {
+			given = map[string]any{"error": err.Error()}
+		}
+		var signs []string
+		if shown, signs = WithNotice(t.Name(), given); len(signs) > 0 {
+			f["INJECTION_SIGNS"] = strings.Join(signs, "; ")
+		}
 	}
 	g.log.Log(journal.ToolResult, "Tool result "+t.Name()+": "+f["OUTCOME"], f)
-	return nil, nil
+	return shown, nil
 }
 
 // onToolError records a call to a tool the agent was not given: the

@@ -34,6 +34,15 @@ removed.
 
 ### Added
 
+- The model is told that a tool's output is data, never instructions
+  (#155): every agent's instruction ends with the host's paragraph
+  saying so, and an output that reads like instructions reaches the
+  model with the host's notice beside it (`custos_notice`), naming the
+  signs; `tool.result` records them (`AGENT_INJECTION_SIGNS`). An
+  output that came back as an error and a client tool's result get it
+  too, and a `custos_notice` inside an output is a sign of its own
+  (security review 0.6, P4–P7). Advice to the model; the gateway's
+  approval stays the boundary.
 - The report nudge (#155): a model that answers a playbook run in prose,
   without a report and without a tool call, is asked once more, in the
   same activity, to file it with `report_diagnosis`. The activity says
@@ -88,6 +97,12 @@ removed.
 
 ### Fixed
 
+- A tool's error output reached the journal (`AGENT_REASON` on
+  `tool.result`) and the activity record (`calls[].reason`) verbatim,
+  for example the whole stdout and stderr of an exec command that
+  exited non-zero. Both now keep the gateway's reason (`mcp-gateway: …`)
+  or a fixed text with the output's size, never the output (security
+  review 0.6, P4a).
 - The OpenShell relay's check that it talks to root's port forward read
   the first entry of the kernel's socket table with the connection's
   addresses, which can be an earlier connection's TIME_WAIT entry,
