@@ -1575,7 +1575,7 @@ packages are installed:
 ```
 custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
              [--provider openai|vertex|gemini] [--endpoint URL] --model NAME
-             [--credential-file FILE]
+             [--credential-file FILE] [--restarts]
 ```
 
 It is non-interactive and idempotent. In this order, each step printed
@@ -1598,9 +1598,12 @@ on standard output as `custos-setup: <step>: done|already|skipped
    running it says so. A copy of an earlier release's file, unchanged
    (by its digest), it replaces. It also copies the server definition
    `custos-net` into `/etc/mcp-gateway/servers.d/`, keeping one that
-   differs, and, when `mcp-gateway-restarts-server` is installed, links
-   its profile `/usr/share/mcp-gateway/profiles/restarts.yaml` there as
-   `restarts.yaml`, keeping a file of that name that is not the link.
+   differs, and, with `--restarts` and `mcp-gateway-restarts-server`
+   installed, links its profile `/usr/share/mcp-gateway/profiles/restarts.yaml`
+   there as `restarts.yaml`, keeping a file of that name that is not the
+   link. Without `--restarts` it makes no link (the server holds
+   `CAP_SYS_PTRACE`, so offering it is the administrator's own choice)
+   and keeps one that is there.
    All this before the agent, whose session then offers the commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,

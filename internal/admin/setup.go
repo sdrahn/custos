@@ -71,6 +71,8 @@ type SetupOptions struct {
 	Model           string
 	// Credential is the key, read from --credential-file; nil: none.
 	Credential []byte
+	// Restarts offers mcp-gateway's server restarts (--restarts).
+	Restarts bool
 }
 
 // Step is one thing custos-setup did: done, already (nothing to do),
@@ -222,7 +224,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	steps = append(steps, netStep)
 	execAdded = execAdded || netStep.Result == "done"
 	// mcp-gateway's server restarts, for update-status, when installed.
-	restartsStep := a.setupRestartsServer()
+	restartsStep := a.setupRestartsServer(o.Restarts)
 	steps = append(steps, restartsStep)
 	execAdded = execAdded || restartsStep.Result == "done"
 
@@ -350,9 +352,12 @@ func (a *Admin) setupNetServer() Step {
 
 // setupRestartsServer links mcp-gateway's profile restarts into the
 // gateway's servers.d, as mcp-gateway's user guide does, when the package
-// mcp-gateway-restarts-server is installed; a file there already that is
-// not that link is the administrator's and stays.
-func (a *Admin) setupRestartsServer() Step {
+// mcp-gateway-restarts-server is installed and the administrator asked
+// for it (--restarts): the server holds CAP_SYS_PTRACE, so offering it is
+// a choice of its own, not one the package or an earlier run made
+// (security review 0.6, P1). A link that is there is kept; a file there
+// that is not that link is the administrator's and stays.
+func (a *Admin) setupRestartsServer(want bool) Step {
 	const name = "server restarts"
 	if _, err := os.Stat(a.p(RestartsProfile)); err != nil {
 		return Step{name, "skipped", "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart"}
@@ -366,6 +371,9 @@ func (a *Admin) setupRestartsServer() Step {
 	}
 	if _, err := os.Lstat(dst); err == nil {
 		return Step{name, "skipped", dst + " is not the link to " + RestartsProfile + ": kept"}
+	}
+	if !want {
+		return Step{name, "skipped", "not offered: it holds CAP_SYS_PTRACE; add --restarts to offer it for update-status's services to restart"}
 	}
 	if err := os.Symlink(RestartsProfile, dst); err != nil {
 		return Step{name, "failed", err.Error()}

@@ -182,3 +182,164 @@ and `service-health`'s pattern uses it.
   - The root bridge gets argument arrays.
   - The envelope goes to `promote --envelope -` as JSON, which
     `agent-admin` checks again.
+
+## Addendum: pending restarts (#171) and tool output as data (#172)
+
+Two changes came after the review: `update-status` with mcp-gateway
+1.16's server `restarts` (#171, merged), and the host's notice that
+tool outputs are data (#172). They were reviewed the same way, by a
+reviewer who had not written them. Each finding was traced through the
+code. P4, P5 and P6 were also confirmed with throwaway tests, and P7
+was timed on a copy.
+
+**Where it stands.** No finding is high or medium. Every finding is
+fixed, as the maintainer decided (2026-11-09: `--restarts` as an
+explicit option; fix all):
+
+| Finding | Severity | Status |
+|---|---|---|
+| P1 | low | fixed in #174 |
+| P2 | info | documented in #174 |
+| P3 | info | fixed in #174 |
+| P4 | low (P4a predates 0.6) | fixed in #172 |
+| P5 | low | fixed in #172 |
+| P6 | info | fixed in #172 |
+| P7 | info | fixed in #172 |
+| P8 | info | fixed in #172 |
+
+### P1 — low — custos-setup offered a server that holds a capability, and offered it again after it was removed
+
+*Where:* `internal/admin/setup.go`, `setupRestartsServer`.
+
+mcp-gateway ships `restarts`, which holds `CAP_SYS_PTRACE`, as a
+profile on purpose: offering it is meant to be the administrator's own
+step. `custos-setup` linked it whenever the package was installed, and
+`mcp-gateway-tests` requires the package. The scenario:
+
+1. The administrator removes the link, having decided against the
+   capability.
+2. A later `custos-setup` run (a new key, the troubleshooting advice)
+   makes the link again.
+3. `health-check` restarts with the server offered, and so does every
+   other principal's gateway.
+
+Only root can influence the link, so this is about consent, not
+escalation.
+
+*Fix (#174):* `custos-setup` links the profile only with `--restarts`.
+Without it, the step says how to offer the server. A link that is there
+is kept, and one the administrator removed is not made again.
+
+### P2 — info — `pending_restarts` shows the model other users' processes
+
+The agent's own unit hides other processes (`ProtectProc=invisible`).
+For every process that maps a replaced file, the tool returns:
+- its id and name (`comm`, 15 bytes, never the command line);
+- its user and unit;
+- the files and the packages.
+
+After a glibc update that is nearly every process, and with a remote
+backend it goes to the model's provider. A local user can set its own
+process name, which gives that user 15 bytes in the model's context:
+the ordinary case of a malicious tool output, which the approvals bound.
+Nothing of the output reaches the journal.
+
+*Status (#174):* documented in chapter 9, next to how to offer the
+server, so that the administrator weighs it against the backend.
+
+### P3 — info — "no reboot is pending" when the flag could not be seen
+
+`test -e /run/reboot-needed` is false when the file is missing and also
+when the command may not see it. That happens with an older
+`mcp-gateway-selinux`, which nothing pinned, or with a flag labelled
+otherwise. The answer then sounded certain and was wrong.
+
+*Fix (#174):* `reboot_status` reads the flag with `stat`. It says that
+no reboot is pending only for "No such file". Otherwise it says that
+whether an update asked for one cannot be seen, and why.
+
+### P4 — low — an output returned as an error got no notice; its text went into the journal
+
+ADK turns an MCP result with `isError` into an error carrying the whole
+content. The exec server returns one for every non-zero exit, with
+stdout and stderr. Such an output:
+- reached the model without the host's notice;
+- was not checked for signs before the next call's approval;
+- went verbatim into the journal as `AGENT_REASON` on `tool.result`
+  (P4a). That predates 0.6, and contradicts "outputs stay out of the
+  journal".
+
+*Fix (#172):*
+- Error outputs are checked like any other: they get the notice, and
+  the approval item's signs.
+- The journal's reason for a tool error is fixed text with the error's
+  size, never its content.
+
+### P5 — low — the notice could be imitated
+
+An MCP tool cannot set the top-level `custos_notice`, since ADK wraps
+its result under `output`. It can nest one, though. A nested
+`custos_notice` that vouches for an output has no sign of an injection
+and reached the model unchanged. A client tool's result (AG-UI) never
+passed the host's check at all.
+
+*Fix (#172):*
+- `DataNotice` says that the host never calls an output safe or
+  approved, and that a `custos_notice` inside what a tool returned is
+  the tool's text.
+- A nested `custos_notice` is a sign of its own.
+- A client tool's result gets the same check, and a top-level
+  `custos_notice` in it is replaced.
+
+### P6 — info — easy ways past the signs
+
+The check missed:
+- a real newline inside a phrase (`IGNORE\nALL PREVIOUS INSTRUCTIONS`);
+- text in a map's keys;
+- zero-width characters.
+
+*Fix (#172):* the check reads keys as well as values, matches on the
+text with its whitespace collapsed as well as as it is, and drops
+invisible format characters first. It stays advisory: the gateway is
+the boundary.
+
+### P7 — info — the check's cost grows with the output, without a cap
+
+RE2 runs in linear time, but a 14 MB output took 5.5 s of the agent's
+CPU per result.
+
+*Fix (#172):* the check reads at most the first 256 KiB of an output.
+
+### P8 — info — AG-UI clients see `custos_notice`, which the contract did not say
+
+`TOOL_CALL_RESULT` carries the response the model was given, which is
+the copy with the notice.
+
+*Fix (#172):* CONTRACT.md's AG-UI section says so.
+
+### Checked and sound
+
+- **The link (#171):**
+  - Only root can influence it: both directories are root's, and
+    `custos-setup` runs as root.
+  - `os.Symlink` never overwrites. A file or another link there is
+    kept, and the target is the absolute profile path.
+- **The permission (#171):** `{server: restarts, tool: pending_restarts,
+  read_only: true, category: diagnostics}` names server and tool
+  exactly, as the gateway requires for a server with a capability. It
+  stays valid on a diagnostics-only host. The tool takes no arguments
+  and changes nothing.
+- **Where the privilege lives (#171):** the capability is held by a
+  dynamic user in `mcpsrv_restarts_t`, which reads process state, not
+  memory, and never by the agent.
+- **`shippedBefore` (#171):** the digests are 0.3.0's and 0.4.0's to
+  0.5.0's files. A file replaced is byte-identical to one Custos
+  shipped, and the replacement is atomic.
+- **The output itself (#172):** the tool's result is never changed. The
+  model gets a copy, while the report's quotes and the approval items
+  use the output as the tool gave it.
+- **The journal (#172):** `AGENT_INJECTION_SIGNS` holds sign names only.
+- **The instruction (#172):** `DataNotice` has no braces, so ADK's
+  placeholders cannot reach into it. Every agent is built in one place,
+  so every agent gets it.
+- **Regular expressions (#172):** RE2, without backtracking.

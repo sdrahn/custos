@@ -243,12 +243,30 @@ func TestSetupRestartsServer(t *testing.T) {
 	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
 	writeFile(a.p(RestartsProfile), []byte("name: restarts\n"), 0o644)
 	dst := a.p(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	// Installed but not asked for (security review 0.6, P1): not linked,
+	// and the step says how.
 	steps, err := a.Setup(o)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := results(steps); !strings.Contains(got, "server restarts=skipped") {
+		t.Errorf("without --restarts: %s", got)
+	}
+	for _, s := range steps {
+		if s.Name == "server restarts" && !strings.Contains(s.Detail, "--restarts") {
+			t.Errorf("the step does not say how: %v", s)
+		}
+	}
+	if _, err := os.Lstat(dst); err == nil {
+		t.Fatal("linked without --restarts")
+	}
+	o.Restarts = true
+	steps, err = a.Setup(o)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := results(steps); !strings.Contains(got, "server restarts=done") {
-		t.Errorf("first run: %s", got)
+		t.Errorf("with --restarts: %s", got)
 	}
 	if target, err := os.Readlink(dst); err != nil || target != RestartsProfile {
 		t.Errorf("link %q %v", target, err)
@@ -269,8 +287,19 @@ func TestSetupRestartsServer(t *testing.T) {
 	if steps, _ := a.Setup(o); !strings.Contains(results(steps), "server restarts=already") {
 		t.Errorf("second run: %s", results(steps))
 	}
-	// The administrator's own definition stays.
+	// A link that is there stays without the flag; one the administrator
+	// removed is not made again without it.
+	o.Restarts = false
+	if steps, _ := a.Setup(o); !strings.Contains(results(steps), "server restarts=already") {
+		t.Errorf("kept link: %s", results(steps))
+	}
 	os.Remove(dst)
+	a.Setup(o)
+	if _, err := os.Lstat(dst); err == nil {
+		t.Error("linked again after the administrator removed it")
+	}
+	o.Restarts = true
+	// The administrator's own definition stays.
 	writeFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
 	steps, _ = a.Setup(o)
 	if !strings.Contains(results(steps), "server restarts=skipped") {
