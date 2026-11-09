@@ -4,7 +4,6 @@
 - {server: systemd, tool: list_loaded_units, read_only: true, category: diagnostics}
 - {server: systemd, tool: list_log, read_only: true, category: diagnostics}
 - {server: systemd, tool: get_file, read_only: true, category: diagnostics}
-- {server: systemd, tool: check_restart_reload, read_only: true, category: diagnostics}
 - {server: exec, tool: disk_usage, read_only: true, category: diagnostics}
 - {server: exec, tool: memory_usage, read_only: true, category: diagnostics}
 - {server: exec, tool: pressure_stall, read_only: true, category: diagnostics}
@@ -17,6 +16,7 @@
 - {server: exec, tool: boot_blame, read_only: true, category: diagnostics}
 - {server: exec, tool: selinux_status, read_only: true, category: diagnostics}
 - {server: exec, tool: package_dependencies, read_only: true, category: diagnostics}
+- {server: exec, tool: reboot_status, read_only: true, category: diagnostics}
 - {server: zypp, tool: check_updates, read_only: true, category: diagnostics}
 - {server: snapper, tool: list_snapshots, read_only: true, category: diagnostics}
 - {server: tukit, tool: get_status, read_only: true, category: diagnostics}
