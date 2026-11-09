@@ -3,16 +3,19 @@
 # /etc/custos/playbooks/ replaces it; an empty one hides it.
 update-status:
   title: Update status
-  description: Which updates and patches are pending, and whether a reboot is due. It reads only; it installs nothing.
+  description: Which updates and patches are pending, whether a reboot is due, and which services still run what an update replaced. It reads only; it installs nothing.
   needs:
     - "zypp-mcp, or mcp-server-tukit on a transactional system"
     - "mcp-gateway's exec server with Custos's diagnostic commands"
+    - "optionally mcp-gateway's server restarts (mcp-gateway-restarts-server), for the services to restart"
   steps:
     - {tool: zypp__check_updates, why: "Pending patches and updates.", optional: true}
     - {tool: tukit__list_updates, why: "Pending updates of a transactional system.", optional: true}
     - {tool: tukit__get_status, why: "A snapshot waiting for a reboot.", optional: true}
     - {tool: exec__reboot_status, why: "Whether an installed update waits for a reboot, and the running and installed kernels."}
+    - {tool: restarts__pending_restarts, why: "The services and processes that still use files an update replaced, so wait for a restart.", optional: true}
   look_for: >
-    Security patches pending, how long they have been, and a reboot that
-    an earlier update still waits for (a kernel newer than the running
-    one, or /run/reboot-needed).
+    Security patches pending, how long they have been, a reboot that an
+    earlier update still waits for (a kernel newer than the running one,
+    or /run/reboot-needed), and services that still run what an update
+    replaced and need a restart.

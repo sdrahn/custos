@@ -30,7 +30,7 @@ the version it implements in `GET /v1/status` (`contract`).
 
 | Part | Role | Enforces |
 |---|---|---|
-| **mcp-gateway** (≥ 1.15) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
+| **mcp-gateway** (≥ 1.16) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
 | **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
 | **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
 | **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
@@ -1380,6 +1380,11 @@ server's instances have a network namespace of their own, so the network
 commands (`network_addresses`, `network_routes`, `listening_sockets`) are
 Custos's server `custos-net` instead, whose instances see the host's
 network without using it (`network_view: host`).
+`update-status` also asks, when it is offered, mcp-gateway's server
+`restarts` (package `mcp-gateway-restarts-server`, mcp-gateway 1.16):
+its tool `pending_restarts` lists the services and processes that still
+use files an update replaced, which the exec server's commands, run as
+the agent's user, cannot read.
 
 ## 15. Units and sandbox
 
@@ -1566,8 +1571,10 @@ on standard output as `custos-setup: <step>: done|already|skipped
    running it says so. A copy of an earlier release's file, unchanged
    (by its digest), it replaces. It also copies the server definition
    `custos-net` into `/etc/mcp-gateway/servers.d/`, keeping one that
-   differs. All this before the agent, whose session then offers the
-   commands;
+   differs, and, when `mcp-gateway-restarts-server` is installed, links
+   its profile `/usr/share/mcp-gateway/profiles/restarts.yaml` there as
+   `restarts.yaml`, keeping a file of that name that is not the link.
+   All this before the agent, whose session then offers the commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,
    and is restarted if step 3 added a command;
@@ -1633,7 +1640,7 @@ may connect to `agent_sock_t`, and so may Cockpit's bridge
 ## 19. Packaging
 
 OBS packages for SLES 16.0/16.1 and openSUSE Leap 16.0/16.1
-(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.15: the reasons for denials, call outcomes, notices and reviews of §6, §6a, and approvals over an envelope's rate)
+(`packaging/suse`): `custos` (requires `mcp-gateway` ≥ 1.16: the reasons for denials, call outcomes, notices and reviews of §6, §6a, and approvals over an envelope's rate; from 1.16, exec commands see whether `/run/reboot-needed` exists, §14c)
 and `custos-selinux` (required where `selinux-policy-targeted`
 is installed), `custos-cockpit` (the Cockpit page, in
 `/usr/share/cockpit/custos`), `custos-tests` (the functional
@@ -1646,7 +1653,8 @@ them as the collection `custos`).
 selects (O16): `custos-setup` (§17a), requiring `custos` (whose are the
 playbooks and the `health-check` template, used by the broader install
 too) and `mcp-gateway-exec-server`, recommending `custos-cockpit` and
-`custos-selinux`.
+`custos-selinux`, and suggesting `mcp-gateway-restarts-server` (a server
+with `CAP_SYS_PTRACE`, so installing it is the administrator's choice).
 
 ---
 

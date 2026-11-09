@@ -1504,13 +1504,29 @@ if command -v custos-setup >/dev/null; then
 		if [ -e /run/reboot-needed ]; then
 			check "exec__reboot_status: a reboot is pending, with the running kernel among the installed ones" reboot_says "A reboot is pending"
 		else
-			check "exec__reboot_status: no reboot is pending for a kernel, with the running kernel among the installed ones" reboot_says "No reboot is pending"
-			# /run/reboot-needed: the command sees it, or says that it cannot
-			# tell (the exec server's sandbox may have a /run of its own);
-			# never that nothing waits.
+			check "exec__reboot_status: no reboot is pending, with the running kernel among the installed ones" reboot_says "No reboot is pending"
+			# /run/reboot-needed, created now, after the exec server's
+			# instance started: the command sees it (mcp-gateway 1.16).
 			touch /run/reboot-needed
-			check "exec__reboot_status with /run/reboot-needed: a reboot is pending, or it says it may not see it" reboot_says "A reboot is pending" "may not be visible to this command"
+			restorecon /run/reboot-needed 2>/dev/null || true
+			check "exec__reboot_status sees /run/reboot-needed: a reboot is pending" reboot_says "A reboot is pending: /run/reboot-needed exists"
 			rm -f /run/reboot-needed
+		fi
+		# mcp-gateway's server restarts (update-status's services to
+		# restart), which custos-setup links when its package is there.
+		if [ -e /usr/share/mcp-gateway/profiles/restarts.yaml ]; then
+			check "custos-setup linked the server restarts" bash -c \
+				"grep -q 'server restarts: done' '$work/setup.out' && test \"\$(readlink /etc/mcp-gateway/servers.d/restarts.yaml)\" = /usr/share/mcp-gateway/profiles/restarts.yaml"
+			restarts_answers() { # through the gateway, as health-check, without an approval: it names the running kernel
+				local a
+				a=$(run_activity health-check "CALL restarts__pending_restarts")
+				a=$(api health-check "/v1/activities/$(jq -r .id <<<"$a")")
+				jq -e --arg k "$(uname -r)" '.state == "finished" and (.response // "" | startswith("done: ") and contains($k) and (contains("\"error\"") | not))' <<<"$a" >/dev/null ||
+					{ echo "    | the activity: $(jq -c '{state, response: (.response // "" | .[0:400])}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+			}
+			check "restarts__pending_restarts answers health-check, naming the running kernel" restarts_answers
+		else
+			skip "the server restarts (mcp-gateway-restarts-server is not installed)"
 		fi
 		# Custos's server custos-net: the network commands in the host's
 		# network namespace (network_view: host, mcp-gateway R7), which

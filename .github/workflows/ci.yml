@@ -163,7 +163,7 @@ jobs:
           zypper -n --gpg-auto-import-keys in --allow-unsigned-rpm ~/rpmbuild/RPMS/noarch/mcp-gateway-selinux-*.rpm
           semodule -l | grep -x mcp_gateway
           mkdir -p "$GITHUB_WORKSPACE/rpms"
-          cp ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-selinux-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-exec-server-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-cockpit-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-profile-systemd-*.rpm "$GITHUB_WORKSPACE/rpms/"
+          cp ~/rpmbuild/RPMS/*/mcp-gateway-[0-9]*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-selinux-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-exec-server-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-restarts-server-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-cockpit-*.rpm ~/rpmbuild/RPMS/*/mcp-gateway-profile-systemd-*.rpm "$GITHUB_WORKSPACE/rpms/"
           rm -rf ~/rpmbuild/SOURCES/vendor.tar.gz
       - name: Install build dependencies (from the spec, as OBS does)
         run: |

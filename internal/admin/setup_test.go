@@ -50,7 +50,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	// The exec server's running instances stop, so that the next ones
 	// read the new commands.
 	want := "diagnostics-only=done, model defaults=done, exec commands exec.d-diagnostics.yaml=done, " +
-		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, server custos-net=done, agent health-check=done, credential=done"
+		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, server custos-net=done, server restarts=skipped, agent health-check=done, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
@@ -89,7 +89,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = "diagnostics-only=already, model defaults=already, exec commands exec.d-diagnostics.yaml=already, " +
-		"exec commands exec.d-disk-usage.yaml=already, server custos-net=already, agent health-check=already, credential=done"
+		"exec commands exec.d-disk-usage.yaml=already, server custos-net=already, server restarts=skipped, agent health-check=already, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("second run:\n got %s\nwant %s", got, want)
 	}
@@ -232,5 +232,51 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	}
 	if have, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml"))); string(have) != "# mine\n" {
 		t.Error("the administrator's copy was replaced")
+	}
+}
+
+// mcp-gateway's server restarts: custos-setup links its profile into
+// servers.d when mcp-gateway-restarts-server is installed, keeps a file
+// there that is not that link, and health-check may call its tool.
+func TestSetupRestartsServer(t *testing.T) {
+	a, _ := setupHost(t)
+	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
+	writeFile(a.p(RestartsProfile), []byte("name: restarts\n"), 0o644)
+	dst := a.p(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	steps, err := a.Setup(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results(steps); !strings.Contains(got, "server restarts=done") {
+		t.Errorf("first run: %s", got)
+	}
+	if target, err := os.Readlink(dst); err != nil || target != RestartsProfile {
+		t.Errorf("link %q %v", target, err)
+	}
+	g, err := a.readGateway(HealthCheck)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var allowed bool
+	for _, p := range g.Permissions {
+		if p["server"] == "restarts" && p["tool"] == "pending_restarts" && p["read_only"] == true && p["category"] == "diagnostics" {
+			allowed = true
+		}
+	}
+	if !allowed {
+		t.Errorf("health-check may not call restarts__pending_restarts: %+v", g.Permissions)
+	}
+	if steps, _ := a.Setup(o); !strings.Contains(results(steps), "server restarts=already") {
+		t.Errorf("second run: %s", results(steps))
+	}
+	// The administrator's own definition stays.
+	os.Remove(dst)
+	writeFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
+	steps, _ = a.Setup(o)
+	if !strings.Contains(results(steps), "server restarts=skipped") {
+		t.Errorf("own file: %s", results(steps))
+	}
+	if b, _ := os.ReadFile(dst); !strings.Contains(string(b), "# mine") {
+		t.Errorf("replaced: %s", b)
 	}
 }

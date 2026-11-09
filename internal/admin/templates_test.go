@@ -17,7 +17,8 @@ import (
 
 // knownTools are the tools of the gateway servers the templates use, as
 // the servers define them (systemd-mcp, mcp-server-zypp 0.1.2,
-// mcp-server-snapper, firewalld-mcp 0.1.0, mcp-server-tukit 0.4.0) and,
+// mcp-server-snapper, firewalld-mcp 0.1.0, mcp-server-tukit 0.4.0,
+// mcp-gateway's mcp-server-restarts) and,
 // for exec, as the shipped exec.d-*.yaml files do. read: the tools that change
 // nothing. A template naming a tool not here names one that does not
 // exist, and the gateway would never match it.
@@ -45,6 +46,10 @@ var knownTools = map[string]struct{ read, change []string }{
 	// mcp-docs (0.1) as the gateway's server suse-docs (#130): it only reads.
 	"suse-docs": {
 		read: []string{"list_docs", "outline", "search", "find_sections", "read_section", "read_lines"},
+	},
+	// mcp-gateway's server restarts (1.16, mcp-gateway-restarts-server).
+	"restarts": {
+		read: []string{"pending_restarts"},
 	},
 	"exec":       {}, // from the shipped exec.d files (init)
 	"custos-net": {}, // from gateway/custos-net.d (init)

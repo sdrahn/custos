@@ -17,6 +17,10 @@
 - {server: exec, tool: selinux_status, read_only: true, category: diagnostics}
 - {server: exec, tool: package_dependencies, read_only: true, category: diagnostics}
 - {server: exec, tool: reboot_status, read_only: true, category: diagnostics}
+# mcp-gateway's server restarts (mcp-gateway-restarts-server): it holds a
+# capability, so the gateway lets a call through without an approval only
+# for a permission that names server and tool exactly, as this one does.
+- {server: restarts, tool: pending_restarts, read_only: true, category: diagnostics}
 - {server: zypp, tool: check_updates, read_only: true, category: diagnostics}
 - {server: snapper, tool: list_snapshots, read_only: true, category: diagnostics}
 - {server: tukit, tool: get_status, read_only: true, category: diagnostics}
