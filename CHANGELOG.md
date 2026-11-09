@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- `patch-pilot-transactional` refreshes the repositories without an
+  approval: `tukit__refresh_repositories` only fetches their metadata,
+  so its permission is read-only, like `list_updates`, instead of
+  `patch-errata`. Looking for updates, also for an agent that delegates
+  it, no longer waits for an approval. An agent created before keeps
+  its permissions; change it with `agent-admin permissions NAME`.
+
 ### Fixed
 
 - The `failed-units` playbook and the `health-check` and `triage`
