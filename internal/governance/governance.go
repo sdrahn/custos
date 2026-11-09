@@ -837,8 +837,17 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 	if errText != "" {
 		f["OUTCOME"], f["REASON"] = "error", errText
 	}
+	// An output that reads like instructions reaches the model with the
+	// host's notice next to it (#155); the journal names the signs.
+	var shown map[string]any
+	if err == nil && t.Name() != ReportTool {
+		var signs []string
+		if shown, signs = withNotice(t.Name(), result); len(signs) > 0 {
+			f["INJECTION_SIGNS"] = strings.Join(signs, "; ")
+		}
+	}
 	g.log.Log(journal.ToolResult, "Tool result "+t.Name()+": "+f["OUTCOME"], f)
-	return nil, nil
+	return shown, nil
 }
 
 // onToolError records a call to a tool the agent was not given: the

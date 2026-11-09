@@ -137,10 +137,12 @@ func New(ctx context.Context, o Options) (*Launcher, error) {
 		return nil, err
 	}
 	a, err := llmagent.New(llmagent.Config{
-		Name:                  strings.ReplaceAll(cfg.Name, "-", "_"),
-		Description:           cfg.Description,
-		Model:                 llm,
-		Instruction:           cfg.Instruction,
+		Name:        strings.ReplaceAll(cfg.Name, "-", "_"),
+		Description: cfg.Description,
+		Model:       llm,
+		// The host's notice that tool outputs are data (#155) follows
+		// the agent's own instruction.
+		Instruction:           strings.TrimRight(cfg.Instruction, "\n") + "\n\n" + governance.DataNotice,
 		Tools:                 []tool.Tool{report},
 		Toolsets:              []tool.Toolset{tools, ct.Toolset()},
 		GenerateContentConfig: gcc,

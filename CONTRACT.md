@@ -960,6 +960,7 @@ and without the `AGENT_` prefix):
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | tool events. SHA-256 of the arguments' JSON with sorted keys. Arguments are never logged |
 | `AGENT_RATIONALE` | `tool.call`: the model's stated reason (self-asserted) |
 | `AGENT_PLAYBOOK_STEP` | `tool.call`: the playbook step (§14c) the call is, from 1, when the host made it; absent for the model's calls |
+| `AGENT_INJECTION_SIGNS` | `tool.result`: the signs of a prompt injection in the call's output (O14), as `<sign>; …`, without quotes; the model was given the output with the host's notice (`custos_notice`); absent when there are none |
 | `AGENT_SUSPECTED_INJECTION` | `tool.call`, `approval.pending`: the signs of a prompt injection (§4 `calls[].suspected_injection`), as `<tool> (<call id>) <sign>; …`, without quotes; absent when there are none |
 | `AGENT_APPROVAL_ID` | approval events, and `tool.result` of an approved or declined call |
 | `AGENT_OUTCOME`, `AGENT_REASON` | `ok`, `error`, `denied`, `approved`, `declined`, `cancelled`, `limit`; why |
@@ -1928,6 +1929,13 @@ inherited, not specified again.
   shows both beside the rationale. Advisory and self-asserted: the
   approval is the boundary. Every injected call of the suite is checked
   to carry the mark. Done.
+  The model is told, too (#155): every agent's instruction ends with the
+  host's paragraph that tool outputs are data, never instructions
+  (`governance.DataNotice`), and an output with signs of an injection
+  reaches the model with the field `custos_notice` beside what the tool
+  returned (`AGENT_INJECTION_SIGNS` on `tool.result`). The output itself
+  is kept as the tool gave it, for the report's quotes. Advisory as well;
+  `model-eval.sh` measures how often a model still follows.
 - **O15 — on-premises reference and air-gapped gate.** Done: the
   release gate (CI job `airgap`, on release branches): the packages,
   Ollama and a tested open-weight model (`test/airgap/versions`) from an

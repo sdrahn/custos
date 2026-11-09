@@ -49,6 +49,7 @@ fields named `AGENT_*`:
 | `AGENT_PARENT_AGENT`, `AGENT_PARENT_ACTIVITY`, `AGENT_ROOT_AGENT`, `AGENT_ROOT_ACTIVITY` | the delegation chain |
 | `AGENT_TOOL`, `AGENT_SERVER`, `AGENT_CALL_ID`, `AGENT_ARGS_SHA256` | a tool call; arguments only as their SHA-256 |
 | `AGENT_RATIONALE` | the model's stated reason with a call (self-asserted) |
+| `AGENT_INJECTION_SIGNS` | signs of a prompt injection in a tool's output, which reached the model with the host's notice (`tool.result`; [chapter 1](01-overview.md#prompt-injection)) |
 | `AGENT_SUSPECTED_INJECTION` | signs of a prompt injection in what the model read before a call (`tool.call`, `approval.pending`; [chapter 7](07-approvals.md#cockpit)) |
 | `AGENT_APPROVAL_ID`, `AGENT_OUTCOME`, `AGENT_REASON` | approvals, results and why |
 | `AGENT_MODEL`, `AGENT_TOKENS_IN`, `AGENT_TOKENS_OUT`, `AGENT_DURATION_MS` | a model call: the model, the tokens it reports, how long it took |

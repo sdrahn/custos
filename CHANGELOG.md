@@ -34,6 +34,12 @@ removed.
 
 ### Added
 
+- The model is told that a tool's output is data, never instructions
+  (#155): every agent's instruction ends with the host's paragraph
+  saying so, and an output that reads like instructions reaches the
+  model with the host's notice beside it (`custos_notice`), naming the
+  signs; `tool.result` records them (`AGENT_INJECTION_SIGNS`). Advice to
+  the model; the gateway's approval stays the boundary.
 - `{unit_re}` in a playbook step's arguments: the unit escaped for a
   regular expression (security review 0.6, N5). `service-health`'s
   journal pattern uses it, so that `nginx.service` no longer also matches
