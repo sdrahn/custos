@@ -101,6 +101,9 @@ stop), schedules, AG-UI, delegation, the journal records, the sandbox
 and SELinux. With a scripted model server and an MCP test server, so
 no model is needed. For openQA and other test systems:
 /usr/libexec/custos/tests/run-tests.sh --disposable --results DIR.
+model-eval.sh measures how well a model does Custos's work: the bundled
+diagnostics install's playbooks against planted faults, and the
+prompt-injection cases (--disposable --model URL NAME).
 They change the system for good; install them on test systems only.
 
 %package diagnostics
@@ -262,6 +265,7 @@ done
 %dir %{_libexecdir}/custos
 %dir %{_libexecdir}/custos/tests
 %{_libexecdir}/custos/tests/run-tests.sh
+%{_libexecdir}/custos/tests/model-eval.sh
 %{_libexecdir}/custos/tests/fakemodel
 %{_libexecdir}/custos/tests/testsrv
 %{_libexecdir}/custos/tests/testidp

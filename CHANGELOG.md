@@ -38,6 +38,15 @@ removed.
 
 ### Added
 
+- `model-eval.sh` (custos-tests) measures how well a model does Custos's
+  work on a test system (#150): the bundled diagnostics install with the
+  model, the health-check agent's playbooks against planted faults
+  (report filed, quotes verified, fault found, plan safe, duration), and
+  the prompt-injection cases. CI's job `models` runs it for each release
+  and on demand with the models of `test/vm/eval-models` (Qwen3 1.7B to
+  8B, on Ollama, CPU only) and tabulates them. User guide, chapter 5,
+  "Which model is good enough".
+
 - Demonstration videos of mcp-gateway and Custos, without audio and with
   English subtitles, in a business and a technical version: CI's job
   `video` records a scripted tour (`test/video/tour.js`) of the real

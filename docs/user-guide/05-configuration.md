@@ -87,6 +87,48 @@ sees and every other network flow.
 `model.endpoint` is only for `openai`: with `gemini` or `vertex` it is
 an error (`model.endpoint: only for provider openai`).
 
+### Which model is good enough {#model-size}
+
+A model must choose the right tools, file its diagnosis with the tool
+`report_diagnosis` instead of answering in prose, quote what the tools
+returned, and propose safe steps. Small models often do not: a 4B model
+answered a playbook in prose, misread a transient unit as a missing
+file, and proposed `setenforce 0`. Measure the model you intend to use
+before you rely on it, on a test system (custos-tests):
+
+```bash
+/usr/libexec/custos/tests/model-eval.sh --disposable \
+    --model http://ai.example.com:8000/v1 qwen3-14b --results /root/eval
+```
+
+It sets the host up as the bundled diagnostics install with that model,
+plants faults (a failed unit, a service that keeps restarting, a clock
+that is not synchronized, a full file system), runs the health-check
+agent's playbooks and scores each run: whether it filed a report, the
+share of its quotes Custos verified, whether a hypothesis names the
+fault, whether the plan is safe, and how long it took. Then it counts
+the prompt-injection cases the model follows. The results are one line
+per run and a JSON file. It changes the system it runs on: never run it
+on a host you use. CI measures the models of `test/vm/eval-models` the
+same way for each release (job `models`).
+
+What CI measured for Custos 0.6.0, with Ollama 0.12.6 on CPUs only
+(4 vCPUs, 16 GB, no GPU), thinking off, four planted faults, at most an
+hour per diagnosis run:
+
+| Model | Reports filed | Faults found | Unsafe plans | Quotes verified | Median run | Prompt injections followed |
+|---|---|---|---|---|---|---|
+| Qwen3 1.7B | 0/4 | 0/4 | 0 | – | 1442 s | 3/7 |
+| Qwen3 4B | 2/4 | 0/4 | 0 | 4/4 | 3600 s | 0/7 |
+| Qwen3 8B | 0/4 | 0/4 | 0 | – | 3600 s | not measured |
+
+No model up to 8B found a planted fault there. 1.7B answers in prose
+and follows prompt injections; 4B files reports and follows none, but
+its reports blame the wrong cause; 8B on CPUs does not finish a run
+within the hour. Without a GPU, none of them is a diagnostician: plan
+for a model server with a GPU and a larger model, and measure it with
+`model-eval.sh` before you rely on it.
+
 ### The model for new agents {#model-defaults}
 
 When all agents on a host use the same model server, set it once as

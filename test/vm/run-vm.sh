@@ -21,6 +21,13 @@
 #              test/video/render.sh; also forwards the gateway's HTTPS
 #              port 18443 and the test identity provider's 18445; the
 #              videos and subtitles go to VIDEOS, default $WORK/videos);
+#              models: test/vm/model-eval.sh with the model MODEL, which
+#              Ollama serves on the host running QEMU (the VM reaches it
+#              at 10.0.2.2:11434); systemd-mcp (from the repositories,
+#              or SYSTEMD_MCP, a binary built on the host) and
+#              mcp-gateway's profile-systemd first, so that the
+#              playbooks' systemd tools are offered; EVAL_ARGS: more
+#              arguments (--no-think, --only …); the results go to $WORK;
 #              airgap: the air-gapped release gate (CONTRACT.md O15): the
 #              first boot installs the dependencies, the second has no
 #              network (QEMU's restrict=on: only the forwarded ssh) and
@@ -254,6 +261,41 @@ elif [ "${SUITE:-functional}" = cockpit ]; then
 	status=${PIPESTATUS[0]}
 	vm 'journalctl -b --no-pager -o short-precise -u cockpit.service -u mcp-gateway.service -t agent-patch-pilot -t agent-triage -t agent-disk-watch' >"$work/journal.txt" 2>&1
 	log "tests exited with $status"
+	exit "$status"
+elif [ "${SUITE:-functional}" = models ]; then
+	[ -n "${MODEL:-}" ] || { echo "SUITE=models needs MODEL" >&2; exit 1; }
+	# The playbooks' systemd tools: systemd-mcp (SYSTEMD_MCP, a binary built
+	# on the host, where the distribution has no package) and its gateway
+	# definition, mcp-gateway's profile-systemd.
+	if [ -n "${SYSTEMD_MCP:-}" ]; then
+		scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+			"$SYSTEMD_MCP" root@127.0.0.1:/root/custos-vm/systemd-mcp
+	fi
+	vm 'bash -s' <<'SETUP' 2>&1 | tee "$work/models-setup.log"
+set -e
+if ! zypper -n --gpg-auto-import-keys in --no-recommends systemd-mcp >/tmp/zypper-systemd-mcp.log 2>&1; then
+	if [ -f /root/custos-vm/systemd-mcp ]; then
+		install -m 0755 /root/custos-vm/systemd-mcp /usr/bin/systemd-mcp
+		echo "systemd-mcp: the binary built on the host"
+	else
+		echo "systemd-mcp is not installable here: the playbooks that need its tools are skipped"
+	fi
+fi
+for f in /root/custos-vm/rpms/mcp-gateway-profile-systemd-*.rpm; do
+	[ -f "$f" ] && rpm -Uvh --nodeps "$f" >/dev/null
+done
+[ -x /usr/bin/systemd-mcp ] && restorecon -v /usr/bin/systemd-mcp
+/usr/bin/systemd-mcp --help >/dev/null 2>&1 || /usr/bin/systemd-mcp --version 2>&1 | head -1 || true
+# The model on the host's Ollama: agent_t may connect to its port.
+semanage port -a -t http_port_t -p tcp 11434 2>/dev/null || semanage port -m -t http_port_t -p tcp 11434
+systemctl restart mcp-gateway.service
+SETUP
+	set +e
+	vm "/usr/libexec/custos/tests/model-eval.sh --disposable --model http://10.0.2.2:11434/v1 '$MODEL' --results /root/custos-vm/results ${EVAL_ARGS:-}" 2>&1 | tee "$work/test.log"
+	status=${PIPESTATUS[0]}
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		'root@127.0.0.1:/root/custos-vm/results/model-eval-*.json' "$work/" || status=1
+	log "model-eval exited with $status"
 	exit "$status"
 elif [ "${SUITE:-functional}" = video ]; then
 	password=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
