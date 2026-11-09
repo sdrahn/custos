@@ -1497,12 +1497,12 @@ if command -v custos-setup >/dev/null; then
 		if [ -e /run/reboot-needed ]; then
 			check "exec__reboot_status: a reboot is pending, with the running kernel among the installed ones" reboot_says "A reboot is pending"
 		else
-			check "exec__reboot_status: no reboot is pending, with the running kernel among the installed ones" reboot_says "No reboot is pending"
+			check "exec__reboot_status: no reboot is pending for a kernel, with the running kernel among the installed ones" reboot_says "No reboot is pending"
 			# /run/reboot-needed: the command sees it, or says that it cannot
 			# tell (the exec server's sandbox may have a /run of its own);
 			# never that nothing waits.
 			touch /run/reboot-needed
-			check "exec__reboot_status with /run/reboot-needed: a reboot is pending, or it says it cannot see it" reboot_says "A reboot is pending" "is not visible to this command"
+			check "exec__reboot_status with /run/reboot-needed: a reboot is pending, or it says it may not see it" reboot_says "A reboot is pending" "may not be visible to this command"
 			rm -f /run/reboot-needed
 		fi
 		# Custos's server custos-net: the network commands in the host's
