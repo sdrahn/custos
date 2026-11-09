@@ -180,6 +180,13 @@
     if (query.has("diag")) posture.enablement = { state: "categories", enabled: ["config-lifecycle", "diagnostics"],
         changed_by: "alice 2026-11-05T09:00:00Z", record: "n-1" };
     if (query.has("tampered")) posture.enablement.tampered = "the state differs from its record n-1";
+    // ?seal-broken: the seal covers agent data (#158), and disk-watch's
+    // and the issuers' were changed by hand.
+    if (query.has("seal-broken")) {
+        posture.agents_sealed = true;
+        posture.agents["disk-watch"].tampered = "it does not match its seal (changed outside agent-admin): the gateway denies the agent everything until agent-admin writes its data again (agent-admin seal --agents)";
+        posture.issuers_tampered = "_http.yaml: it does not match its seal (changed outside agent-admin): the gateway trusts no issuer for agents until agent-admin issuers writes it again";
+    }
     const at = s => String((Date.now() - s * 1000) * 1000);
     const rec = (s, name, event, f) => Object.assign({ __REALTIME_TIMESTAMP: at(s), AGENT_CONTRACT: "1", AGENT_NAME: name,
         AGENT_EVENT: event, SYSLOG_IDENTIFIER: "agent-" + name, MESSAGE: event }, f);

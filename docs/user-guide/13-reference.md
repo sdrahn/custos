@@ -14,7 +14,7 @@ fields, gateway data, AG-UI events) are defined in the contract,
 
 | Program | Runs as | Does |
 |---|---|---|
-| `/usr/sbin/agent-admin` (also `/usr/libexec/custos/agent-admin`) | root; anyone for `check FILE`, `show`, `categories`, `templates`, `draft` and reading `defaults`; root or `systemd-journal` for `readiness` and the review queue | administration ([chapter 9](09-administration.md#agent-admin)) |
+| `/usr/sbin/agent-admin` (also `/usr/libexec/custos/agent-admin`) | root; anyone for `check FILE`, `show`, `categories`, `templates`, `draft`, reading `defaults` and listing `issuers`; root or `systemd-journal` for `readiness` and the review queue | administration ([chapter 9](09-administration.md#agent-admin)) |
 | `/usr/libexec/custos/agent-launcher` | `agent-<name>` (`agent_t`) | the agent: `agent-launcher serve` |
 | `/usr/libexec/custos/agent-delegate` | the delegating agent's user (`mcpsrv_agents_t`), started by mcp-gateway | the `agents` server: delegation |
 | `/usr/libexec/custos/agent-openshell-relay` | root (`agent_relay_t`) | an OpenShell agent's socket and journal |
@@ -28,9 +28,10 @@ fields, gateway data, AG-UI events) are defined in the contract,
 | `/etc/custos/agents/<name>/` | root:agent-`<name>` 0750 | the agent's configuration directory |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | the configuration ([chapter 5](05-configuration.md)) |
 | `/etc/custos/agents/<name>/openshell.env`, `openshell-policy.yaml`, `openshell-profile.yaml`, `relay.secret` | root | OpenShell agents: relay settings, sandbox policy, provider profile, the relay's secret (0600) |
-| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | the agent's mode, pause and permissions ([chapter 6](06-permissions-and-modes.md)) |
+| `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | the agent's mode, pause and permissions ([chapter 6](06-permissions-and-modes.md)), signed on a sealed host |
 | `/etc/mcp-gateway/policy/agents/_control.yaml` | root 0644 | the emergency stop |
-| `/etc/mcp-gateway/policy/agents/_http.yaml` | root 0644 | token issuers trusted for agents ([chapter 11](11-openshell.md#issuers)) |
+| `/etc/mcp-gateway/policy/agents/_http.yaml` | root 0644 | token issuers trusted for agents ([chapter 11](11-openshell.md#issuers)), written by `agent-admin issuers`, signed on a sealed host |
+| `/etc/mcp-gateway/policy/agents/_seal.yaml` | root 0644 | the seal's public key, and whether it covers the agents' data ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | credentials (`systemd-creds`) |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/systemd/system/agent-schedule@<name>_<schedule>.timer.d/schedule.conf` | root | a schedule's calendar |

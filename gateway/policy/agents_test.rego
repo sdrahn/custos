@@ -427,3 +427,90 @@ test_sealed_state_tampered_reason if {
 		not contains(r2, "agent-admin enable patch-errata")
 	}
 }
+
+# The seal of the agents' data (#158): with agents: true, each agent's
+# data and _http.yaml count only signed by the seal's key, over the
+# agent's name and its data without the signature.
+signed_data(name, d) := object.union(d, {"signature": io.jwt.encode_sign(
+	{"alg": "ES256", "typ": "JWT"},
+	{"agent": name, "data": d},
+	json.unmarshal(seal_jwk),
+)})
+
+agents_sealed(a) := object.union(a, {"_seal": {"public_key": seal_pem, "agents": true}})
+
+pp_data := agents("supervised")["patch-pilot"]
+
+data_effect(a, tool) := e if {
+	e := authz.decision.effect with input as call(pp, "zypp", tool, {})
+		with data.mcp.agents as a
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+}
+
+# Signed, the data counts as it says.
+test_agent_data_signed if {
+	a := agents_sealed({"patch-pilot": signed_data("patch-pilot", pp_data)})
+	data_effect(a, "list_updates") == "allow"
+	data_effect(a, "install_patches") == "ask"
+}
+
+# Edited by hand, unsigned, another agent's signature, or another host's
+# key: the agent is denied everything.
+test_agent_data_tampered_denied if {
+	s := signed_data("patch-pilot", pp_data)
+	every d in [
+		object.union(s, {"mode": "bounded"}),
+		object.union(s, {"permissions": [{"server": "zypp", "tool": "*"}]}),
+		pp_data,
+		object.union(pp_data, {"signature": signed_data("triage", pp_data).signature}),
+	] {
+		data_effect(agents_sealed({"patch-pilot": d}), "list_updates") == "deny"
+	}
+	other := object.union({"patch-pilot": s}, {"_seal": {"public_key": other_seal_key, "agents": true}})
+	data_effect(other, "list_updates") == "deny"
+}
+
+# The reason says why.
+test_agent_data_tampered_reason if {
+	reasons := authz.deny_reasons with input as call(pp, "zypp", "list_updates", {})
+		with data.mcp.agents as agents_sealed({"patch-pilot": pp_data})
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	some r in reasons
+	contains(r, "the agent's data does not match its seal")
+}
+
+# A seal without agents: true (a host sealed before #158), or no seal:
+# unsigned data counts as it is.
+test_agent_data_unsealed_counts if {
+	data_effect(sealed({"patch-pilot": pp_data}), "list_updates") == "allow"
+	data_effect({"patch-pilot": pp_data}, "install_patches") == "ask"
+}
+
+# The emergency stop is not sealed: written by hand, it stops a sealed
+# host's agents.
+test_emergency_stop_not_sealed if {
+	a := agents_sealed({"patch-pilot": signed_data("patch-pilot", pp_data), "_control": {"stopped": true}})
+	data_effect(a, "list_updates") == "deny"
+}
+
+# _http.yaml: signed, its issuers are trusted; edited or unsigned, none
+# is, with the reason.
+test_http_issuers_sealed if {
+	iss := "https://agents.example"
+	h := signed_data("_http", {"issuers": [iss]})
+	ok := agents_sealed({"patch-pilot": signed_data("patch-pilot", pp_data), "_http": h})
+	authz.decision.effect == "allow" with input as call(pp_http(iss), "zypp", "list_updates", {})
+		with data.mcp.agents as ok
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	every bad in [object.union(h, {"issuers": [iss, "https://evil.example"]}), {"issuers": [iss]}] {
+		a := agents_sealed({"patch-pilot": signed_data("patch-pilot", pp_data), "_http": bad})
+		authz.decision.effect == "deny" with input as call(pp_http(iss), "zypp", "list_updates", {})
+			with data.mcp.agents as a
+			with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	}
+	reasons := authz.deny_reasons with input as call(pp_http(iss), "zypp", "list_updates", {})
+		with data.mcp.agents as agents_sealed({"patch-pilot": signed_data("patch-pilot", pp_data), "_http": {"issuers": [iss]}})
+		with data.mcp.rbac.bindings as {"users": {}, "groups": {}}
+	some r in reasons
+	contains(r, "do not match their seal")
+}

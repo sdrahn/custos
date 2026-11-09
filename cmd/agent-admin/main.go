@@ -45,6 +45,12 @@ const usage = `usage: agent-admin COMMAND …
   disable CATEGORY… | --all              disable task categories again; --all: back to diagnostics-only.
                                          Refused while an agent has permissions in them or one promoted
   diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
+  seal --agents                          make the host's seal cover the agents' data and their token issuers
+                                         (CONTRACT.md §6b): signs them; a change outside agent-admin then
+                                         denies that agent everything
+  issuers [--add ISSUER…] [--remove ISSUER…]
+                                         the token issuers trusted for agents over HTTPS (_http.yaml); signed
+                                         on a host whose seal covers them
   mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
   owners NAME [RULE…]                    who may approve its calls besides the servers' approvers
                                          (user:NAME, group:NAME, role:NAME, remote-user:SUB, remote-group:NAME); none clears
@@ -196,6 +202,26 @@ func run(a *admin.Admin, args []string) error {
 		return a.Disable(by(), cats, has("--all"))
 	case "diagnostics-only":
 		return a.InitDiagnosticsOnly(by())
+	case "seal":
+		if len(args) != 1 || args[0] != "--agents" {
+			return fmt.Errorf("seal: --agents\n%s", usage)
+		}
+		return a.SealAgents()
+	case "issuers":
+		var add, remove []string
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--add" && i+1 < len(args):
+				add = append(add, args[i+1])
+				i++
+			case args[i] == "--remove" && i+1 < len(args):
+				remove = append(remove, args[i+1])
+				i++
+			default:
+				return fmt.Errorf("issuers: %q: want --add ISSUER or --remove ISSUER\n%s", args[i], usage)
+			}
+		}
+		return a.Issuers(add, remove)
 	case "mode":
 		if err := need(2); err != nil {
 			return err

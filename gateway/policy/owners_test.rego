@@ -138,3 +138,20 @@ test_person_in_agents_group_is_owner if {
 		with data.mcp.rbac as rbac
 		with data.mcp.agents as groupy
 }
+
+# The seal of the agents' data (#158): on a host whose seal covers it,
+# owners count only from signed data; an owner added by hand is none.
+test_owners_need_signed_data_when_sealed if {
+	seal_jwk := `{"crv":"P-256","d":"fzwgA5ipXkInjL5YbSdY5CrySDvoLG2w1Foo5kjP7kE","kty":"EC","x":"YzczqQqXxemy45f5ORLObSB7m9ciW0oTjlfDvr84Zks","y":"0hLVnpCi_K5jBUdkRMhQsb-3Z8Fw874VJaxmgzPYSYs"}`
+	seal_pem := "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzczqQqXxemy45f5ORLObSB7m9ci\nW0oTjlfDvr84ZkvSEtWekKL8rmMFR2REyFCxv7dnwXDzvhUlrGaDM9hJiw==\n-----END PUBLIC KEY-----\n"
+	d := agents["patch-pilot"]
+	sig := io.jwt.encode_sign({"alg": "ES256", "typ": "JWT"}, {"agent": "patch-pilot", "data": d}, json.unmarshal(seal_jwk))
+	seal := {"_seal": {"public_key": seal_pem, "agents": true}}
+	approvals.allow with input as {"approver": alice, "request": req}
+		with data.mcp.rbac as rbac
+		with data.mcp.agents as object.union(seal, {"patch-pilot": object.union(d, {"signature": sig})})
+	edited := object.union(d, {"signature": sig, "owners": ["user:carol"]})
+	not approvals.allow with input as {"approver": carol, "request": req}
+		with data.mcp.rbac as rbac
+		with data.mcp.agents as object.union(seal, {"patch-pilot": edited})
+}
