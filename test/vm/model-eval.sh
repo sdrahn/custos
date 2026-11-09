@@ -145,8 +145,9 @@ if [ -n "$no_think" ]; then
 	awk '{ print } /^instruction: \|/ { print "  /no_think" }' "$work/hc.yaml" >"$work/hc2.yaml" && mv "$work/hc2.yaml" "$work/hc.yaml"
 fi
 if [ -n "$max_output" ]; then
-	grep -q '^model:$' "$work/hc.yaml" || die "health-check's agent.yaml has no model block to add max_output_tokens to"
-	awk -v n="$max_output" '{ print } /^model:$/ { print "  max_output_tokens: " n }' "$work/hc.yaml" >"$work/hc2.yaml" && mv "$work/hc2.yaml" "$work/hc.yaml"
+	# "model:", perhaps with a comment (the model defaults' block).
+	grep -Eq '^model:[[:space:]]*(#.*)?$' "$work/hc.yaml" || die "health-check's agent.yaml has no model block to add max_output_tokens to"
+	awk -v n="$max_output" '{ print } /^model:[[:space:]]*(#.*)?$/ { print "  max_output_tokens: " n }' "$work/hc.yaml" >"$work/hc2.yaml" && mv "$work/hc2.yaml" "$work/hc.yaml"
 fi
 agent-admin edit health-check --from "$work/hc.yaml" >/dev/null || die "agent-admin edit health-check failed"
 eventually 60 test -S /run/agents/health-check/api.sock || die "health-check has no socket"
