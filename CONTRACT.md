@@ -1328,7 +1328,9 @@ step a `tool` (`<server>__<tool>`, as the gateway names it) and a
 `why`, and optionally `args`, the call's arguments (an object; without
 it, none). A string in `args` may contain `{unit}`, the systemd unit the
 activity is about: such a step needs a unit and runs only when the
-activity names one, `{unit}` replaced by it. A playbook name has the
+activity names one, `{unit}` replaced by it. `{unit_re}` is the unit
+escaped for a regular expression (`nginx\.service`), for an argument
+that is a pattern; it needs a unit too. A playbook name has the
 form of an agent name.
 
 Each step is a tool the agent calls through the gateway (§6), which

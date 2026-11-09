@@ -394,7 +394,9 @@ last 100 lines of the whole journal. Ask for what the playbook needs,
 and little more: the model reads every output, and a small model reads
 slowly and loses its way in a long one. `{unit}` in an argument is the
 unit the activity is about (`"unit"` in the request, or the unit that
-failed for an event); a step with it runs only when there is one.
+failed for an event); a step with it runs only when there is one. In an
+argument that is a regular expression, such as `list_log`'s `pattern`,
+write `{unit_re}`: the unit with its dots escaped.
 
 `agent-admin playbooks` lists a file that does not parse with its error.
 
