@@ -34,6 +34,12 @@ removed.
 
 ### Added
 
+- The report nudge (#155): a model that answers a playbook run in prose,
+  without a report and without a tool call, is asked once more, in the
+  same activity, to file it with `report_diagnosis`. The activity says
+  so (`report_nudged`), and so does the answer's `model.call` record
+  (`AGENT_REPORT_NUDGE`). `model-eval.sh` shows which runs were asked
+  and counts the reports filed after it.
 - `{unit_re}` in a playbook step's arguments: the unit escaped for a
   regular expression (security review 0.6, N5). `service-health`'s
   journal pattern uses it, so that `nginx.service` no longer also matches

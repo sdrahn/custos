@@ -1186,6 +1186,11 @@ check "a playbook step with the request's unit: the host calls read_note as step
 		jq -e '.calls | map(select(.tool == \"custos-test__read_note\" and .playbook_step == 2)) | length == 1' >/dev/null"
 check "journal: the step's call has the unit in its arguments (ARGS_SHA256)" eventually 10 journal_has pb tool.call \
 	".AGENT_TOOL == \"custos-test__read_note\" and .AGENT_PLAYBOOK_STEP == \"2\" and .AGENT_ARGS_SHA256 == \"$unit_sha\""
+# The report nudge (#155): that run's model answered in prose, without a
+# report, so the host asked it once for one, in the same activity.
+check "a playbook run that ends in prose is asked once for its report (report_nudged)" bash -c \
+	"$(declare -f api); api pb /v1/activities | jq -e '[.activities[] | select(.playbook == \"unit-check\")][0] | .report_nudged == true and (.report | not)' >/dev/null"
+check "journal: its model.call says the host asked for the report (REPORT_NUDGE)" eventually 10 journal_has pb model.call '.AGENT_REPORT_NUDGE == "1"'
 check "a unit that is not a unit name is refused (400)" code_is 400 api pb /v1/activities -X POST -d '{"playbook":"unit-check","unit":"../web"}'
 check "agent-admin delete pb" agent-admin delete pb
 rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml /etc/custos/playbooks/unit-check.yaml
