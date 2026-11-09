@@ -32,6 +32,10 @@ removed.
 
 ### Added
 
+- `{unit_re}` in a playbook step's arguments: the unit escaped for a
+  regular expression (security review 0.6, N5). `service-health`'s
+  journal pattern uses it, so that `nginx.service` no longer also matches
+  `nginxXservice`.
 - An activity says how much its model thought (`thought_bytes`, the sum
   of its `model.call` records' `AGENT_THOUGHT_BYTES`), and Cockpit's
   activity view says so, and whether the host had to ask the model for

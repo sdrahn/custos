@@ -60,11 +60,18 @@ type Step struct {
 // activity is about.
 const Unit = "{unit}"
 
-// NeedsUnit reports whether the step's arguments name {unit}.
-func (s Step) NeedsUnit() bool { return mentions(s.Args, Unit) }
+// UnitRE is the unit as a regular expression that matches it alone (its
+// dots escaped), for an argument that is a pattern (security review
+// 0.6, N5).
+const UnitRE = "{unit_re}"
 
-// ArgsFor are the step's arguments with {unit} replaced by unit; a
-// fresh copy, never nil.
+// NeedsUnit reports whether the step's arguments name {unit} or
+// {unit_re}.
+func (s Step) NeedsUnit() bool { return mentions(s.Args, Unit) || mentions(s.Args, UnitRE) }
+
+// ArgsFor are the step's arguments with {unit} replaced by unit, and
+// {unit_re} by it escaped for a regular expression; a fresh copy, never
+// nil.
 func (s Step) ArgsFor(unit string) map[string]any {
 	out, _ := replace(s.Args, unit).(map[string]any)
 	if out == nil {
@@ -96,7 +103,7 @@ func mentions(v any, s string) bool {
 func replace(v any, unit string) any {
 	switch v := v.(type) {
 	case string:
-		return strings.ReplaceAll(v, Unit, unit)
+		return strings.ReplaceAll(strings.ReplaceAll(v, UnitRE, regexp.QuoteMeta(unit)), Unit, unit)
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for k, x := range v {
