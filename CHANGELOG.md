@@ -7,6 +7,15 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- `patch-pilot-transactional` refreshes the repositories without an
+  approval: `tukit__refresh_repositories` only fetches their metadata,
+  so its permission is read-only, like `list_updates`, instead of
+  `patch-errata`. Looking for updates, also for an agent that delegates
+  it, no longer waits for an approval. An agent created before keeps
+  its permissions; change it with `agent-admin permissions NAME`.
+
 ## v0.6.0 — 2026-11-09
 
 Diagnosis with small models, and a seal that covers each agent. The

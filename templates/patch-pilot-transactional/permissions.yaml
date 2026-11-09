@@ -1,5 +1,7 @@
 # What patch-pilot-transactional may do at the gateway (CONTRACT.md §6,
-# §6a), with mcp-server-tukit. An update goes into a new snapshot and
+# §6a), with mcp-server-tukit. Refreshing the repositories only fetches
+# their metadata, so it is read-only like listing the updates: looking
+# for updates needs no approval. An update goes into a new snapshot and
 # changes nothing running, so it is patch-errata and can be promoted for
 # a window (envelopes/patch-errata.yaml). Reboot, apply and rollback
 # change what runs: they have no category, so they need an approval
@@ -8,7 +10,7 @@
 - {server: tukit, tool: get_status, read_only: true}
 - {server: tukit, tool: list_snapshots, read_only: true}
 - {server: tukit, tool: list_updates, read_only: true}
-- {server: tukit, tool: refresh_repositories, category: patch-errata}
+- {server: tukit, tool: refresh_repositories, read_only: true}
 - {server: tukit, tool: update_system, category: patch-errata}
 - {server: tukit, tool: cleanup_snapshots, category: patch-errata}
 - {server: tukit, tool: reboot}

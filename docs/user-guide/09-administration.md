@@ -92,7 +92,7 @@ envelope for promoting them. Templates are in
 | `exposure-watch` | any | advisory | reports the firewall's zones, the services they allow and the running services, weekly | none |
 | `service-doctor` | any | supervised | finds failed or flapping units, works out why from their logs, restarts or reloads them; hourly report | start, restart, reload: `config-lifecycle`; stop, disable: an approval every time |
 | `patch-pilot` | classic | supervised | lists the updates, takes a snapper snapshot, installs them with zypp one package at a time; a report on working days | install and snapshot: `patch-errata`; restart a service: `config-lifecycle` |
-| `patch-pilot-transactional` | transactional | supervised | updates an immutable system into a new snapshot with mcp-server-tukit; a report on working days | refresh, update, clean up: `patch-errata`; reboot, apply, rollback: an approval every time |
+| `patch-pilot-transactional` | transactional | supervised | updates an immutable system into a new snapshot with mcp-server-tukit; a report on working days | update, clean up: `patch-errata`; reboot, apply, rollback: an approval every time |
 | `disk-watch` | classic | supervised | reports file systems more than 85 % full and old snapper snapshots that could go; daily | deleting snapshots: an approval every time |
 | `disk-watch-transactional` | transactional | supervised | the same on an immutable system; cleans up with transactional-update's rules | clean up: `patch-errata` |
 
