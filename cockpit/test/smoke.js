@@ -674,7 +674,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     if (shots) await page.screenshot({ path: path.join(shots, "model-defaults.png"), fullPage: true });
     // A model.timeout_seconds and max_output_tokens set with agent-admin
     // defaults survive a save here.
-    await page.evaluate(() => { window.__defaults.model.timeout_seconds = 1800; window.__defaults.model.max_output_tokens = 2048 });
+    await page.evaluate(() => { window.__defaults.model.timeout_seconds = 1800; window.__defaults.model.max_output_tokens = 2048; window.__defaults.model.reasoning_effort = "none" });
     await page.click("#model-defaults button[name=cancel]");
     await page.click("#defaults-open");
     await page.waitForFunction(() => document.querySelector("#defaults-note").textContent === "");
@@ -682,6 +682,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForFunction(() => document.querySelector("#defaults-note").textContent.includes("Saved"));
     check(await page.evaluate(() => window.__defaults.model.timeout_seconds) === 1800, "a timeout set with agent-admin is kept when the defaults are saved");
     check(await page.evaluate(() => window.__defaults.model.max_output_tokens) === 2048, "an output limit set with agent-admin is kept when the defaults are saved");
+    check(await page.evaluate(() => window.__defaults.model.reasoning_effort) === "none", "a reasoning effort set with agent-admin is kept when the defaults are saved");
     await page.click("#create-open");
     await page.selectOption("#create-from", "service-doctor");
     await page.fill("#create-name", "web-doc2");

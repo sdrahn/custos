@@ -220,3 +220,27 @@ func TestWriteOn(t *testing.T) {
 		}
 	}
 }
+
+// THINK: the thinking in Ollama's reasoning field, unless
+// reasoning_effort is none; the launcher's adapter keeps it as a thought.
+func TestThink(t *testing.T) {
+	srv := httptest.NewServer(&Model{Prefix: "custos-test"})
+	defer srv.Close()
+	for _, tc := range []struct {
+		effort, text string
+		thought      bool
+	}{{"", "thought about it", true}, {"none", "thinking off", false}} {
+		llm := (&openai.Model{Endpoint: srv.URL + "/v1", Name: "fake", ReasoningEffort: tc.effort}).LLM()
+		lr := &model.LLMRequest{Contents: []*genai.Content{genai.NewContentFromText("THINK", genai.RoleUser)}}
+		for resp, err := range llm.GenerateContent(t.Context(), lr, false) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts := resp.Content.Parts
+			last := parts[len(parts)-1]
+			if last.Text != tc.text || last.Thought || (len(parts) == 2) != tc.thought || (tc.thought && !parts[0].Thought) {
+				t.Errorf("effort %q: %+v", tc.effort, parts)
+			}
+		}
+	}
+}

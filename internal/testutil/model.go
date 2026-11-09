@@ -66,6 +66,13 @@ const (
 	cutOffRole = "custos-test-cut-off"
 )
 
+// Thinking answers with the model's thinking (a thought) and then text.
+func Thinking(thought, text string) Step {
+	return func(*model.LLMRequest) *genai.Content {
+		return &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: thought, Thought: true}, {Text: text}}}
+	}
+}
+
 // CutOff answers with text that reached the output limit
 // (model.max_output_tokens) and was cut off.
 func CutOff(s string) Step {

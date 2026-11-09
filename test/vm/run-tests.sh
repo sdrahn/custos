@@ -458,6 +458,13 @@ agent-admin create tmo --from "$f" >/dev/null
 check "model.max_output_tokens reaches the model server, which cuts the answer off there" eventually 30 runs_with tmo "WRITE ON" 'I keep writing'
 check "journal: model.call records the cut-off (CUT_OFF)" eventually 10 journal_has tmo model.call '.AGENT_CUT_OFF == "max_output_tokens"'
 check "journal: an answer not cut off has no CUT_OFF" journal_has t1 model.call '.AGENT_CUT_OFF == null'
+# The model's thinking (model.reasoning_effort): Ollama returns it apart
+# from the answer, and reasoning_effort: none turns it off.
+check "a model's thinking is not the answer" eventually 30 runs_with tmo THINK 'thought about it'
+check "journal: model.call counts the thinking (THOUGHT_BYTES)" eventually 10 journal_has tmo model.call '(.AGENT_THOUGHT_BYTES // "0" | tonumber) > 0'
+sed -i 's|max_output_tokens: 64}|max_output_tokens: 64, reasoning_effort: none}|' "$f"
+check "agent-admin edit tmo: reasoning_effort none" agent-admin edit tmo --from "$f"
+check "model.reasoning_effort none reaches the model server, which does not think" eventually 30 runs_with tmo THINK 'thinking off'
 agent-admin delete tmo >/dev/null 2>&1
 check "journal: arguments are a digest only" journal_has t1 tool.call '.AGENT_ARGS_SHA256 != null'
 # Ended activities outlive the launcher (its idle exit): the next one,

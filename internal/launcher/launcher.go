@@ -230,7 +230,7 @@ func newModel(ctx context.Context, cfg *config.Config, creds string) (model.LLM,
 			Project: os.Getenv("GOOGLE_CLOUD_PROJECT"), Location: os.Getenv("GOOGLE_CLOUD_LOCATION"), HTTPOptions: httpOpts})
 	case "openai":
 		return (&openai.Model{Endpoint: cfg.Model.Endpoint, Name: cfg.Model.Name, APIKey: key, Temperature: cfg.Model.Temperature,
-			Timeout: cfg.Model.Timeout()}).LLM(), nil
+			Timeout: cfg.Model.Timeout(), ReasoningEffort: cfg.Model.ReasoningEffort}).LLM(), nil
 	}
 	return nil, fmt.Errorf("model.provider %q", cfg.Model.Provider)
 }

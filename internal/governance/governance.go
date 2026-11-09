@@ -664,6 +664,19 @@ func (g *Governor) afterModel(cctx agent.CallbackContext, resp *model.LLMRespons
 	if resp != nil && resp.FinishReason == genai.FinishReasonMaxTokens {
 		f["CUT_OFF"] = "max_output_tokens"
 	}
+	// How much of the answer was the model's thinking (model.
+	// reasoning_effort): a model that only thought answered nothing.
+	if resp != nil && resp.Content != nil {
+		n := 0
+		for _, p := range resp.Content.Parts {
+			if p.Thought {
+				n += len(p.Text)
+			}
+		}
+		if n > 0 {
+			f["THOUGHT_BYTES"] = strconv.Itoa(n)
+		}
+	}
 	if resp != nil && resp.Content != nil {
 		var text strings.Builder
 		for _, p := range resp.Content.Parts {
