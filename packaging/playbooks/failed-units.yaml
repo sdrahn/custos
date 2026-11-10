@@ -15,3 +15,9 @@ failed-units:
     lines of each; a dependency that failed first; a missing file, a
     permission or SELinux denial, a port in use or a full disk as causes.
     The unit file is at its FragmentPath (systemd__get_file reads it).
+    A unit named mcp-<server>-<hash>.service is one of mcp-gateway's
+    server instances, started for one user or agent: it is transient
+    (no unit file, it cannot be restarted), and its failure is the
+    gateway server's, for example a server that user cannot use (no
+    Podman socket of its own), not a fault of the host's services. Say
+    so, name the server and the user, and propose no restart.
