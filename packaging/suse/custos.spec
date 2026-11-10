@@ -11,7 +11,7 @@
 %define modulename custos
 
 Name:           custos
-Version:        0.6.0
+Version:        0.6.1
 Release:        0
 Summary:        Governed agents on the host, supervised from Cockpit
 # MIT for custos; the others for the vendored Go modules linked in.
