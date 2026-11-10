@@ -7,6 +7,18 @@ removed.
 
 ## Unreleased
 
+### Fixed
+
+- The OpenShell relay's check that it talks to root's port forward read
+  the owner from the accepted connection's entry in the kernel's socket
+  table. Older kernels, SLE 16's 6.12 among them, list that entry with
+  uid 0 until the listener accepts the connection. A local user's
+  listener on the forward's port that waits before accepting could so
+  pass as root's and get the agent's secret; and the check failed for a
+  listener that is not root's, which broke 0.6.1's build on aarch64 for
+  SLE 16. The owner is now the listening socket's (security review 0.6,
+  P10).
+
 ## v0.6.1 — 2026-11-10
 
 Agents against their templates, and two fixes from running 0.6.0.

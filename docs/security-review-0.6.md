@@ -207,6 +207,7 @@ explicit option; fix all):
 | P7 | info | fixed in #172 |
 | P8 | info | fixed in #172 |
 | P9 | medium (a local user) | fixed in #176 |
+| P10 | medium (a local user) | fixed in 0.6.2 |
 
 ### P1 — low — custos-setup offered a server that holds a capability, and offered it again after it was removed
 
@@ -346,6 +347,38 @@ which is what OBS showed.
 or SYN_RECV until the handshake ends), never TIME_WAIT or CLOSE.
 `TestPeerUIDSkipsTimeWait` puts a TIME_WAIT entry with uid 0 before the
 connected one; it fails without the fix.
+
+### P10 — medium (a local user) — the relay's owner check read a connection not yet accepted
+
+Found by OBS again: 0.6.1's `%check` failed on aarch64 for SLE 16
+(`TestRelayToAgent`: "held by uid 0, not by OpenShell's forward (uid
+399)"). P9's fix was right but not enough.
+
+*Where:* `internal/relay/peer.go`, `peerUID`.
+
+The kernel lists a socket's owner from its file (`sock_i_uid`; newer
+kernels take the owner kept in the socket). The other end's
+entry of a connection the listener has not accepted yet has no file, so
+those kernels list it with uid 0, in a connected state. SLE 16 runs such
+a kernel; Tumbleweed's newer one does not, which is why only SLE 16
+failed, and only where the test's listener accepted later than the check
+ran. The scenario:
+
+1. A local user binds the forward's port while no forward runs.
+2. The user's listener does not call `accept()` until the relay has
+   checked the connection.
+3. The relay reads the connection's entry: uid 0, root's.
+4. The relay sends the secret to that user.
+
+*Fix (0.6.2):* the owner is the listening socket's. That entry is in
+state LISTEN, on the connection's address and port or on the wildcard
+address and that port, and it always has its file. The kernel refuses a
+second listener on the same port unless both use SO_REUSEPORT, which it
+allows only to the same user. The connection's own entry must still be
+there, in a connected state. `TestPeerUIDIsTheListeners` gives the
+connection's entry uid 0 and the listener another; `TestPeerUIDBeforeAccept`
+checks a listener that never accepts against the kernel's real tables.
+Both fail without the fix on such kernels.
 
 ### Checked and sound
 
