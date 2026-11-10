@@ -15,6 +15,14 @@ removed.
   `patch-errata`. Looking for updates, also for an agent that delegates
   it, no longer waits for an approval. An agent created before keeps
   its permissions; change it with `agent-admin permissions NAME`.
+- The `failed-units` playbook and the `health-check` and `triage`
+  templates tell the model that a unit named
+  `mcp-<server>-<hash>.service` is one of mcp-gateway's transient server
+  instances, started for one user or agent: its failure is the gateway
+  server's (for example podman's for an agent without a Podman socket),
+  it has no unit file and is never restarted. Models had reported such
+  a failure as the host's and proposed restarting it. An agent created
+  before keeps its instruction; the playbook applies to every agent.
 
 ## v0.6.0 — 2026-11-09
 

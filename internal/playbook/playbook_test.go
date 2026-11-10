@@ -337,3 +337,25 @@ func TestTools(t *testing.T) {
 		t.Errorf("a tool without a server: %v", err)
 	}
 }
+
+// failed-units tells the model that mcp-gateway's server instances
+// (mcp-<server>-<hash>.service) are the gateway's, transient and not to
+// be restarted: a model that took a podman instance without its user's
+// socket for a broken host service proposed restarting it and reading
+// its missing unit file.
+func TestFailedUnitsKnowsGatewayInstances(t *testing.T) {
+	b, err := os.ReadFile("../../packaging/playbooks/failed-units.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	look := strings.Join(strings.Fields(doc["failed-units"].LookFor), " ")
+	for _, want := range []string{"mcp-<server>-<hash>.service", "mcp-gateway's server instances", "transient", "propose no restart"} {
+		if !strings.Contains(look, want) {
+			t.Errorf("look_for lacks %q: %s", want, look)
+		}
+	}
+}

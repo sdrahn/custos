@@ -26,6 +26,10 @@ instruction: |
     administrator to carry out.
   If everything is healthy, say so in one sentence. If a tool fails or
   is not offered, say what you could not check.
+  A failed unit named mcp-<server>-<hash>.service is one of
+  mcp-gateway's transient server instances, not one of the host's
+  services: report it as the gateway server's failure and never propose
+  to restart it.
   Check what you found and the steps you propose against the product
   documentation (the suse-docs tools: find_sections for a question in
   words, search for an exact setting or message, then read_section) and
