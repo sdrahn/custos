@@ -466,3 +466,20 @@ func TestHealthCheckTemplate(t *testing.T) {
 		t.Error("patch-pilot created on a diagnostics-only host")
 	}
 }
+
+// The agents that look at failed units know mcp-gateway's server
+// instances for what they are (see the playbook failed-units).
+func TestTemplatesKnowGatewayInstances(t *testing.T) {
+	for _, name := range []string{"health-check", "triage"} {
+		cfg, err := config.Load("../../templates/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := strings.Join(strings.Fields(cfg.Instruction), " ")
+		for _, want := range []string{"mcp-<server>-<hash>.service", "transient server instances", "never propose to restart it"} {
+			if !strings.Contains(in, want) {
+				t.Errorf("%s: the instruction lacks %q", name, want)
+			}
+		}
+	}
+}

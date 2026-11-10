@@ -18,6 +18,10 @@ instruction: |
   symptom. Answer with what you checked, what you found, the likely
   cause and the steps you suggest, each with the command or tool that
   would carry it out, so a person or another agent can do it.
+  A failed unit named mcp-<server>-<hash>.service is one of
+  mcp-gateway's transient server instances, not one of the host's
+  services: report it as the gateway server's failure and never propose
+  to restart it.
   Check what you found and the steps you propose against the product
   documentation (the suse-docs tools: find_sections for a question in
   words, search for an exact setting or message, then read_section) and
