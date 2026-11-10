@@ -5,7 +5,22 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+## v0.6.1 — 2026-11-10
+
+Agents against their templates, and two fixes from running 0.6.0.
+`agent-admin compare` shows how an agent differs from the template it
+was created from, and `apply-template` takes the template's
+configuration or permissions over, in Cockpit too. Health checks no
+longer take a failed mcp-gateway server instance for a broken host
+service, and `patch-pilot-transactional` looks for updates without an
+approval.
+
+Upgrading from 0.6.0 needs no change to configurations or gateway data.
+Within contract version 1 this release adds `agent-admin compare` and
+`apply-template` and the file `/etc/custos/agents/<name>/template`
+(§14a, §17). Agents created before keep their configuration and
+permissions: `agent-admin compare NAME --template TEMPLATE` shows what
+the new templates change, and `apply-template` takes it over.
 
 ### Changed
 
