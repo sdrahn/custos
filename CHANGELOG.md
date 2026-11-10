@@ -24,6 +24,19 @@ removed.
   a failure as the host's and proposed restarting it. An agent created
   before keeps its instruction; the playbook applies to every agent.
 
+### Added
+
+- `agent-admin compare` and `apply-template` (CONTRACT.md §14a, §17): an
+  agent against its template, and the template's configuration or
+  permissions taken over, in Cockpit too (the agent's **Template**
+  section). `compare` shows a line diff of the configurations and the
+  permissions only the agent or only the template has. Applying keeps the
+  agent's name, model and credentials, its schedules, events, sessions,
+  sandbox and gateway connection, and its mode, promoted categories and
+  owners. `create --template` now records the template in
+  `/etc/custos/agents/<name>/template`; for an agent created before, name
+  the template with `--template`.
+
 ## v0.6.0 — 2026-11-09
 
 Diagnosis with small models, and a seal that covers each agent. The

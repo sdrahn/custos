@@ -149,6 +149,30 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const perms = (await calls()).find(c => c[1] === "agent-admin permissions patch-pilot");
     check(perms && perms[4] === "require", "permissions are saved with agent-admin through the root bridge");
 
+    // Template (§14a): patch-pilot has no template recorded; compared
+    // with the one named, the differences show; taking the permissions
+    // over records the template and leaves the configuration's diff.
+    await page.click("#agent-template button:has-text('Compare with the template')");
+    await page.waitForSelector("#agent-template .error-text");
+    check((await page.textContent("#agent-template")).includes("no template recorded"), "an agent without a recorded template says so");
+    await page.selectOption("#agent-template select", "service-doctor");
+    await page.click("#agent-template button:has-text('Compare with the template')");
+    await page.waitForSelector("#template-config-diff");
+    check((await page.textContent("#template-config-diff")).includes("Only patch on Saturdays") &&
+          (await page.textContent("#template-permissions-diff")).includes("install_patches") &&
+          await page.$eval("#template-config-diff .diff-del", e => e.textContent.startsWith("-")),
+          "the configuration's and the permissions' differences, − the agent's, + the template's");
+    check((await spawned("agent-admin compare patch-pilot --template service-doctor")).every(c => c[4] === "require"),
+          "compared through the root bridge");
+    await page.waitForTimeout(6000);
+    check(await page.isVisible("#template-config-diff"), "the comparison stays across a refresh");
+    await page.click("#agent-template button:has-text(\"Use the template's permissions\")");
+    await page.waitForFunction(() => window.__calls.some(c => c[1] === "agent-admin apply-template patch-pilot --template service-doctor --permissions"));
+    await page.click("#agent-template button:has-text('Compare')");
+    await page.waitForSelector("#template-permissions-same");
+    check(await page.isVisible("#template-config-diff") && (await page.textContent("#agent-template select")).includes("recorded one (service-doctor)"),
+          "after taking over the permissions only they are the same, and the template is recorded");
+
     // Credentials (§17): names only, through the root bridge; a missing
     // one shows in the list; a secret is stored for this agent and, by
     // choice, for others whose model uses the same name.
