@@ -467,6 +467,11 @@ func (a *Admin) Edit(name, from string) (err error) {
 	if err != nil {
 		return err
 	}
+	return a.edit(name, b)
+}
+
+// edit replaces the agent's configuration with b and applies it.
+func (a *Admin) edit(name string, b []byte) (err error) {
 	cfg, err := config.Parse(b)
 	if err != nil {
 		return err

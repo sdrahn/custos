@@ -432,6 +432,21 @@
                     return Promise.resolve(JSON.stringify(out));
                 }
                 if (cmd === "templates") return Promise.resolve(JSON.stringify(TEMPLATES));
+                // agent-admin compare (§14a): patch-pilot was made from
+                // service-doctor before templates were recorded; its
+                // instruction and one permission differ from it.
+                if (cmd === "compare") {
+                    const t = args.includes("--template") ? args[args.indexOf("--template") + 1] : (window.__recorded || {})[name] || "";
+                    if (!t) return Promise.resolve(JSON.stringify([{ agent: name, template: "", recorded: false,
+                        error: "no template recorded for agent " + name + ": name one with --template" }]));
+                    const applied = (window.__applied || {})[name] || [];
+                    return Promise.resolve(JSON.stringify([{ agent: name, template: t, recorded: (window.__recorded || {})[name] === t,
+                        configuration: applied.includes("configuration") ? { same: true }
+                            : { same: false, diff: "  instruction: |\n-   Only patch on Saturdays.\n+   Find failed or flapping services.\n  limits:\n" },
+                        permissions: applied.includes("permissions") ? { same: true, added: [], removed: [] }
+                            : { same: false, added: [{ server: "systemd", tool: "change_unit_state", category: "config-lifecycle" }],
+                                removed: [{ server: "zypp", tool: "install_patches", category: "patch-errata" }] } }]));
+                }
                 if (cmd === "categories") return Promise.resolve(JSON.stringify({
                     "compliance-audit": { title: "Compliance and audit" }, "config-lifecycle": { title: "Configuration and lifecycle" },
                     diagnostics: { title: "Health checks and diagnostics" }, "patch-errata": { title: "Patch and errata management" },
@@ -541,6 +556,13 @@
                                  delete credentials[name + "." + arg];
                              }
                              if (cmd === "delete") delete posture.agents[name];
+                             if (cmd === "apply-template") {
+                                 const t = args[args.indexOf("--template") + 1];
+                                 (window.__recorded = window.__recorded || {})[name] = t;
+                                 const parts = args.includes("--configuration") ? ["configuration"] : args.includes("--permissions") ? ["permissions"] : ["configuration", "permissions"];
+                                 const ap = (window.__applied = window.__applied || {});
+                                 ap[name] = [...(ap[name] || []), ...parts];
+                             }
                              if (cmd === "edit") {
                                  const why = invalid(input) || (!new RegExp("^name: " + name + "$", "m").test(input)
                                      ? "agent-admin: the file is for another agent, not \"" + name + "\"" : null);

@@ -968,6 +968,20 @@ check "agent-admin create tt2 --template service-doctor --from - (stdin)" bash -
 check "tt2 has the edited configuration" grep -q edited-model /etc/custos/agents/tt2/agent.yaml
 check "tt2 is supervised and its categories are not promoted" bash -c \
 	"agent-admin show tt2 | jq -e '.agents.tt2.mode == \"supervised\" and ((.agents.tt2.categories // {}) | length) == 0 and ([.agents.tt2.permissions[] | select(.category == \"config-lifecycle\")] | length) == 1' >/dev/null"
+# compare and apply-template (§14a): tt1 records its template and is
+# the same as it; edited and with a permission less, it differs; applying
+# the template's takes both back and keeps its model and mode.
+check "tt1 records its template" grep -qx triage /etc/custos/agents/tt1/template
+check "agent-admin compare tt1: the same as triage" bash -c \
+	"agent-admin compare tt1 | jq -e '.[0] | .recorded and .configuration.same and .permissions.same' >/dev/null"
+check "an edited tt1 with a permission less differs" bash -c \
+	"sed 's/^  host. You can only look/  host, nginx only. You can only look/' /etc/custos/agents/tt1/agent.yaml | agent-admin edit tt1 --from - &&
+	 agent-admin show tt1 | jq '.agents.tt1.permissions[1:]' | agent-admin permissions tt1 &&
+	 agent-admin compare tt1 | jq -e '.[0] | (.configuration.diff | test(\"nginx only\")) and (.permissions.added | length) == 1' >/dev/null"
+check "agent-admin apply-template tt1" agent-admin apply-template tt1
+check "tt1 is the template's again, with its model and mode" bash -c \
+	"agent-admin compare tt1 | jq -e '.[0] | .configuration.same and .permissions.same' >/dev/null &&
+	 grep -q 'name: fake-default' /etc/custos/agents/tt1/agent.yaml && agent-admin show tt1 | jq -e '.agents.tt1.mode == \"advisory\"' >/dev/null"
 check "agent-admin refuses an unknown template" not agent-admin create tt3 --template no-such
 check "agent-admin defaults --clear" agent-admin defaults --clear
 check "tt1 keeps its model when the defaults go" grep -q 'name: fake-default' /etc/custos/agents/tt1/agent.yaml

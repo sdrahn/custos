@@ -39,8 +39,9 @@ var knownTools = map[string]struct{ read, change []string }{
 		read: []string{"get_default_zone", "get_active_zones", "get_services_for_zone", "get_service_info", "is_default_zone"},
 	},
 	"tukit": {
-		read: []string{"get_status", "list_snapshots", "list_updates"},
-		change: []string{"refresh_repositories", "pkg_install", "pkg_remove", "update_system", "rollback",
+		// refresh_repositories fetches the repositories' metadata only.
+		read: []string{"get_status", "list_snapshots", "list_updates", "refresh_repositories"},
+		change: []string{"pkg_install", "pkg_remove", "update_system", "rollback",
 			"delete_snapshot", "cleanup_snapshots", "apply", "reboot", "run_in_snapshot"},
 	},
 	// mcp-docs (0.1) as the gateway's server suse-docs (#130): it only reads.
@@ -464,5 +465,22 @@ func TestHealthCheckTemplate(t *testing.T) {
 	}
 	if err := a.CreateFromTemplate("pp", "patch-pilot", ""); err == nil {
 		t.Error("patch-pilot created on a diagnostics-only host")
+	}
+}
+
+// The agents that look at failed units know mcp-gateway's server
+// instances for what they are (see the playbook failed-units).
+func TestTemplatesKnowGatewayInstances(t *testing.T) {
+	for _, name := range []string{"health-check", "triage"} {
+		cfg, err := config.Load("../../templates/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := strings.Join(strings.Fields(cfg.Instruction), " ")
+		for _, want := range []string{"mcp-<server>-<hash>.service", "transient server instances", "never propose to restart it"} {
+			if !strings.Contains(in, want) {
+				t.Errorf("%s: the instruction lacks %q", name, want)
+			}
+		}
 	}
 }

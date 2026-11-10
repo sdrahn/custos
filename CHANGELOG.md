@@ -5,6 +5,41 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
+## Unreleased
+
+### Changed
+
+- `patch-pilot-transactional` refreshes the repositories without an
+  approval: `tukit__refresh_repositories` only fetches their metadata,
+  so its permission is read-only, like `list_updates`, instead of
+  `patch-errata`. Looking for updates, also for an agent that delegates
+  it, no longer waits for an approval. An agent created before keeps
+  its permissions; change it with `agent-admin permissions NAME`.
+
+### Added
+
+- `agent-admin compare` and `apply-template` (CONTRACT.md §14a, §17): an
+  agent against its template, and the template's configuration or
+  permissions taken over, in Cockpit too (the agent's **Template**
+  section). `compare` shows a line diff of the configurations and the
+  permissions only the agent or only the template has. Applying keeps the
+  agent's name, model and credentials, its schedules, events, sessions,
+  sandbox and gateway connection, and its mode, promoted categories and
+  owners. `create --template` now records the template in
+  `/etc/custos/agents/<name>/template`; for an agent created before, name
+  the template with `--template`.
+
+### Fixed
+
+- The `failed-units` playbook and the `health-check` and `triage`
+  templates tell the model that a unit named
+  `mcp-<server>-<hash>.service` is one of mcp-gateway's transient server
+  instances, started for one user or agent: its failure is the gateway
+  server's (for example podman's for an agent without a Podman socket),
+  it has no unit file and is never restarted. Models had reported such
+  a failure as the host's and proposed restarting it. An agent created
+  before keeps its instruction; the playbook applies to every agent.
+
 ## v0.6.0 — 2026-11-09
 
 Diagnosis with small models, and a seal that covers each agent. The

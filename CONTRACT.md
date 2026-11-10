@@ -1181,6 +1181,7 @@ aggregation, policy distribution and approvals across hosts) is parked
 | `/etc/mcp-gateway/policy/agents/_seal.yaml` | root 0644 | the seal's public key (§6b, #109), and `agents: true` when it covers the agents' data and `_http.yaml` (#158) |
 | `/etc/credstore.encrypted/custos-enablement-seal` | root 0600 | the seal's private key (`systemd-creds encrypt`) |
 | `/etc/custos/agents/<name>/agent.yaml` | root:agent-`<name>` 0640 | configuration (§14) |
+| `/etc/custos/agents/<name>/template` | root 0644 | the template the agent was created from or last applied (§14a), one line |
 | `/etc/sysusers.d/agent-<name>.conf` | root 0644 | the agent's user |
 | `/etc/mcp-gateway/policy/agents/<name>.yaml` | root 0644 | mode, pause, permissions (§6), signed (`signature`) once the seal covers agent data (§6b). All agents' files, the emergency stop's `_control.yaml` and the agents' token issuers' `_http.yaml` (§6; both shipped by the package) are in this one directory: mcp-gateway's OPA (`--watch`) watches only directories it loaded a file from when it started |
 | `/etc/credstore.encrypted/agent-<name>.<cred>` | root 0600 | secrets (`systemd-creds encrypt`) |
@@ -1282,6 +1283,18 @@ and gives it the template's permissions and mode; its categories stay
 supervised. Promoting one is a separate step, as for any agent. A
 template grants nothing by itself: the gateway enforces the permissions
 as it does any agent's.
+
+Creating an agent from a template records the template's name in
+`/etc/custos/agents/<name>/template`. `agent-admin compare` shows how an
+agent now differs from its template, and `apply-template` gives it the
+template's configuration, its permissions, or both. Applying the
+configuration takes the template's `agent.yaml`, but keeps the agent's
+own `name`, `model`, `schedules`, `events`, `sessions` and `sandbox`, and
+every `gateway` key except `servers` and `tools` (how it reaches the
+gateway, its credential). The gateway agent data keeps its mode,
+categories and owners; applying the permissions replaces only
+`permissions`. An agent made before templates were recorded is compared
+with a template named; applying one records it.
 
 The shipped templates read the product documentation through the
 gateway's server `suse-docs`: mcp-docs over the installed documentation
@@ -1549,6 +1562,8 @@ standard error:
 | `create NAME --from FILE` | `FILE` `-` (here and for `edit` and `check`) is stdin, so a control plane needs no file of its own. Validates; writes the sysusers.d file and runs `systemd-sysusers`; installs `agent.yaml`; writes the gateway agent data (supervised, no permissions); writes the schedules' timer drop-ins; enables the socket and timers |
 | `edit NAME --from FILE` | validates, replaces `agent.yaml`, syncs schedules (a new schedule's timer is enabled and started, a removed one's disabled; one that stays keeps its state, and restarts for its calendar if it runs); systemd agents: `try-restart agent@<name>.service`; OpenShell agents: the policy, the profile and the sandbox as in §16a (at least `try-restart agent-openshell@<name>.service`). `sandbox.kind` (and `sandbox.openshell_gateway`) stay as created |
 | `create NAME --template TEMPLATE [--from FILE]` | `create` from a template (§14a): its configuration as `draft` gives it (named `NAME`, with the model defaults), or `FILE`'s; then the template's permissions and mode in the gateway agent data |
+| `compare [NAME…] [--template TEMPLATE]` | each agent (all without names) against its template (§14a), as JSON: `[{"agent", "template", "recorded", "configuration"?: {"same", "diff"?}, "permissions"?: {"same", "added", "removed"}, "error"?}]`. `template` is the recorded one, or `--template`'s (one agent only); `recorded` whether it is the recorded one. `diff` is a line diff of both configurations as `apply-template` would leave them, comments left out and keys sorted: lines starting `- ` are the agent's, `+ ` the template's, two spaces both, `…` between parts. `added` and `removed` are the permissions applying the template's would add and remove, regardless of order. `error` says why there is no comparison (no template recorded or named, a template that cannot be used) |
+| `apply-template NAME [--template TEMPLATE] [--configuration] [--permissions]` | the template's configuration (as `edit` applies one) and/or permissions (as `permissions` sets them, refused as `create --template` is for a disabled category), both without either option, keeping what §14a lists; then records the template. Without `--template`, the recorded one |
 | `draft NAME [--template TEMPLATE]` | a new agent's starting configuration on standard output: the template's, or a blank one, named `NAME`, with the model defaults (§14b). Needs no root |
 | `defaults [--from FILE \| --clear]` | the model defaults (§14b), as JSON: `{"model"?: {"provider", "name", "endpoint"?, "credential"?, "temperature"?, "timeout_seconds"?, "max_output_tokens"?, "reasoning_effort"?}}`, needing no root; `--from` checks and replaces them (`FILE` `-` is stdin), `--clear` removes them |
 | `templates` | the templates (§14a), as JSON: `{"transactional", "templates": {"<template>": {"title", "description", "system", "mode", "needs"?, "dir", "servers", "categories"?, "envelopes"?, "error"?}}}`, where `error` says why one cannot be used (a category not in the catalog, say). Needs no root |
