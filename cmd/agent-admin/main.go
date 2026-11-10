@@ -21,6 +21,13 @@ const usage = `usage: agent-admin COMMAND …
                                          permissions and mode
   templates                              the agent templates (CONTRACT.md §14a), as JSON
   playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
+  compare [NAME…] [--template TEMPLATE]  each agent against its template (CONTRACT.md §14a), as JSON: the
+                                         configuration's and the permissions' differences (--template: for one
+                                         agent created before its template was recorded)
+  apply-template NAME [--template TEMPLATE] [--configuration] [--permissions]
+                                         give the agent its template's configuration and/or permissions (both
+                                         without either option); it keeps its name, model, schedules, events,
+                                         sandbox, gateway connection, mode, categories and credentials
   feedback NAME ACTIVITY [--hypothesis ID=confirmed|rejected|unsure…] [--plan useful|not_useful]
            [--executed] [--comment TEXT]  feedback on an activity's diagnosis report (CONTRACT.md §4a)
   draft NAME [--template TEMPLATE]       a new agent's starting configuration (blank or the template's),
@@ -254,6 +261,29 @@ func run(a *admin.Admin, args []string) error {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(c)
+	case "compare":
+		var names []string
+		t, _ := flag("--template")
+		for i := 0; i < len(args); i++ {
+			if args[i] == "--template" {
+				i++
+				continue
+			}
+			names = append(names, args[i])
+		}
+		c, err := a.Compare(names, t)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(c)
+	case "apply-template":
+		if err := need(1); err != nil {
+			return err
+		}
+		t, _ := flag("--template")
+		return a.ApplyTemplate(args[0], t, has("--configuration"), has("--permissions"))
 	case "draft":
 		if err := need(1); err != nil {
 			return err

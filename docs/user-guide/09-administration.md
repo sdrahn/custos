@@ -21,6 +21,8 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin create NAME --from FILE` | create an agent: supervised, no permissions |
 | `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
 | `agent-admin templates` | the agent templates, as JSON (no root needed) |
+| `agent-admin compare [NAME…] [--template TEMPLATE]` | how agents differ from their templates, as JSON ([below](#compare-template)) |
+| `agent-admin apply-template NAME [--template TEMPLATE] [--configuration] [--permissions]` | give an agent its template's configuration and/or permissions ([below](#compare-template)) |
 | `agent-admin playbooks` | the diagnostic playbooks, as JSON (no root needed; [below](#playbooks)) |
 | `agent-admin feedback NAME ACTIVITY [--hypothesis ID=VERDICT…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | your feedback on a diagnosis report ([below](#reports)) |
 | `agent-admin draft NAME [--template TEMPLATE]` | a new agent's starting configuration, with the model defaults (no root needed) |
@@ -168,6 +170,44 @@ form shows what the template does, its categories and what it needs at
 the gateway, and fills the editor with its configuration; change the
 name and the model, **Check**, **Create**. Templates for the other kind
 of system are offered disabled.
+
+## Comparing an agent with its template {#compare-template}
+
+A package update brings new templates, but agents created from the old
+ones keep their configuration and permissions. To see how an agent
+differs from its template, and to take the template's over:
+
+```bash
+agent-admin compare                        # every agent, as JSON
+agent-admin compare web-doctor | jq -r '.[0].configuration.diff'
+agent-admin apply-template web-doctor --permissions      # the template's permissions only
+agent-admin apply-template web-doctor                    # configuration and permissions
+```
+
+`create --template` records the template in
+`/etc/custos/agents/<name>/template`. For an agent created before 0.6.1,
+name it: `agent-admin compare web-doctor --template service-doctor`;
+`apply-template --template service-doctor` then records it. Where you
+have your own template of the same name in `/etc/custos/templates`, that
+is the one compared with.
+
+The comparison shows only what applying would change. In the diff,
+`- ` lines are the agent's and `+ ` lines the template's. Applying keeps
+what belongs to the agent:
+- its name, model and credentials;
+- its schedules, events, sessions and sandbox, and how it reaches the
+  gateway;
+- its mode, promoted categories and owners.
+
+It takes over the template's description, instruction, servers and
+tools, limits, interaction, and permissions. An applied configuration
+restarts the agent, as `edit` does. Applying permissions is refused for a
+task category that is not enabled, as `create --template` is.
+
+In Cockpit: **Custos**, **Agents**, the agent, **Template**: **Compare
+with the template** shows both differences. **Use the template's
+configuration**, **Use the template's permissions** or **Use both** take
+them over.
 
 ## Editing an agent {#edit}
 

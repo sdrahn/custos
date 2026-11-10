@@ -414,3 +414,85 @@ function configEditor(a) {
     editors.set(a.name, { node });
     return node;
 }
+
+/* templateSection: the agent against its template (agent-admin compare,
+ * §14a), on demand, and taking over the template's configuration and/or
+ * permissions (agent-admin apply-template). The agent keeps its name,
+ * model, schedules, events, sandbox, gateway connection, mode, categories
+ * and credentials. Kept across refreshes, like the editors. */
+const comparisons = new Map();
+
+function templateSection(a) {
+    const box = el("section", { class: "card", id: "agent-template" }, el("h2", null, "Template"));
+    const s = comparisons.get(a.name) || {};
+    comparisons.set(a.name, s);
+    if (!templates && !templateSection.loading) {
+        templateSection.loading = true;
+        loadTemplates().then(t => { if (t) renderAgentDetail() });
+    }
+    const list = templates ? Object.entries(templates.templates || {}).filter(([, t]) => !t.error) : [];
+    const select = el("select", { "aria-label": "Template to compare with", class: "template-pick" },
+        el("option", { value: "" }, s.recorded ? "the recorded one (" + s.recorded + ")" : "the recorded one"),
+        ...list.map(([n, t]) => el("option", { value: n }, t.title + " (" + n + ")")));
+    select.value = s.pick || "";
+    select.addEventListener("change", () => { s.pick = select.value; s.result = null; s.error = null; renderAgentDetail() });
+    const compare = el("button", { class: "secondary" }, s.result ? "Compare again" : "Compare with the template");
+    const note = el("span", { class: "muted" }, s.busy || "");
+    compare.addEventListener("click", async () => {
+        compare.disabled = true;
+        s.busy = "Comparing…";
+        note.textContent = s.busy;
+        try {
+            const out = await admin(["compare", a.name, ...(s.pick ? ["--template", s.pick] : [])]);
+            s.result = JSON.parse(out)[0];
+            s.error = s.result.error || null;
+            if (s.result.recorded) s.recorded = s.result.template;
+            // Nothing recorded: offer the template of the agent's name.
+            if (!s.result.template && !s.pick && templates && templates.templates[a.name]) s.pick = a.name;
+        } catch (ex) {
+            s.result = null;
+            s.error = ex.message;
+        }
+        s.busy = null;
+        renderAgentDetail();
+    });
+    box.append(el("p", { class: "muted" }, "Compares the agent with the template it was created from (the administrator's in " +
+        "/etc/custos/templates replaces the package's). Taking the template's over keeps the agent's name, model, schedules, " +
+        "events, sandbox and gateway connection, its mode, promoted categories and credentials."),
+        el("div", { class: "actions" }, el("label", null, "Template ", select), compare, note));
+    if (s.error) box.append(el("p", { class: "error-text" }, s.error));
+    const r = s.result;
+    if (!r || !r.configuration) return box;
+
+    const cfg = r.configuration, perms = r.permissions;
+    box.append(el("h3", null, "Configuration"), cfg.same
+        ? el("p", { class: "muted", id: "template-config-same" }, "The same as template " + r.template + "'s.")
+        : el("pre", { class: "mono template-diff", id: "template-config-diff" },
+            ...cfg.diff.split("\n").filter(Boolean).map(l => el("div", { class: l[0] === "+" ? "diff-add" : l[0] === "-" ? "diff-del" : "" }, l)),
+        ), el("h3", null, "Permissions"));
+    if (perms.same) {
+        box.append(el("p", { class: "muted", id: "template-permissions-same" }, "The same as template " + r.template + "'s."));
+    } else {
+        const row = (p, sign) => el("div", { class: sign === "+" ? "diff-add" : "diff-del" }, sign + " " + JSON.stringify(p));
+        box.append(el("pre", { class: "mono template-diff", id: "template-permissions-diff" },
+            ...perms.removed.map(p => row(p, "-")), ...perms.added.map(p => row(p, "+"))));
+    }
+    if (cfg.same && perms.same) return box;
+    box.append(el("p", { class: "muted" }, "− the agent's now, + the template's. Applying restarts the agent if its configuration " +
+        "changes (activities in flight end); the gateway enforces the permissions once agent-admin returns."));
+    const apply = (what, flags) => {
+        const b = el("button", { class: "secondary" }, what);
+        b.addEventListener("click", () => act(b, "Applying template " + r.template + " to " + a.name,
+            () => admin(["apply-template", a.name, "--template", r.template, ...flags]).then(() => {
+                s.result = null;
+                s.recorded = r.template;
+                s.pick = "";
+            })));
+        return b;
+    };
+    box.append(el("div", { class: "actions" },
+        cfg.same ? null : apply("Use the template's configuration", ["--configuration"]),
+        perms.same ? null : apply("Use the template's permissions", ["--permissions"]),
+        !cfg.same && !perms.same ? apply("Use both", []) : null));
+    return box;
+}

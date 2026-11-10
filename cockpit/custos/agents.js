@@ -260,7 +260,7 @@ async function renderAgentDetail() {
     const pageY = window.scrollY;
     const focused = box.contains(document.activeElement) ? document.activeElement : null;
     const caret = focused && typeof focused.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd, focused.scrollTop] : null;
-    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), configEditor(a), chatSection(a));
+    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), templateSection(a), configEditor(a), chatSection(a));
     for (const [l, top] of chatLogs) {
         if (l.isConnected) l.scrollTop = top;
     }
@@ -285,7 +285,7 @@ tabs.agents = {
         // Not while someone edits the permissions or types a message.
         const f = document.activeElement;
         const editing = f && (f.id === "permissions-yaml" || f.id === "owners-input" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
-            f.closest(".credentials-edit") || f.closest(".playbook-run"));
+            f.closest(".credentials-edit") || f.closest(".playbook-run") || f.closest("#agent-template"));
         if (!editing) await renderAgentDetail();
     },
 };

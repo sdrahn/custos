@@ -248,6 +248,9 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 	if err := a.create(name, cfg); err != nil {
 		return err
 	}
+	if err := a.recordTemplate(name, tmpl); err != nil {
+		return err
+	}
 	d, err := a.readGateway(name)
 	if err != nil {
 		return err

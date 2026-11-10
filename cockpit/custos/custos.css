@@ -240,3 +240,8 @@ button.danger-text { color: var(--danger); }
 #envelope-errors:empty { display: none; }
 #envelope-preview { background: var(--page); padding: 0.5rem; border-radius: 4px; }
 #category-envelope { width: 100%; }
+
+/* agent-admin compare's differences: the agent's now (−), the template's (+). */
+.template-diff { max-height: 24em; overflow: auto; padding: 0.5em; border: 1px solid var(--border); white-space: pre-wrap; }
+.template-diff .diff-add { color: var(--ok); }
+.template-diff .diff-del { color: var(--danger); }
