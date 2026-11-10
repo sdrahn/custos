@@ -7,6 +7,19 @@ removed.
 
 ## Unreleased
 
+## v0.6.2 — 2026-11-10
+
+A security fix for the OpenShell relay, which also fixes 0.6.1's build
+on aarch64 for SLE 16. On older kernels, SLE 16's among them, a local
+user's listener on the port forward's port could pass the relay's
+owner check as root's and receive the agent's secret (security review
+0.6, P10).
+
+Upgrading from 0.6.1 needs no change to configurations or gateway data,
+and adds nothing to the contract. Restart the OpenShell agents' relays
+for the fix to take effect (`systemctl try-restart
+'agent-openshell@*.service'`); systemd agents are not affected.
+
 ### Fixed
 
 - The OpenShell relay's check that it talks to root's port forward read
