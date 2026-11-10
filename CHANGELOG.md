@@ -7,6 +7,23 @@ removed.
 
 ## Unreleased
 
+## v0.6.1 — 2026-11-10
+
+Agents against their templates, and two fixes from running 0.6.0.
+`agent-admin compare` shows how an agent differs from the template it
+was created from, and `apply-template` takes the template's
+configuration or permissions over, in Cockpit too. Health checks no
+longer take a failed mcp-gateway server instance for a broken host
+service, and `patch-pilot-transactional` looks for updates without an
+approval.
+
+Upgrading from 0.6.0 needs no change to configurations or gateway data.
+Within contract version 1 this release adds `agent-admin compare` and
+`apply-template` and the file `/etc/custos/agents/<name>/template`
+(§14a, §17). Agents created before keep their configuration and
+permissions: `agent-admin compare NAME --template TEMPLATE` shows what
+the new templates change, and `apply-template` takes it over.
+
 ### Changed
 
 - `patch-pilot-transactional` refreshes the repositories without an
@@ -15,14 +32,6 @@ removed.
   `patch-errata`. Looking for updates, also for an agent that delegates
   it, no longer waits for an approval. An agent created before keeps
   its permissions; change it with `agent-admin permissions NAME`.
-- The `failed-units` playbook and the `health-check` and `triage`
-  templates tell the model that a unit named
-  `mcp-<server>-<hash>.service` is one of mcp-gateway's transient server
-  instances, started for one user or agent: its failure is the gateway
-  server's (for example podman's for an agent without a Podman socket),
-  it has no unit file and is never restarted. Models had reported such
-  a failure as the host's and proposed restarting it. An agent created
-  before keeps its instruction; the playbook applies to every agent.
 
 ### Added
 
@@ -36,6 +45,17 @@ removed.
   owners. `create --template` now records the template in
   `/etc/custos/agents/<name>/template`; for an agent created before, name
   the template with `--template`.
+
+### Fixed
+
+- The `failed-units` playbook and the `health-check` and `triage`
+  templates tell the model that a unit named
+  `mcp-<server>-<hash>.service` is one of mcp-gateway's transient server
+  instances, started for one user or agent: its failure is the gateway
+  server's (for example podman's for an agent without a Podman socket),
+  it has no unit file and is never restarted. Models had reported such
+  a failure as the host's and proposed restarting it. An agent created
+  before keeps its instruction; the playbook applies to every agent.
 
 ## v0.6.0 — 2026-11-09
 
