@@ -159,12 +159,14 @@ func TestBridgeRefusesRootsEvents(t *testing.T) {
 	}
 }
 
-// An earlier connection's TIME_WAIT entry for the same addresses, which
-// the kernel lists with uid 0, is not the socket the relay reached: only
-// a connected entry counts. Otherwise the check failed on OBS's aarch64
-// builds, and a local user's listener could pass as root's by closing a
-// connection first.
-func TestPeerUIDSkipsTimeWait(t *testing.T) {
+// The owner is the listening socket's. The accepted connection's own
+// entry is listed with uid 0 until the listener accepts it on older
+// kernels (SLE 16's), and an earlier connection's TIME_WAIT entry with uid 0
+// always: neither may decide, or a local user's listener that waits before
+// accept() passes as root's (security review 0.6, P10), and the check
+// fails for a slow listener that is not root's (OBS's aarch64 builds). The
+// connection's entry must still be there, in a connected state.
+func TestPeerUIDIsTheListeners(t *testing.T) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Skip(err)
@@ -175,31 +177,67 @@ func TestPeerUIDSkipsTimeWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	remote := procAddr(c.RemoteAddr().(*net.TCPAddr))
-	local := procAddr(c.LocalAddr().(*net.TCPAddr))
-	row := func(st string, uid int) string {
-		return fmt.Sprintf("   1: %s %s %s 00000000:00000000 00:00000000 00000000 %5d        0 1 0000000000000000 20 4 30 10 -1", remote, local, st, uid)
+	ra, la := c.RemoteAddr().(*net.TCPAddr), c.LocalAddr().(*net.TCPAddr)
+	remote, local := procAddr(ra), procAddr(la)
+	port := fmt.Sprintf(":%04X", ra.Port)
+	row := func(l, r, st string, uid int) string {
+		return fmt.Sprintf("   1: %s %s %s 00000000:00000000 00:00000000 00000000 %5d        0 1 0000000000000000 20 4 30 10 -1", l, r, st, uid)
 	}
+	conn := func(st string, uid int) string { return row(remote, local, st, uid) }
+	listen := func(addr string, uid int) string { return row(addr, "00000000:0000", "0A", uid) }
 	header := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
 	dir := t.TempDir()
 	defer func(p []string) { ProcNetTCP = p }(ProcNetTCP)
-	for name, rows := range map[string][]string{
-		"time-wait first": {row("06", 0), row("01", 1234)},
-		"syn-recv":        {row("06", 0), row("03", 1234)},
-		"only time-wait":  {row("06", 0)},
+	for _, tc := range []struct {
+		name      string
+		tcp, tcp6 []string
+		want      int // -1: an error
+	}{
+		{"not accepted yet: the listener's", []string{conn("01", 0), listen(remote, 1234)}, nil, 1234},
+		{"syn-recv", []string{listen(remote, 1234), conn("03", 0)}, nil, 1234},
+		{"time-wait first", []string{conn("06", 0), conn("01", 0), listen(remote, 1234)}, nil, 1234},
+		{"the address's listener before the wildcard's", []string{listen("00000000"+port, 0), conn("01", 0), listen(remote, 1234)}, nil, 1234},
+		{"the wildcard's", []string{conn("01", 0), listen("00000000"+port, 1234)}, nil, 1234},
+		{"a dual-stack listener", nil, []string{row(procAddr6(ra), procAddr6(la), "01", 0), listen(strings.Repeat("0", 32)+port, 1234)}, 1234},
+		{"root's listener", []string{conn("01", 0), listen(remote, 0)}, nil, 0},
+		{"only time-wait", []string{conn("06", 0), listen(remote, 1234)}, nil, -1},
+		{"no listener", []string{conn("01", 1234)}, nil, -1},
+		{"a listener on another port", []string{conn("01", 0), listen("00000000:0001", 1234)}, nil, -1},
 	} {
-		p := dir + "/" + strings.ReplaceAll(name, " ", "-")
-		os.WriteFile(p, []byte(header+"\n"+strings.Join(rows, "\n")+"\n"), 0o644)
-		ProcNetTCP = []string{p}
+		var paths []string
+		for k, rows := range map[string][]string{"tcp": tc.tcp, "tcp6": tc.tcp6} {
+			p := dir + "/" + k
+			os.WriteFile(p, []byte(header+"\n"+strings.Join(rows, "\n")+"\n"), 0o644)
+			paths = append(paths, p)
+		}
+		ProcNetTCP = paths
 		uid, err := peerUID(c)
-		if name == "only time-wait" {
+		if tc.want < 0 {
 			if err == nil {
-				t.Errorf("%s: uid %d, want no socket", name, uid)
+				t.Errorf("%s: uid %d, want an error", tc.name, uid)
 			}
 			continue
 		}
-		if err != nil || uid != 1234 {
-			t.Errorf("%s: uid %d, %v; want 1234", name, uid, err)
+		if err != nil || uid != tc.want {
+			t.Errorf("%s: uid %d, %v; want %d", tc.name, uid, err, tc.want)
 		}
+	}
+}
+
+// Against the kernel's real tables: a listener that has not accepted the
+// connection yet is the test's, not root's.
+func TestPeerUIDBeforeAccept(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skip(err)
+	}
+	defer ln.Close()
+	c, err := net.Dial("tcp4", ln.Addr().String()) // never accepted
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if uid, err := peerUID(c); err != nil || uid != os.Getuid() {
+		t.Errorf("uid %d, %v; want %d (the listener's)", uid, err, os.Getuid())
 	}
 }
