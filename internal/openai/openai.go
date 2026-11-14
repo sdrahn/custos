@@ -1,6 +1,8 @@
 // Package openai is an ADK model for OpenAI-compatible chat completion
 // endpoints (vLLM, Ollama, llama.cpp, SUSE AI, …), so agents can run
-// on-premises and air-gapped (CONTRACT.md §4).
+// on-premises and air-gapped (CONTRACT.md §4). The requests and the
+// answers' types are the OpenAI Go SDK's (github.com/openai/openai-go);
+// this package maps them to ADK's and reads what local servers add.
 package openai
 
 import (
@@ -13,10 +15,15 @@ import (
 	"iter"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	oai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 )
@@ -45,61 +52,6 @@ func (l llm) GenerateContent(ctx context.Context, req *model.LLMRequest, stream 
 	return l.m.GenerateContent(ctx, req, stream)
 }
 
-type message struct {
-	Role      string     `json:"role"`
-	Content   *string    `json:"content"`
-	ToolCalls []toolCall `json:"tool_calls,omitempty"`
-	// The model's thinking, in an answer: Ollama's reasoning, or
-	// reasoning_content (vLLM, llama.cpp, DeepSeek). Never sent back.
-	Reasoning        string `json:"reasoning,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-	ToolCallID       string `json:"tool_call_id,omitempty"`
-}
-
-type toolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
-}
-
-type toolDef struct {
-	Type     string `json:"type"`
-	Function struct {
-		Name        string `json:"name"`
-		Description string `json:"description,omitempty"`
-		Parameters  any    `json:"parameters,omitempty"`
-	} `json:"function"`
-}
-
-type request struct {
-	Model       string    `json:"model"`
-	Messages    []message `json:"messages"`
-	Tools       []toolDef `json:"tools,omitempty"`
-	Temperature *float32  `json:"temperature,omitempty"`
-	MaxTokens   int32     `json:"max_tokens,omitempty"`
-	// ReasoningEffort: model.reasoning_effort. Ollama (0.12) maps none to
-	// think: false; OpenAI's reasoning models and vLLM read it too.
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	Stream          bool   `json:"stream"`
-}
-
-type response struct {
-	Choices []struct {
-		Message      message `json:"message"`
-		FinishReason string  `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int32 `json:"prompt_tokens"`
-		CompletionTokens int32 `json:"completion_tokens"`
-	} `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
 // GenerateContent sends one request; it does not stream (the answer
 // arrives whole, which ADK accepts in either mode).
 func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
@@ -109,26 +61,69 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, _ bo
 	}
 }
 
-func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
-	body, err := json.Marshal(m.request(req))
-	if err != nil {
-		return nil, err
-	}
-	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(m.Endpoint, "/")+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	hr.Header.Set("Content-Type", "application/json")
-	if m.APIKey != "" {
-		hr.Header.Set("Authorization", "Bearer "+m.APIKey)
-	}
+// answer is what the endpoint sent: read by the middleware below, for the
+// errors a server words in its own way (an HTML page, a JSON error with
+// status 200).
+type answer struct {
+	status int
+	body   []byte
+}
+
+// service is the SDK's chat completion service for m. It is made from
+// options alone, never from the environment (OPENAI_API_KEY,
+// OPENAI_BASE_URL): the agent's configuration says where its model is.
+// No retries: a second attempt would outlast the activity's limits
+// unseen. No X-Stainless headers: the model server need not learn the
+// host's system and Go version.
+func (m *Model) service(got *answer) oai.ChatCompletionService {
 	c := m.HTTP
 	if c == nil {
 		c = &http.Client{Timeout: m.Timeout}
 	}
-	start := time.Now()
-	res, err := c.Do(hr)
+	opts := []option.RequestOption{
+		option.WithBaseURL(strings.TrimRight(m.Endpoint, "/") + "/"),
+		option.WithHTTPClient(c),
+		option.WithMaxRetries(0),
+		option.WithMiddleware(func(r *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+			res, err := next(r)
+			if err != nil {
+				return res, err
+			}
+			b, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
+			res.Body.Close()
+			if err != nil {
+				return nil, err
+			}
+			got.status, got.body = res.StatusCode, b
+			res.Body = io.NopCloser(bytes.NewReader(b))
+			// A server that sends its JSON without saying so (as
+			// text/plain) is read all the same, as before the SDK.
+			if json.Valid(b) {
+				res.Header.Set("Content-Type", "application/json")
+			}
+			return res, nil
+		}),
+	}
+	for _, h := range []string{"Lang", "Package-Version", "OS", "Arch", "Runtime", "Runtime-Version", "Retry-Count", "Timeout"} {
+		opts = append(opts, option.WithHeaderDel("X-Stainless-"+h))
+	}
+	if m.APIKey != "" {
+		opts = append(opts, option.WithAPIKey(m.APIKey))
+	}
+	return oai.NewChatCompletionService(opts...)
+}
+
+func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
+	params, err := m.request(req)
 	if err != nil {
+		return nil, err
+	}
+	var got answer
+	start := time.Now()
+	svc := m.service(&got)
+	r, err := svc.New(ctx, params)
+	if got.status == 0 && err != nil {
+		// No answer at all.
 		var ne net.Error
 		switch {
 		case ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -139,20 +134,20 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 		}
 		return nil, fmt.Errorf("model endpoint: %w", err)
 	}
-	defer res.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
-	if err != nil {
-		return nil, err
+	// An answer the server words as an error, whatever its status.
+	var said struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
-	var r response
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, fmt.Errorf("model endpoint: HTTP %d: %.200s", res.StatusCode, b)
+	if json.Unmarshal(got.body, &said) != nil {
+		return nil, fmt.Errorf("model endpoint: HTTP %d: %.200s", got.status, got.body)
 	}
-	if r.Error != nil {
-		return nil, fmt.Errorf("model endpoint: %s", r.Error.Message)
+	if said.Error != nil {
+		return nil, fmt.Errorf("model endpoint: %s", said.Error.Message)
 	}
-	if res.StatusCode != http.StatusOK || len(r.Choices) == 0 {
-		return nil, fmt.Errorf("model endpoint: HTTP %d: %.200s", res.StatusCode, b)
+	if err != nil || got.status != http.StatusOK || len(r.Choices) == 0 {
+		return nil, fmt.Errorf("model endpoint: HTTP %d: %.200s", got.status, got.body)
 	}
 	msg := r.Choices[0].Message
 	// "length": the answer reached max_tokens (model.max_output_tokens)
@@ -161,12 +156,21 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 	content := &genai.Content{Role: genai.RoleModel}
 	// The thinking, as a thought: kept out of the answer's text (the
 	// summary, the response) and never sent back, but counted
-	// (model.call's THOUGHT_BYTES).
-	if t := msg.Reasoning + msg.ReasoningContent; t != "" {
-		content.Parts = append(content.Parts, &genai.Part{Text: t, Thought: true})
+	// (model.call's THOUGHT_BYTES). Ollama's reasoning, or
+	// reasoning_content (vLLM, llama.cpp, DeepSeek): fields the SDK does
+	// not know.
+	var thought string
+	for _, k := range []string{"reasoning", "reasoning_content"} {
+		var t string
+		if f, ok := msg.JSON.ExtraFields[k]; ok && json.Unmarshal([]byte(f.Raw()), &t) == nil {
+			thought += t
+		}
 	}
-	if msg.Content != nil && *msg.Content != "" {
-		content.Parts = append(content.Parts, &genai.Part{Text: *msg.Content})
+	if thought != "" {
+		content.Parts = append(content.Parts, &genai.Part{Text: thought, Thought: true})
+	}
+	if msg.Content != "" {
+		content.Parts = append(content.Parts, &genai.Part{Text: msg.Content})
 	}
 	for _, tc := range msg.ToolCalls {
 		args := map[string]any{}
@@ -194,74 +198,107 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 		FinishReason: finish,
 		TurnComplete: true,
 		UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
-			PromptTokenCount: r.Usage.PromptTokens, CandidatesTokenCount: r.Usage.CompletionTokens,
+			PromptTokenCount: int32(r.Usage.PromptTokens), CandidatesTokenCount: int32(r.Usage.CompletionTokens),
 		},
 	}, nil
 }
 
-func (m *Model) request(req *model.LLMRequest) request {
-	out := request{Model: m.Name, Temperature: m.Temperature, ReasoningEffort: m.ReasoningEffort}
+// request is the chat completion request for an ADK request.
+func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, error) {
+	out := oai.ChatCompletionNewParams{Model: m.Name}
+	if m.Temperature != nil {
+		// The shortest decimal of the float32, not its float64 expansion
+		// (0.2, not 0.20000000298).
+		t, _ := strconv.ParseFloat(strconv.FormatFloat(float64(*m.Temperature), 'g', -1, 32), 64)
+		out.Temperature = param.NewOpt(t)
+	}
+	// model.reasoning_effort. Ollama (0.12) maps none to think: false;
+	// OpenAI's reasoning models and vLLM read it too.
+	if m.ReasoningEffort != "" {
+		out.ReasoningEffort = shared.ReasoningEffort(m.ReasoningEffort)
+	}
 	if req.Config != nil {
 		// model.max_output_tokens. max_tokens, not OpenAI's newer
 		// max_completion_tokens: the servers Custos is used with (vLLM,
 		// Ollama, llama.cpp, LM Studio) all read max_tokens.
-		out.MaxTokens = req.Config.MaxOutputTokens
+		if n := req.Config.MaxOutputTokens; n > 0 {
+			out.MaxTokens = param.NewOpt(int64(n))
+		}
 		if si := req.Config.SystemInstruction; si != nil {
 			if t := text(si); t != "" {
-				out.Messages = append(out.Messages, message{Role: "system", Content: &t})
+				out.Messages = append(out.Messages, oai.SystemMessage(t))
 			}
 		}
 		for _, t := range req.Config.Tools {
 			for _, d := range t.FunctionDeclarations {
-				var td toolDef
-				td.Type = "function"
-				td.Function.Name, td.Function.Description = d.Name, d.Description
+				var schema any
 				switch {
 				case d.ParametersJsonSchema != nil:
-					td.Function.Parameters = plainIfNoArgs(d.ParametersJsonSchema)
+					schema = plainIfNoArgs(d.ParametersJsonSchema)
 				case d.Parameters != nil:
-					td.Function.Parameters = plainIfNoArgs(lowerTypes(d.Parameters))
+					schema = plainIfNoArgs(lowerTypes(d.Parameters))
 				default:
-					td.Function.Parameters = noArgs()
+					schema = noArgs()
 				}
-				out.Tools = append(out.Tools, td)
+				params, err := object(schema)
+				if err != nil {
+					return out, fmt.Errorf("the schema of tool %s: %w", d.Name, err)
+				}
+				f := shared.FunctionDefinitionParam{Name: d.Name, Parameters: params}
+				if d.Description != "" {
+					f.Description = param.NewOpt(d.Description)
+				}
+				out.Tools = append(out.Tools, oai.ChatCompletionFunctionTool(f))
 			}
 		}
 	}
 	for _, c := range req.Contents {
-		role := "user"
-		if c.Role == genai.RoleModel {
-			role = "assistant"
-		}
-		var calls []toolCall
+		var calls []oai.ChatCompletionMessageToolCallUnionParam
 		var texts []string
 		for _, p := range c.Parts {
 			switch {
 			case p.FunctionCall != nil:
-				var tc toolCall
-				tc.ID, tc.Type = p.FunctionCall.ID, "function"
-				tc.Function.Name = p.FunctionCall.Name
 				a, _ := json.Marshal(p.FunctionCall.Args)
-				tc.Function.Arguments = string(a)
-				calls = append(calls, tc)
+				calls = append(calls, oai.ChatCompletionMessageToolCallUnionParam{OfFunction: &oai.ChatCompletionMessageFunctionToolCallParam{
+					ID:       p.FunctionCall.ID,
+					Function: oai.ChatCompletionMessageFunctionToolCallFunctionParam{Name: p.FunctionCall.Name, Arguments: string(a)},
+				}})
 			case p.FunctionResponse != nil:
 				r, _ := json.Marshal(p.FunctionResponse.Response)
-				s := string(r)
-				out.Messages = append(out.Messages, message{Role: "tool", ToolCallID: p.FunctionResponse.ID, Content: &s})
+				out.Messages = append(out.Messages, oai.ToolMessage(string(r), p.FunctionResponse.ID))
 			case p.Text != "" && !p.Thought:
 				texts = append(texts, p.Text)
 			}
 		}
-		if len(texts) > 0 || len(calls) > 0 {
-			t := strings.Join(texts, "\n")
-			msg := message{Role: role, ToolCalls: calls}
-			if t != "" || role != "assistant" {
-				msg.Content = &t
-			}
-			out.Messages = append(out.Messages, msg)
+		if len(texts) == 0 && len(calls) == 0 {
+			continue
 		}
+		t := strings.Join(texts, "\n")
+		if c.Role != genai.RoleModel {
+			out.Messages = append(out.Messages, oai.UserMessage(t))
+			continue
+		}
+		// An assistant message with tool calls only has no content.
+		msg := oai.ChatCompletionAssistantMessageParam{ToolCalls: calls}
+		if t != "" {
+			msg.Content.OfString = param.NewOpt(t)
+		}
+		out.Messages = append(out.Messages, oai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
 	}
-	return out
+	return out, nil
+}
+
+// object is a JSON Schema as the SDK takes one: a JSON object.
+func object(schema any) (map[string]any, error) {
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, errors.New("not a JSON object")
+	}
+	return m, nil
 }
 
 func text(c *genai.Content) string {

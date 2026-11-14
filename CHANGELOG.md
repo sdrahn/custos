@@ -7,6 +7,18 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- The client for OpenAI-compatible model servers builds its requests and
+  reads the answers with the OpenAI Go SDK
+  (`github.com/openai/openai-go/v3`, pinned to v3.50.0, the last that
+  builds with Go 1.25). What the server receives differs in two details:
+  `"stream": false` is no longer sent, and an assistant message with tool
+  calls only has no `content` key instead of `"content": null`. The SDK's
+  retries and its `X-Stainless-*` headers are switched off, and its
+  environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) are not
+  read. `agent-launcher` grows by about 11 MB.
+
 ## v0.6.2 — 2026-11-10
 
 A security fix for the OpenShell relay, which also fixes 0.6.1's build
