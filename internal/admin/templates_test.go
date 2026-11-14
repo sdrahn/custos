@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
@@ -108,7 +109,7 @@ func withTemplates(t *testing.T) (*Admin, *rec) {
 	m, _ := filepath.Glob("../../packaging/categories/*.yaml")
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
-		host.WriteFile(a.Path(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
+		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
 	}
 	copyTree(t, "../../templates", a.Path(TemplatesVendor))
 	return a, r

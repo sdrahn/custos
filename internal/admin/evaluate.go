@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/gatewayctl"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -241,7 +242,7 @@ func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record
 // tools reached the envelope's rate RateCapDemotion times within the last
 // RateCapWindow since its promotion (each asked for an approval, or was
 // denied by a rate_limit).
-func rateCapped(c string, st *CategoryState, perms readiness.History, caps []readiness.RateCap, since, now time.Time) string {
+func rateCapped(c string, st *category.State, perms readiness.History, caps []readiness.RateCap, since, now time.Time) string {
 	if st.Envelope == nil || st.Envelope.Rate == nil {
 		return ""
 	}
@@ -264,7 +265,7 @@ func rateCapped(c string, st *CategoryState, perms readiness.History, caps []rea
 }
 
 // promotedAt is the time in promoted_by ("<who> <RFC 3339>").
-func promotedAt(st *CategoryState) time.Time {
+func promotedAt(st *category.State) time.Time {
 	f := strings.Fields(st.PromotedBy)
 	if len(f) == 0 {
 		return time.Time{}
