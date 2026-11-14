@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
@@ -36,7 +37,7 @@ type CategoryQueue struct {
 
 // reviewData reads what a review needs for an agent: its gateway data,
 // its records and the gateway's audit of it.
-func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, readiness.Audit, time.Time, error) {
+func reviewData(a *admin.Admin, name string) (*admin.GatewayData, []readiness.Record, readiness.Audit, time.Time, error) {
 	if err := host.CheckName(name); err != nil {
 		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
@@ -45,14 +46,14 @@ func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, readi
 		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
 	now := a.Now()
-	recs, gw, err := a.journalRecords(name, now.Add(-ReviewWindow))
+	recs, gw, err := journalRecords(a, name, now.Add(-ReviewWindow))
 	return d, recs, gw, now, err
 }
 
 // ReviewQueue lists the sample to review of the agent's promoted
 // categories (bounded, or demoted since a promotion), or of one.
-func (a *Admin) ReviewQueue(name string, only ...string) (*Queue, error) {
-	d, recs, gw, now, err := a.reviewData(name)
+func ReviewQueue(a *admin.Admin, name string, only ...string) (*Queue, error) {
+	d, recs, gw, now, err := reviewData(a, name)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func contains(xs []string, x string) bool {
 // Review records an approver's verdict on an autonomous action of a
 // category (§6a): ok, or incident (it should not have run), which needs
 // a reason and demotes a bounded category at once.
-func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) error {
+func Review(a *admin.Admin, name, cat, activity, call, verdict, by, reason string) error {
 	switch verdict {
 	case readiness.VerdictOK:
 	case readiness.VerdictIncident:
@@ -104,7 +105,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 	default:
 		return fmt.Errorf("verdict %q: want ok or incident", verdict)
 	}
-	d, recs, gw, _, err := a.reviewData(name)
+	d, recs, gw, _, err := reviewData(a, name)
 	if err != nil {
 		return err
 	}
@@ -130,7 +131,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 	})
 	fmt.Fprintf(a.Out, "agent %s: %s in activity %s reviewed: %s\n", name, act.Tool, activity, verdict)
 	if verdict == readiness.VerdictIncident && st.Mode == "bounded" {
-		return a.Demote(name, cat, by, fmt.Sprintf("review: %s in activity %s should not have run: %s", act.Tool, activity, reason))
+		return Demote(a, name, cat, by, fmt.Sprintf("review: %s in activity %s should not have run: %s", act.Tool, activity, reason))
 	}
 	return nil
 }

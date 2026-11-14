@@ -240,7 +240,7 @@ func (a *Admin) Enable(by string, cats []string, all bool) error {
 		return errors.New("enable: name the categories, or --all")
 	}
 	for _, c := range cats {
-		if err := a.checkCategory(c); err != nil {
+		if err := a.CheckCategory(c); err != nil {
 			return err
 		}
 	}
@@ -298,7 +298,7 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 		return errors.New("disable: name the categories, or --all for diagnostics-only")
 	}
 	for _, c := range cats {
-		if err := a.checkCategory(c); err != nil {
+		if err := a.CheckCategory(c); err != nil {
 			return err
 		}
 		if c == Diagnostics {
@@ -455,8 +455,8 @@ func (a *Admin) CheckEnabled(name, what string, perms []map[string]any) error {
 	return errors.New(msg)
 }
 
-// checkCategoryEnabled refuses a disabled category for promote.
-func (a *Admin) checkCategoryEnabled(name, cat string) error {
+// CheckCategoryEnabled refuses a disabled category for promote.
+func (a *Admin) CheckCategoryEnabled(name, cat string) error {
 	e, err := a.CurrentEnablement()
 	if err != nil || e.Usable(cat) {
 		return err

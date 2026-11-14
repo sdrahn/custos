@@ -10,6 +10,7 @@ import (
 
 	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/admin/idp"
+	"github.com/sdrahn/custos/internal/admin/promotion"
 	"github.com/sdrahn/custos/internal/admin/templates"
 )
 
@@ -319,7 +320,7 @@ func run(a *admin.Admin, args []string) error {
 		if err := need(2); err != nil {
 			return err
 		}
-		f := admin.Feedback{Hypotheses: map[string]string{}}
+		f := promotion.Feedback{Hypotheses: map[string]string{}}
 		for i := 2; i < len(args); i++ {
 			switch args[i] {
 			case "--executed":
@@ -349,7 +350,7 @@ func run(a *admin.Admin, args []string) error {
 		if len(f.Hypotheses) == 0 {
 			f.Hypotheses = nil
 		}
-		return a.RecordFeedback(args[0], args[1], by(), f)
+		return promotion.RecordFeedback(a, args[0], args[1], by(), f)
 	case "playbooks":
 		p, err := a.Playbooks()
 		if err != nil {
@@ -370,7 +371,7 @@ func run(a *admin.Admin, args []string) error {
 		if err := need(1); err != nil {
 			return err
 		}
-		r, err := a.Readiness(args[0], args[1:]...)
+		r, err := promotion.Readiness(a, args[0], args[1:]...)
 		if err != nil {
 			return err
 		}
@@ -390,22 +391,22 @@ func run(a *admin.Admin, args []string) error {
 		if err != nil {
 			return err
 		}
-		return a.Promote(args[0], args[1], by(), admin.Promotion{Envelope: b, Reason: reason, DespiteReadiness: has("--despite-readiness")})
+		return promotion.Promote(a, args[0], args[1], by(), promotion.Promotion{Envelope: b, Reason: reason, DespiteReadiness: has("--despite-readiness")})
 	case "demote":
 		if err := need(2); err != nil {
 			return err
 		}
 		reason, _ := flag("--reason")
-		return a.Demote(args[0], args[1], by(), reason)
+		return promotion.Demote(a, args[0], args[1], by(), reason)
 	case "review":
 		if err := need(1); err != nil {
 			return err
 		}
 		if len(args) >= 5 && !strings.HasPrefix(args[2], "--") {
 			reason, _ := flag("--reason")
-			return a.Review(args[0], args[1], args[2], args[3], args[4], by(), reason)
+			return promotion.Review(a, args[0], args[1], args[2], args[3], args[4], by(), reason)
 		}
-		q, err := a.ReviewQueue(args[0], args[1:]...)
+		q, err := promotion.ReviewQueue(a, args[0], args[1:]...)
 		if err != nil {
 			return err
 		}
@@ -413,7 +414,7 @@ func run(a *admin.Admin, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(q)
 	case "evaluate":
-		d, err := a.Evaluate()
+		d, err := promotion.Evaluate(a)
 		for _, x := range d {
 			fmt.Printf("agent %s: category %s demoted: %s\n", x.Agent, x.Category, x.Reason)
 			if x.Notice != "" {

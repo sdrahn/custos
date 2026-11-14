@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"encoding/json"
@@ -7,17 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
 // Task categories and the promotion path (CONTRACT.md §6a, O11).
-
-// Categories reads the catalog.
-func (a *Admin) Categories() (map[string]category.Category, error) { return category.Load(a.Root) }
-
-func (a *Admin) checkCategory(cat string) error { return category.Check(a.Root, cat) }
 
 // Promotion is promote's input.
 type Promotion struct {
@@ -29,17 +25,17 @@ type Promotion struct {
 }
 
 // Promote moves a category of an agent to bounded within an envelope.
-func (a *Admin) Promote(name, cat, by string, p Promotion) error {
+func Promote(a *admin.Admin, name, cat, by string, p Promotion) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	if err := a.checkCategory(cat); err != nil {
+	if err := a.CheckCategory(cat); err != nil {
 		return err
 	}
-	if cat == Diagnostics {
+	if cat == admin.Diagnostics {
 		return errors.New("category diagnostics only reads: its calls need no approval, so it is never promoted")
 	}
-	if err := a.checkCategoryEnabled(name, cat); err != nil {
+	if err := a.CheckCategoryEnabled(name, cat); err != nil {
 		return err
 	}
 	env, err := category.ParseEnvelope(p.Envelope)
@@ -63,10 +59,10 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if c := d.Categories[cat]; c != nil && c.Mode != "" {
 		from = c.Mode
 	}
-	if from == "bounded" && a.sameEnvelope(d.Categories[cat].Envelope, env) {
+	if from == "bounded" && sameEnvelope(a, d.Categories[cat].Envelope, env) {
 		return fmt.Errorf("agent %s: category %s is already bounded with this envelope", name, cat)
 	}
-	rep, err := a.Readiness(name, cat)
+	rep, err := Readiness(a, name, cat)
 	if err != nil {
 		return err
 	}
@@ -105,7 +101,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 
 // Demote moves a category back to supervised; its envelope stays for a
 // later promotion.
-func (a *Admin) Demote(name, cat, by, reason string) error {
+func Demote(a *admin.Admin, name, cat, by, reason string) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
@@ -130,7 +126,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 	return nil
 }
 
-func hasCategory(d *GatewayData, cat string) bool {
+func hasCategory(d *admin.GatewayData, cat string) bool {
 	for _, p := range d.Permissions {
 		if p["category"] == cat {
 			return true
@@ -139,6 +135,6 @@ func hasCategory(d *GatewayData, cat string) bool {
 	return false
 }
 
-func (a *Admin) sameEnvelope(x, y *category.Envelope) bool {
+func sameEnvelope(a *admin.Admin, x, y *category.Envelope) bool {
 	return category.EnvelopeHash(x) == category.EnvelopeHash(y)
 }
