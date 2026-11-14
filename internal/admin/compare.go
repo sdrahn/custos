@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,14 +67,14 @@ func (a *Admin) RecordedTemplate(name string) string {
 		return ""
 	}
 	t := strings.TrimSpace(string(b))
-	if checkName(t) != nil {
+	if host.CheckName(t) != nil {
 		return ""
 	}
 	return t
 }
 
 func (a *Admin) recordTemplate(name, tmpl string) error {
-	return writeFile(filepath.Join(a.agentDir(name), TemplateFile), []byte(tmpl+"\n"), 0o644)
+	return host.WriteFile(filepath.Join(a.agentDir(name), TemplateFile), []byte(tmpl+"\n"), 0o644)
 }
 
 // Compare compares agents with their templates: the recorded one, or
@@ -90,7 +91,7 @@ func (a *Admin) Compare(names []string, tmpl string) ([]Comparison, error) {
 	}
 	out := []Comparison{}
 	for _, n := range names {
-		if err := checkName(n); err != nil {
+		if err := host.CheckName(n); err != nil {
 			return nil, err
 		}
 		c := Comparison{Agent: n, Template: tmpl}
@@ -147,7 +148,7 @@ func (a *Admin) compare(c *Comparison) error {
 // promoted categories, owners and credentials stay. tmpl "" is the
 // recorded template; a template named is recorded.
 func (a *Admin) ApplyTemplate(name, tmpl string, configuration, permissions bool) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if tmpl == "" {

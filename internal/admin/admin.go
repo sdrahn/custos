@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
@@ -28,14 +27,15 @@ import (
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/delegate"
 	"github.com/sdrahn/custos/internal/gatewayctl"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
 )
 
 type Admin struct {
-	Root string // "" on a host; a temporary directory in tests
-	// Run runs a command (systemctl, systemd-sysusers, systemd-creds).
-	Run func(stdin io.Reader, name string, args ...string) error
+	// Host is the system agent-admin works on: its files, the commands
+	// it runs, the clock, and root's journal records.
+	host.Host
 	// HTTP reaches an agent's identity provider (check-token); nil: a
 	// client with a timeout.
 	HTTP *http.Client
@@ -44,14 +44,6 @@ type Admin struct {
 	GatewayConfig string
 	// LookupHost resolves a host name (net.LookupHost when nil).
 	LookupHost func(host string) ([]string, error)
-	// Output runs a command and returns its output (systemd-creds
-	// decrypt, the seal's key); nil: run it.
-	Output func(stdin io.Reader, name string, args ...string) ([]byte, error)
-	Out    io.Writer
-	// In is read for a configuration given as "-" (--from -, check -).
-	In io.Reader
-	// Now is the clock (tests).
-	Now func() time.Time
 	// Control posts to an agent's control API (pause, resume).
 	Control func(sock, path string) error
 	// Start starts an activity on an agent's socket (schedules, events).
@@ -59,12 +51,6 @@ type Admin struct {
 	// Activities reads an agent's activities (GET /v1/activities), for
 	// an event's damping; nil: not checked.
 	Activities func(sock string) ([]map[string]any, error)
-	// Getenv reads the environment (systemd's MONITOR_* for an event);
-	// nil: os.Getenv.
-	Getenv func(string) string
-	// RunEnv runs a command with extra environment variables (secrets
-	// handed to openshell, which reads them from its environment).
-	RunEnv func(env []string, name string, args ...string) error
 	// Image is the OpenShell sandbox image (CUSTOS_OPENSHELL_IMAGE).
 	Image string
 	// OpenShellUser runs the local OpenShell gateway, whose rootless
@@ -77,24 +63,11 @@ type Admin struct {
 	// nil: changes are not waited for. PolicyWait bounds the wait.
 	OPAData    func(path string) (any, error)
 	PolicyWait time.Duration
-	// Probe runs a command for its exit status only, without its output
-	// (openshell sandbox get while a sandbox is deleted); nil: Run.
-	Probe func(name string, args ...string) error
-	// Sleep waits between probes (tests: no wait); nil: time.Sleep.
-	Sleep func(time.Duration)
 	// SandboxGone bounds the wait for a deleted sandbox to be gone.
 	SandboxGone time.Duration
-	// Journal gives the promotion records' logger for an agent (§10);
-	// nil: journald as custos-promotion.
-	Journal func(name string) journal.Logger
-	// JournalJSON reads journal records (journalctl -o json with these
-	// matches, over the readiness window); nil: journalctl.
-	JournalJSON func(args ...string) ([]byte, error)
 	// HealthCheck runs a rollback health check (sh -c, as root); nil:
 	// runHealthCheck.
 	HealthCheck func(cmd string) error
-	// By is the person, for the records of refusals (category.refused).
-	By string
 	// StopInstances stops a server's running instances through the
 	// gateway's control API and says how many; nil: gatewayctl.StopInstances.
 	StopInstances func(server string) (int, error)
@@ -108,22 +81,11 @@ type Admin struct {
 // (systemctl, openshell, …) goes to standard error (CONTRACT.md §17).
 func New() *Admin {
 	return &Admin{
-		Run: func(stdin io.Reader, name string, args ...string) error {
-			c := exec.Command(name, args...)
-			c.Stdin, c.Stdout, c.Stderr = stdin, os.Stderr, os.Stderr
-			return c.Run()
-		},
-		Out: os.Stdout, In: os.Stdin, Now: time.Now,
+		Host:    host.New(),
 		Control: func(sock, path string) error { return delegate.Post(context.Background(), sock, path) },
 		Start:   func(sock string, body map[string]any) error { return delegate.Start(context.Background(), sock, body) },
 		Activities: func(sock string) ([]map[string]any, error) {
 			return delegate.Activities(context.Background(), sock)
-		},
-		RunEnv: func(env []string, name string, args ...string) error {
-			c := exec.Command(name, args...)
-			c.Env = append(os.Environ(), env...)
-			c.Stdout, c.Stderr = os.Stderr, os.Stderr
-			return c.Run()
 		},
 		Image:         envOr("CUSTOS_OPENSHELL_IMAGE", "localhost/custos-agent:latest"),
 		OpenShellUser: os.Getenv("CUSTOS_OPENSHELL_USER"),
@@ -132,12 +94,9 @@ func New() *Admin {
 			rand.Read(b)
 			return hex.EncodeToString(b)
 		},
-		OPAData:    opaData,
-		Notify:     gatewayctl.PostNotice,
-		PolicyWait: 20 * time.Second,
-		Probe: func(name string, args ...string) error {
-			return exec.Command(name, args...).Run()
-		},
+		OPAData:     opaData,
+		Notify:      gatewayctl.PostNotice,
+		PolicyWait:  20 * time.Second,
 		SandboxGone: 2 * time.Minute,
 	}
 }
@@ -149,10 +108,8 @@ func envOr(k, def string) string {
 	return def
 }
 
-func (a *Admin) p(path string) string { return filepath.Join(a.Root, path) }
-
 func (a *Admin) agentDir(name string) string {
-	return a.p(filepath.Join(config.ConfigRoot, name))
+	return a.Path(filepath.Join(config.ConfigRoot, name))
 }
 
 // Paths of the contract (§3, §6).
@@ -169,13 +126,6 @@ const (
 	SocketDir     = "/run/agents"
 )
 
-func checkName(name string) error {
-	if !config.ValidName(name) {
-		return fmt.Errorf("%q is not a valid agent name", name)
-	}
-	return nil
-}
-
 // Check validates a configuration file (or an agent's) without changing anything.
 func (a *Admin) Check(target string) error {
 	var cfg *config.Config
@@ -184,7 +134,7 @@ func (a *Admin) Check(target string) error {
 		cfg, err = config.Load(a.agentDir(target))
 	} else {
 		var b []byte
-		if b, err = a.readFrom(target); err != nil {
+		if b, err = a.ReadFrom(target); err != nil {
 			return err
 		}
 		cfg, err = config.Parse(b)
@@ -199,24 +149,12 @@ func (a *Admin) Check(target string) error {
 	return nil
 }
 
-// readFrom reads a configuration from a file, or from In for "-" (as a
-// control plane gives it, without a file of its own).
-func (a *Admin) readFrom(from string) ([]byte, error) {
-	if from == "-" {
-		if a.In == nil {
-			return nil, errors.New("no configuration on stdin")
-		}
-		return io.ReadAll(io.LimitReader(a.In, 1<<20))
-	}
-	return os.ReadFile(from)
-}
-
 // Create installs a new agent from a configuration file.
 func (a *Admin) Create(name, from string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	b, err := a.readFrom(from)
+	b, err := a.ReadFrom(from)
 	if err != nil {
 		return err
 	}
@@ -225,7 +163,7 @@ func (a *Admin) Create(name, from string) error {
 
 // create installs a new agent from its configuration.
 func (a *Admin) create(name string, b []byte) (err error) {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	cfg, err := config.Parse(b)
@@ -253,8 +191,8 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	}()
 	user := "agent-" + name
 	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"Custos agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\nm %[2]s agent-clients\n", name, user)
-	sf := a.p(filepath.Join(SysusersDir, user+".conf"))
-	if err := writeFile(sf, []byte(sysusers), 0o644); err != nil {
+	sf := a.Path(filepath.Join(SysusersDir, user+".conf"))
+	if err := host.WriteFile(sf, []byte(sysusers), 0o644); err != nil {
 		return err
 	}
 	if err := a.Run(nil, "systemd-sysusers", sf); err != nil {
@@ -263,7 +201,7 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(dir, "agent.yaml"), b, 0o640); err != nil {
+	if err := host.WriteFile(filepath.Join(dir, "agent.yaml"), b, 0o640); err != nil {
 		return err
 	}
 	if err := a.Run(nil, "chgrp", "-R", user, dir); err != nil {
@@ -331,7 +269,7 @@ func (a *Admin) writeRelayUserDropIn(name string) error {
 	}
 	conf := fmt.Sprintf("# agent-admin: the relay's log source reads %s's rootless Podman (CONTRACT.md §16a).\n[Service]\nReadWritePaths=-%s/.local/share/containers -/run/user/%s\n",
 		a.OpenShellUser, home, uid)
-	return writeFile(a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d", "openshell-user.conf")), []byte(conf), 0o644)
+	return host.WriteFile(a.Path(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d", "openshell-user.conf")), []byte(conf), 0o644)
 }
 
 // createOpenShell prepares an OpenShell agent (CONTRACT.md §16a): the
@@ -368,7 +306,7 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 		"openshell.env":          {[]byte(env), 0o644},
 		"relay.secret":           {[]byte(a.Secret() + "\n"), 0o600},
 	} {
-		if err := writeFile(filepath.Join(dir, f), c.b, c.mode); err != nil {
+		if err := host.WriteFile(filepath.Join(dir, f), c.b, c.mode); err != nil {
 			return err
 		}
 	}
@@ -461,10 +399,10 @@ func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 // restarts if it runs; an OpenShell agent gets the change in its sandbox
 // (editOpenShell). The backend and the OpenShell gateway stay as created.
 func (a *Admin) Edit(name, from string) (err error) {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	b, err := a.readFrom(from)
+	b, err := a.ReadFrom(from)
 	if err != nil {
 		return err
 	}
@@ -500,7 +438,7 @@ func (a *Admin) edit(name string, b []byte) (err error) {
 	if old != nil && cfg.Sandbox.Kind == "openshell" && old.Sandbox.OpenShellGateway != cfg.Sandbox.OpenShellGateway {
 		return fmt.Errorf("sandbox.openshell_gateway: agent %s's sandbox is on OpenShell gateway %q; delete and create it to move it", name, old.Sandbox.OpenShellGateway)
 	}
-	if err := writeFile(filepath.Join(dir, "agent.yaml"), b, 0o640); err != nil {
+	if err := host.WriteFile(filepath.Join(dir, "agent.yaml"), b, 0o640); err != nil {
 		return err
 	}
 	a.Run(nil, "chgrp", "agent-"+name, filepath.Join(dir, "agent.yaml"))
@@ -552,12 +490,12 @@ func (a *Admin) editOpenShell(old *config.Config, name string) error {
 		cfgChanged = e1 != nil || e2 != nil || !bytes.Equal(oc, ns)
 	}
 	if polChanged {
-		if err := writeFile(polFile, pol, 0o644); err != nil {
+		if err := host.WriteFile(polFile, pol, 0o644); err != nil {
 			return err
 		}
 	}
 	if profChanged {
-		if err := writeFile(profFile, prof, 0o644); err != nil {
+		if err := host.WriteFile(profFile, prof, 0o644); err != nil {
 			return err
 		}
 		if err := a.Run(nil, "openshell", "-g", g, "profile", "import", "-f", profFile, "--global"); err != nil {
@@ -656,7 +594,7 @@ func (a *Admin) sandboxImage(name string) string {
 // Delete removes an agent. Its user stays: uids are not reused while
 // files may still be theirs.
 func (a *Admin) Delete(name string, keepState bool) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	cfg, _ := config.Load(a.agentDir(name))
@@ -676,19 +614,19 @@ func (a *Admin) Delete(name string, keepState bool) error {
 		}
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
-	rm := []string{a.agentDir(name), a.gatewayFile(name), a.p(filepath.Join(UnitDir, "agent@"+name+".service.d")),
-		a.p(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d")),
+	rm := []string{a.agentDir(name), a.gatewayFile(name), a.Path(filepath.Join(UnitDir, "agent@"+name+".service.d")),
+		a.Path(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d")),
 		// The socket's directory: systemd removes the socket at stop
 		// (RemoveOnStop=) but leaves the directory, by which the
 		// Cockpit page finds agents (§3).
-		a.p(filepath.Join(SocketDir, name))}
-	matches, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, "agent-"+name+".*")))
+		a.Path(filepath.Join(SocketDir, name))}
+	matches, _ := filepath.Glob(a.Path(filepath.Join(CredstoreDir, "agent-"+name+".*")))
 	rm = append(rm, matches...)
-	timers, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
+	timers, _ := filepath.Glob(a.Path(filepath.Join(UnitDir, "agent-schedule@"+name+"_*")))
 	rm = append(rm, timers...)
 	a.removeEvents(name)
 	if !keepState {
-		rm = append(rm, a.p("/var/lib/agents/"+name))
+		rm = append(rm, a.Path("/var/lib/agents/"+name))
 	}
 	for _, p := range rm {
 		if err := os.RemoveAll(p); err != nil {
@@ -700,7 +638,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 
 // SetCredential encrypts a secret from stdin for the agent (§5).
 func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if !config.ValidCredential(cred) {
@@ -734,10 +672,10 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 		return a.startOpenShell(cfg, v)
 	}
 	id := "agent-" + name + "." + cred
-	if err := os.MkdirAll(a.p(CredstoreDir), 0o700); err != nil {
+	if err := os.MkdirAll(a.Path(CredstoreDir), 0o700); err != nil {
 		return err
 	}
-	out := a.p(filepath.Join(CredstoreDir, id))
+	out := a.Path(filepath.Join(CredstoreDir, id))
 	if err := a.Run(secret, "systemd-creds", "encrypt", "--name="+id, "-", out); err != nil {
 		return err
 	}
@@ -753,7 +691,7 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 // the credential store; known is false when that cannot be told (not
 // root: the store is root's alone).
 func (a *Admin) credentialStored(name, cred string) (stored, known bool) {
-	_, err := os.Stat(a.p(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))
+	_, err := os.Stat(a.Path(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))
 	switch {
 	case err == nil:
 		return true, true
@@ -813,7 +751,7 @@ type GatewayData struct {
 // gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
 // top-level key is the name (data.mcp.agents.<name>).
 func (a *Admin) gatewayFile(name string) string {
-	return a.p(filepath.Join(GatewayAgents, name+".yaml"))
+	return a.Path(filepath.Join(GatewayAgents, name+".yaml"))
 }
 
 func (a *Admin) readGateway(name string) (*GatewayData, error) {
@@ -847,7 +785,7 @@ func (a *Admin) writeGateway(name string, d *GatewayData, reduces bool) error {
 	if prev, err := a.readGateway(name); err == nil && prev.Permissions != nil {
 		from = prev.Permissions
 	}
-	if err := writeFile(a.gatewayFile(name), b, 0o644); err != nil {
+	if err := host.WriteFile(a.gatewayFile(name), b, 0o644); err != nil {
 		return err
 	}
 	recordData()
@@ -892,16 +830,8 @@ func (a *Admin) recordPermissions(name string, from, to []map[string]any) {
 	if string(f) == string(t) {
 		return
 	}
-	a.record(journal.PermissionsChanged, name, fmt.Sprintf("%s changed the permissions of agent %s (%d → %d)", a.who(), name, len(from), len(to)),
-		journal.Fields{"PERMISSIONS_FROM": string(f), "PERMISSIONS_TO": string(t), "BY": a.who()})
-}
-
-// who is the person for a record: By, else root.
-func (a *Admin) who() string {
-	if a.By != "" {
-		return a.By
-	}
-	return "root"
+	a.Record(journal.PermissionsChanged, name, fmt.Sprintf("%s changed the permissions of agent %s (%d → %d)", a.Who(), name, len(from), len(to)),
+		journal.Fields{"PERMISSIONS_FROM": string(f), "PERMISSIONS_TO": string(t), "BY": a.Who()})
 }
 
 // modeRank orders the modes by what they let an agent do.
@@ -909,7 +839,7 @@ var modeRank = map[string]int{"advisory": 0, "supervised": 1, "bounded": 2}
 
 // SetMode sets the autonomy mode, enforced by the gateway.
 func (a *Admin) SetMode(name, mode string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	switch mode {
@@ -934,7 +864,7 @@ var ownerRE = regexp.MustCompile(`^(user|group|role|remote-user|remote-group):[A
 // approvers (§7, O1); none clears them. An agent's own user or group is
 // refused: an agent never approves.
 func (a *Admin) SetOwners(name string, owners []string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	seen := map[string]bool{}
@@ -977,7 +907,7 @@ func (a *Admin) SetOwners(name string, owners []string) error {
 
 // SetPermissions replaces the agent's gateway permissions from a YAML list.
 func (a *Admin) SetPermissions(name string, from io.Reader) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	b, err := io.ReadAll(from)
@@ -1047,7 +977,7 @@ func (a *Admin) parsePermissions(b []byte) ([]map[string]any, error) {
 // Pause holds an agent: the gateway denies its calls (enforced) and the
 // agent holds its activities (graceful).
 func (a *Admin) Pause(name, by string, on bool) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	path := "/v1/resume"
@@ -1107,7 +1037,7 @@ func (a *Admin) StopAll(by string) error {
 	ferr := a.writeStopFlag(true, by)
 	// Root's record: readiness counts an approved call whose activity it
 	// stopped as an incident (O11).
-	a.record(journal.AgentsStopped, "", by+" stopped every agent (emergency stop)", journal.Fields{"BY": by})
+	a.Record(journal.AgentsStopped, "", by+" stopped every agent (emergency stop)", journal.Fields{"BY": by})
 	err := a.Run(nil, "systemctl", "stop", "agent-schedule@*.timer", "agent@*.socket", "agent@*.service",
 		"agent-openshell@*.socket", "agent-openshell@*.service", "agent-event@*.service")
 	if err != nil {
@@ -1142,7 +1072,7 @@ func (a *Admin) writeStop(stopped bool, by string) error {
 func (a *Admin) writeStopFlag(stopped bool, by string) error {
 	b := fmt.Sprintf("# The emergency stop of every agent (agent-admin stop-all, release-all;\n# custos CONTRACT.md §8).\n_control:\n  stopped: %t\n  by: %q\n  at: %q\n",
 		stopped, by, a.Now().UTC().Format(time.RFC3339))
-	return writeFile(a.p(GatewayStop), []byte(b), 0o644)
+	return host.WriteFile(a.Path(GatewayStop), []byte(b), 0o644)
 }
 
 // waitPolicy waits until the gateway's OPA has loaded what was just
@@ -1209,7 +1139,7 @@ func (a *Admin) ReleaseAll(by string) error {
 	if err := a.writeStop(false, by); err != nil {
 		return err
 	}
-	a.record(journal.AgentsReleased, "", by+" released the emergency stop", journal.Fields{"BY": by})
+	a.Record(journal.AgentsReleased, "", by+" released the emergency stop", journal.Fields{"BY": by})
 	names, err := a.List()
 	if err != nil {
 		return err
@@ -1256,7 +1186,7 @@ func (a *Admin) enabled(unit string) bool {
 // sockets (§13 of the contract, SELinux).
 func (a *Admin) Trigger(instance string) error {
 	name, sched, ok := strings.Cut(instance, "_")
-	if !ok || checkName(name) != nil {
+	if !ok || host.CheckName(name) != nil {
 		return fmt.Errorf("%q: want NAME_SCHEDULE", instance)
 	}
 	cfg, err := config.Load(a.agentDir(name))
@@ -1308,7 +1238,7 @@ type Control struct {
 // control plane can show the posture without root.
 func (a *Admin) Show(names ...string) (*Posture, error) {
 	if len(names) == 0 {
-		m, err := filepath.Glob(a.p(filepath.Join(GatewayAgents, "*.yaml")))
+		m, err := filepath.Glob(a.Path(filepath.Join(GatewayAgents, "*.yaml")))
 		if err != nil {
 			return nil, err
 		}
@@ -1321,7 +1251,7 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 	}
 	p := &Posture{Agents: map[string]*GatewayData{}}
 	for _, n := range names {
-		if err := checkName(n); err != nil {
+		if err := host.CheckName(n); err != nil {
 			return nil, err
 		}
 		d, err := a.readGateway(n)
@@ -1333,7 +1263,7 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		}
 		p.Agents[n] = d
 	}
-	b, err := os.ReadFile(a.p(GatewayStop))
+	b, err := os.ReadFile(a.Path(GatewayStop))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -1341,7 +1271,7 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		Control Control `yaml:"_control"`
 	}
 	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", a.p(GatewayStop), err)
+		return nil, fmt.Errorf("%s: %w", a.Path(GatewayStop), err)
 	}
 	p.Control = doc.Control
 	if p.Enablement, err = a.GetEnablement(); err != nil {
@@ -1364,7 +1294,7 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 
 // List returns the agents' names (§11: an agent exists when its agent.yaml does).
 func (a *Admin) List() ([]string, error) {
-	m, err := filepath.Glob(a.p(filepath.Join(config.ConfigRoot, "*", "agent.yaml")))
+	m, err := filepath.Glob(a.Path(filepath.Join(config.ConfigRoot, "*", "agent.yaml")))
 	if err != nil {
 		return nil, err
 	}
@@ -1386,15 +1316,15 @@ func (a *Admin) syncSchedules(cfg *config.Config) error {
 	want := map[string]bool{} // unit → new (no drop-in before)
 	for _, s := range cfg.Schedules {
 		unit := scheduleUnit(cfg.Name, s.Name)
-		dropIn := a.p(filepath.Join(UnitDir, unit+".timer.d", "schedule.conf"))
+		dropIn := a.Path(filepath.Join(UnitDir, unit+".timer.d", "schedule.conf"))
 		_, err := os.Stat(dropIn)
 		want[unit] = errors.Is(err, os.ErrNotExist)
 		conf := fmt.Sprintf("# agent-admin: schedule %s of agent %s\n[Timer]\nOnCalendar=\nOnCalendar=%s\n", s.Name, cfg.Name, s.OnCalendar)
-		if err := writeFile(dropIn, []byte(conf), 0o644); err != nil {
+		if err := host.WriteFile(dropIn, []byte(conf), 0o644); err != nil {
 			return err
 		}
 	}
-	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+"_*.timer.d")))
+	old, _ := filepath.Glob(a.Path(filepath.Join(UnitDir, "agent-schedule@"+cfg.Name+"_*.timer.d")))
 	for _, d := range old {
 		unit := strings.TrimSuffix(filepath.Base(d), ".timer.d")
 		if _, keep := want[unit]; !keep {
@@ -1418,28 +1348,4 @@ func (a *Admin) syncSchedules(cfg *config.Config) error {
 		}
 	}
 	return nil
-}
-
-// writeFile writes atomically.
-func writeFile(path string, b []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }

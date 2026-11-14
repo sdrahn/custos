@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/playbook"
 )
@@ -107,9 +108,9 @@ func withTemplates(t *testing.T) (*Admin, *rec) {
 	m, _ := filepath.Glob("../../packaging/categories/*.yaml")
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
-		writeFile(a.p(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
+		host.WriteFile(a.Path(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
 	}
-	copyTree(t, "../../templates", a.p(TemplatesVendor))
+	copyTree(t, "../../templates", a.Path(TemplatesVendor))
 	return a, r
 }
 
@@ -118,7 +119,7 @@ func copyTemplate(t *testing.T, from, name, to string) {
 	t.Helper()
 	copyTree(t, filepath.Join("../../templates", from), to)
 	b, _ := os.ReadFile(filepath.Join(to, "agent.yaml"))
-	writeFile(filepath.Join(to, "agent.yaml"), WithName(b, name), 0o644)
+	host.WriteFile(filepath.Join(to, "agent.yaml"), WithName(b, name), 0o644)
 }
 
 func copyTree(t *testing.T, from, to string) {
@@ -132,7 +133,7 @@ func copyTree(t *testing.T, from, to string) {
 		if err != nil {
 			return err
 		}
-		return writeFile(filepath.Join(to, rel), b, 0o644)
+		return host.WriteFile(filepath.Join(to, rel), b, 0o644)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +271,7 @@ func TestCreateFromTemplate(t *testing.T) {
 	if err := a.CreateFromTemplate("web-doctor", "service-doctor", ""); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(a.p("/etc/custos/agents/web-doctor/agent.yaml"))
+	b, _ := os.ReadFile(a.Path("/etc/custos/agents/web-doctor/agent.yaml"))
 	if !strings.Contains(string(b), "\nname: web-doctor\n") || !strings.Contains(string(b), "# Agent template service-doctor") {
 		t.Errorf("agent.yaml:\n%s", b)
 	}
@@ -296,7 +297,7 @@ func TestCreateFromTemplate(t *testing.T) {
 	if err := a.CreateFromTemplate("look", "triage", "-"); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(a.p("/etc/custos/agents/look/agent.yaml")); !strings.Contains(string(b), "granite-4") {
+	if b, _ := os.ReadFile(a.Path("/etc/custos/agents/look/agent.yaml")); !strings.Contains(string(b), "granite-4") {
 		t.Errorf("agent.yaml:\n%s", b)
 	}
 	if d, _ := a.readGateway("look"); d.Mode != "advisory" {
@@ -311,7 +312,7 @@ func TestCreateFromTemplate(t *testing.T) {
 	if err := a.CreateFromTemplate("x1", "no-such", ""); err == nil || !strings.Contains(err.Error(), `no template "no-such"`) {
 		t.Errorf("err %v", err)
 	}
-	if _, err := os.Stat(a.p("/etc/custos/agents/x1")); err == nil {
+	if _, err := os.Stat(a.Path("/etc/custos/agents/x1")); err == nil {
 		t.Error("agent x1 made")
 	}
 }
@@ -320,12 +321,12 @@ func TestSiteTemplates(t *testing.T) {
 	a, _ := withTemplates(t)
 	// An administrator's template of a shipped name replaces it; a
 	// directory without template.yaml hides one.
-	copyTree(t, "../../templates/triage", a.p(filepath.Join(TemplatesSite, "triage")))
-	writeFile(a.p(filepath.Join(TemplatesSite, "triage", "template.yaml")), []byte("title: Our triage\nsystem: any\nmode: advisory\n"), 0o644)
-	os.MkdirAll(a.p(filepath.Join(TemplatesSite, "exposure-watch")), 0o755)
+	copyTree(t, "../../templates/triage", a.Path(filepath.Join(TemplatesSite, "triage")))
+	host.WriteFile(a.Path(filepath.Join(TemplatesSite, "triage", "template.yaml")), []byte("title: Our triage\nsystem: any\nmode: advisory\n"), 0o644)
+	os.MkdirAll(a.Path(filepath.Join(TemplatesSite, "exposure-watch")), 0o755)
 	// One naming a category the catalog lacks is listed with its error.
-	copyTemplate(t, "disk-watch", "cleaner", a.p(filepath.Join(TemplatesSite, "cleaner")))
-	writeFile(a.p(filepath.Join(TemplatesSite, "cleaner", "permissions.yaml")), []byte("- {server: snapper, tool: delete_snapshots, category: tidy}\n"), 0o644)
+	copyTemplate(t, "disk-watch", "cleaner", a.Path(filepath.Join(TemplatesSite, "cleaner")))
+	host.WriteFile(a.Path(filepath.Join(TemplatesSite, "cleaner", "permissions.yaml")), []byte("- {server: snapper, tool: delete_snapshots, category: tidy}\n"), 0o644)
 	l, err := a.ListTemplates()
 	if err != nil {
 		t.Fatal(err)
@@ -347,11 +348,11 @@ func TestSiteTemplates(t *testing.T) {
 func TestTransactional(t *testing.T) {
 	a, _ := newAdmin(t)
 	mounts := "/dev/vda3 / btrfs ro,relatime,ssd,subvol=/@/.snapshots/5/snapshot 0 0\n/dev/vda3 /var btrfs rw,relatime 0 0\n"
-	writeFile(a.p("/proc/self/mounts"), []byte(mounts), 0o644)
+	host.WriteFile(a.Path("/proc/self/mounts"), []byte(mounts), 0o644)
 	if !a.transactional() {
 		t.Error("read-only root: transactional")
 	}
-	writeFile(a.p("/proc/self/mounts"), []byte(strings.Replace(mounts, "ro,", "rw,", 1)), 0o644)
+	host.WriteFile(a.Path("/proc/self/mounts"), []byte(strings.Replace(mounts, "ro,", "rw,", 1)), 0o644)
 	if a.transactional() {
 		t.Error("writable root: not transactional")
 	}
@@ -359,7 +360,7 @@ func TestTransactional(t *testing.T) {
 
 func TestBadTemplate(t *testing.T) {
 	a, _ := withTemplates(t)
-	dir := a.p(filepath.Join(TemplatesSite, "bad"))
+	dir := a.Path(filepath.Join(TemplatesSite, "bad"))
 	for _, c := range []struct{ file, body, want string }{
 		{"template.yaml", "title: x\nsystem: any\nmode: bounded\n", "never created bounded"},
 		{"template.yaml", "title: x\nsystem: suse\nmode: supervised\n", "want classic, transactional or any"},
@@ -371,7 +372,7 @@ func TestBadTemplate(t *testing.T) {
 		t.Run(c.file, func(t *testing.T) {
 			os.RemoveAll(dir)
 			copyTemplate(t, "service-doctor", "bad", dir)
-			writeFile(filepath.Join(dir, c.file), []byte(c.body), 0o644)
+			host.WriteFile(filepath.Join(dir, c.file), []byte(c.body), 0o644)
 			_, err := a.template("bad")
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err %v, want %q", err, c.want)
@@ -394,7 +395,7 @@ func TestPlaybooksShipped(t *testing.T) {
 	m, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
-		writeFile(a.p(filepath.Join(playbook.Vendor, filepath.Base(f))), b, 0o644)
+		host.WriteFile(a.Path(filepath.Join(playbook.Vendor, filepath.Base(f))), b, 0o644)
 	}
 	p, err := a.Playbooks()
 	if err != nil {

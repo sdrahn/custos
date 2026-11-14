@@ -20,6 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // The site's identity provider issues an OpenShell agent's tokens
@@ -62,12 +63,12 @@ func (a *Admin) gatewayHTTP() (*gatewayHTTP, error) {
 		files = []string{a.GatewayConfig} // explicit: no drop-ins, as the gateway's --config
 	} else {
 		for _, p := range []string{GatewayConfig, GatewayVendorConfig} {
-			if _, err := os.Stat(a.p(p)); err == nil {
-				files = append(files, a.p(p))
+			if _, err := os.Stat(a.Path(p)); err == nil {
+				files = append(files, a.Path(p))
 				break
 			}
 		}
-		dropIns, _ := filepath.Glob(a.p(filepath.Join(GatewayDropInDir, "*.yaml")))
+		dropIns, _ := filepath.Glob(a.Path(filepath.Join(GatewayDropInDir, "*.yaml")))
 		sort.Strings(dropIns)
 		for _, p := range dropIns {
 			if !strings.HasPrefix(filepath.Base(p), ".") {
@@ -107,7 +108,7 @@ func (a *Admin) gatewayHTTP() (*gatewayHTTP, error) {
 }
 
 func (a *Admin) agentIssuers() ([]string, error) {
-	b, err := os.ReadFile(a.p(GatewayHTTPIssuers))
+	b, err := os.ReadFile(a.Path(GatewayHTTPIssuers))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -153,7 +154,7 @@ func keycloakRealm(issuer string) (base, realm string, ok bool) {
 // gateway's settings; keycloak prints a script that creates it in the
 // gateway's Keycloak realm instead.
 func (a *Admin) IDPClient(name string, keycloak bool) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	h, err := a.gatewayHTTP()

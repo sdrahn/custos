@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/playbook"
 )
 
@@ -60,13 +61,13 @@ type Templates struct {
 func (a *Admin) ListTemplates() (*Templates, error) {
 	dirs := map[string]string{} // name → directory; /etc replaces /usr
 	for _, root := range []string{TemplatesVendor, TemplatesSite} {
-		es, err := os.ReadDir(a.p(root))
+		es, err := os.ReadDir(a.Path(root))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 		for _, e := range es {
 			if e.IsDir() {
-				dirs[e.Name()] = filepath.Join(a.p(root), e.Name())
+				dirs[e.Name()] = filepath.Join(a.Path(root), e.Name())
 			}
 		}
 	}
@@ -91,7 +92,7 @@ func (a *Admin) template(name string) (*Template, error) {
 		return nil, fmt.Errorf("%q is not a valid template name", name)
 	}
 	for _, root := range []string{TemplatesSite, TemplatesVendor} {
-		dir := filepath.Join(a.p(root), name)
+		dir := filepath.Join(a.Path(root), name)
 		if _, err := os.Stat(dir); err == nil {
 			if _, err := os.Stat(filepath.Join(dir, "template.yaml")); err != nil {
 				break // hidden
@@ -188,7 +189,7 @@ func (a *Admin) templatePermissions(dir string) ([]map[string]any, error) {
 // transactional reports whether the root file system is mounted
 // read-only, as on a transactional system.
 func (a *Admin) transactional() bool {
-	f, err := os.Open(a.p("/proc/self/mounts"))
+	f, err := os.Open(a.Path("/proc/self/mounts"))
 	if err != nil {
 		return false
 	}
@@ -223,7 +224,7 @@ func WithName(cfg []byte, name string) []byte {
 // mode. Categories stay supervised: promoting one is a separate,
 // deliberate step (§6a).
 func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	t, err := a.template(tmpl)
@@ -232,7 +233,7 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 	}
 	var cfg []byte
 	if from != "" {
-		if cfg, err = a.readFrom(from); err != nil {
+		if cfg, err = a.ReadFrom(from); err != nil {
 			return err
 		}
 	} else if cfg, err = a.Draft(name, tmpl); err != nil {

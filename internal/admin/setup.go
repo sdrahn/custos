@@ -14,6 +14,7 @@ import (
 
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/gatewayctl"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // The bundled diagnostics install (CONTRACT.md §17a, §20b): what
@@ -267,13 +268,13 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 // directory, where the exec server is installed; one there already that
 // differs is the administrator's and stays.
 func (a *Admin) setupExec() []Step {
-	if _, err := os.Stat(a.p(ExecDir)); err != nil {
+	if _, err := os.Stat(a.Path(ExecDir)); err != nil {
 		return []Step{{Name: "exec commands", Result: "skipped", Detail: ExecDir + " does not exist: install mcp-gateway-exec-server for the playbooks' commands"}}
 	}
 	var out []Step
 	for _, f := range []string{"exec.d-diagnostics.yaml", "exec.d-disk-usage.yaml"} {
-		src := a.p(filepath.Join(TemplatesVendor, f))
-		dst := a.p(filepath.Join(ExecDir, f)) // its shipped name, as the user guide copies it
+		src := a.Path(filepath.Join(TemplatesVendor, f))
+		dst := a.Path(filepath.Join(ExecDir, f)) // its shipped name, as the user guide copies it
 		name := "exec commands " + filepath.Base(dst)
 		want, err := os.ReadFile(src)
 		if err != nil {
@@ -286,7 +287,7 @@ func (a *Admin) setupExec() []Step {
 			out = append(out, Step{name, "already", ""})
 		case err == nil && slices.Contains(shippedBefore[f], sha256Hex(have)):
 			// An earlier release's copy, unchanged: the current one replaces it.
-			if err := writeFile(dst, want, 0o644); err != nil {
+			if err := host.WriteFile(dst, want, 0o644); err != nil {
 				out = append(out, Step{name, "failed", err.Error()})
 				continue
 			}
@@ -329,11 +330,11 @@ func copyFile(src, dst string) error {
 // that differs is the administrator's and stays.
 func (a *Admin) setupNetServer() Step {
 	const name = "server custos-net"
-	if _, err := os.Stat(a.p(GatewayServersDir)); err != nil {
+	if _, err := os.Stat(a.Path(GatewayServersDir)); err != nil {
 		return Step{name, "skipped", GatewayServersDir + " does not exist"}
 	}
-	src := a.p(NetServerVendor)
-	dst := a.p(filepath.Join(GatewayServersDir, "custos-net.yaml"))
+	src := a.Path(NetServerVendor)
+	dst := a.Path(filepath.Join(GatewayServersDir, "custos-net.yaml"))
 	want, err := os.ReadFile(src)
 	if err != nil {
 		return Step{name, "skipped", err.Error()}
@@ -360,13 +361,13 @@ func (a *Admin) setupNetServer() Step {
 // that is not that link is the administrator's and stays.
 func (a *Admin) setupRestartsServer(want bool) Step {
 	const name = "server restarts"
-	if _, err := os.Stat(a.p(RestartsProfile)); err != nil {
+	if _, err := os.Stat(a.Path(RestartsProfile)); err != nil {
 		return Step{name, "skipped", "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart"}
 	}
-	if _, err := os.Stat(a.p(GatewayServersDir)); err != nil {
+	if _, err := os.Stat(a.Path(GatewayServersDir)); err != nil {
 		return Step{name, "skipped", GatewayServersDir + " does not exist"}
 	}
-	dst := a.p(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	dst := a.Path(filepath.Join(GatewayServersDir, "restarts.yaml"))
 	if target, err := os.Readlink(dst); err == nil && target == RestartsProfile {
 		return Step{name, "already", ""}
 	}

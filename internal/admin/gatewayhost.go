@@ -80,7 +80,7 @@ func (a *Admin) noteGatewayHost(cfg *config.Config) {
 // lookupDNS resolves a name as OpenShell's policy DNS does: A and AAAA
 // from the first nameserver of /etc/resolv.conf, never /etc/hosts.
 func (a *Admin) lookupDNS(host string) ([]string, error) {
-	b, err := os.ReadFile(a.p("/etc/resolv.conf"))
+	b, err := os.ReadFile(a.Path("/etc/resolv.conf"))
 	if err != nil {
 		return nil, err
 	}

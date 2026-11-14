@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -31,7 +32,7 @@ type Feedback struct {
 // promotion path (§6b), as the review verdicts are (§6a). It refuses an
 // activity without a report, and a hypothesis the report does not have.
 func (a *Admin) RecordFeedback(name, activity, by string, f Feedback) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if !activityRE.MatchString(activity) {
@@ -58,7 +59,7 @@ func (a *Admin) RecordFeedback(name, activity, by string, f Feedback) error {
 		}
 	}
 	b, _ := json.Marshal(f)
-	a.record(journal.DiagnosisFeedback, name, fmt.Sprintf("%s gave feedback on the diagnosis report of %s", by, activity),
+	a.Record(journal.DiagnosisFeedback, name, fmt.Sprintf("%s gave feedback on the diagnosis report of %s", by, activity),
 		journal.Fields{"INVOCATION": activity, "BY": by, "FEEDBACK": string(b)})
 	fmt.Fprintf(a.Out, "agent %s: feedback on the report of %s recorded\n", name, activity)
 	return nil

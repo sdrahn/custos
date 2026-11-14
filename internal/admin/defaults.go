@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // Defaults for new agents (CONTRACT.md §14b): the host's model, which a
@@ -65,7 +66,7 @@ func ParseDefaults(b []byte) (*Defaults, error) {
 
 // GetDefaults reads the host's defaults; none: empty.
 func (a *Admin) GetDefaults() (*Defaults, error) {
-	b, err := os.ReadFile(a.p(DefaultsFile))
+	b, err := os.ReadFile(a.Path(DefaultsFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return &Defaults{}, nil
 	}
@@ -90,7 +91,7 @@ func (a *Admin) SetDefaults(b []byte) error {
 		return fmt.Errorf("defaults: %s", config.SecretAsName)
 	}
 	if d.Model == nil {
-		if err := os.Remove(a.p(DefaultsFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(a.Path(DefaultsFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		fmt.Fprintln(a.Out, "no model defaults: new agents get the template's model")
@@ -100,7 +101,7 @@ func (a *Admin) SetDefaults(b []byte) error {
 	out.WriteString("# Defaults for new agents (CONTRACT.md §14b), written by agent-admin defaults.\n" +
 		"# A new agent's configuration takes them over; existing agents keep theirs.\n")
 	out.Write(renderModel(d.Model, ""))
-	if err := writeFile(a.p(DefaultsFile), out.Bytes(), 0o644); err != nil {
+	if err := host.WriteFile(a.Path(DefaultsFile), out.Bytes(), 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.Out, "model defaults: %s %s\n", d.Model.Provider, d.Model.Name)
@@ -195,7 +196,7 @@ interaction:
 // Draft is a new agent's starting configuration: a template's, or a
 // blank one, named name, with the host's model defaults.
 func (a *Admin) Draft(name, tmpl string) ([]byte, error) {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return nil, err
 	}
 	cfg := []byte(blank)

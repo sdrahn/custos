@@ -16,6 +16,7 @@ package admin
 
 import (
 	"fmt"
+	"github.com/sdrahn/custos/internal/host"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,9 +51,9 @@ func TestKeycloak(t *testing.T) {
 	a.Now = time.Now
 	issuer := strings.TrimRight(base, "/") + "/realms/" + realm
 	gw := strings.Replace(gatewayYml, "https://idp.example.com/realms/mcp", issuer, 1)
-	os.MkdirAll(a.p(filepath.Dir(GatewayConfig)), 0o755)
-	os.WriteFile(a.p(GatewayConfig), []byte(gw), 0o644)
-	writeFile(a.p(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\""+issuer+"\"]\n"), 0o644)
+	os.MkdirAll(a.Path(filepath.Dir(GatewayConfig)), 0o755)
+	os.WriteFile(a.Path(GatewayConfig), []byte(gw), 0o644)
+	host.WriteFile(a.Path(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\""+issuer+"\"]\n"), 0o644)
 	dir := a.agentDir("sb")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "agent.yaml"),

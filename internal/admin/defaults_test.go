@@ -29,7 +29,7 @@ func TestDefaults(t *testing.T) {
 	if err := a.SetDefaults([]byte(in)); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(a.p(DefaultsFile))
+	b, _ := os.ReadFile(a.Path(DefaultsFile))
 	if !strings.HasPrefix(string(b), "# Defaults for new agents") || !strings.Contains(string(b), "  temperature: 0.2\n") ||
 		!strings.Contains(string(b), "  timeout_seconds: 1800\n") || !strings.Contains(string(b), "  max_output_tokens: 2048\n") || !strings.Contains(string(b), "  reasoning_effort: none\n") {
 		t.Errorf("file:\n%s", b)
@@ -74,7 +74,7 @@ func TestDefaults(t *testing.T) {
 	if err := a.SetDefaults([]byte("model: {provider: gemini, name: gemini-2.5-flash, credential: gkey}\n")); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(a.p("/etc/custos/agents/doc/agent.yaml")); !strings.Contains(string(b), "granite-4") {
+	if b, _ := os.ReadFile(a.Path("/etc/custos/agents/doc/agent.yaml")); !strings.Contains(string(b), "granite-4") {
 		t.Errorf("agent.yaml:\n%s", b)
 	}
 	if cfg, _ := a.Draft("g1", "triage"); !strings.Contains(string(cfg), "provider: gemini") || strings.Contains(string(cfg), "endpoint") {
@@ -85,7 +85,7 @@ func TestDefaults(t *testing.T) {
 	if err := a.SetDefaults(nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a.p(DefaultsFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path(DefaultsFile)); !os.IsNotExist(err) {
 		t.Error("defaults file not removed")
 	}
 	if cfg, _ := a.Draft("q1", "triage"); !strings.Contains(string(cfg), "qwen3-32b") {
@@ -121,7 +121,7 @@ func TestDefaultsFileIsWorldReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	// draft and the page read it without root: it names no secret.
-	st, err := os.Stat(a.p(DefaultsFile))
+	st, err := os.Stat(a.Path(DefaultsFile))
 	if err != nil || st.Mode().Perm() != 0o644 || filepath.Base(DefaultsFile) != "defaults.yaml" {
 		t.Errorf("%v %v", st.Mode(), err)
 	}

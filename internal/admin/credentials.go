@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // Credential is one of an agent's credentials, as agent-admin credentials
@@ -43,12 +44,12 @@ func (a *Admin) Credentials(names ...string) (map[string]*AgentCredentials, erro
 			return nil, err
 		}
 	}
-	if _, err := os.ReadDir(a.p(CredstoreDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.ReadDir(a.Path(CredstoreDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading the credential store: %w", err)
 	}
 	out := map[string]*AgentCredentials{}
 	for _, n := range names {
-		if err := checkName(n); err != nil {
+		if err := host.CheckName(n); err != nil {
 			return nil, err
 		}
 		// Without a readable configuration, what is stored is listed all
@@ -56,7 +57,7 @@ func (a *Admin) Credentials(names ...string) (map[string]*AgentCredentials, erro
 		cfg, _ := config.Load(a.agentDir(n))
 		ac := &AgentCredentials{Credentials: []Credential{}, Missing: []string{}}
 		prefix := "agent-" + n + "."
-		files, _ := filepath.Glob(a.p(filepath.Join(CredstoreDir, prefix+"*")))
+		files, _ := filepath.Glob(a.Path(filepath.Join(CredstoreDir, prefix+"*")))
 		model := ""
 		if cfg != nil {
 			model = cfg.Model.Credential
@@ -99,7 +100,7 @@ func (a *Admin) Credentials(names ...string) (map[string]*AgentCredentials, erro
 // without it. An OpenShell agent's gateway credential is OpenShell's,
 // not in the store: delete and create the agent to drop it.
 func (a *Admin) RemoveCredential(name, cred string, force bool) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if !config.ValidCredential(cred) {
@@ -111,7 +112,7 @@ func (a *Admin) RemoveCredential(name, cred string, force bool) error {
 	if cfg, err := config.Load(a.agentDir(name)); err == nil && cfg.Model.Credential == cred && !force {
 		return fmt.Errorf("agent %s's model uses %s, and the agent does not start without it: change model.credential first, or --force", name, cred)
 	}
-	err := os.Remove(a.p(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))
+	err := os.Remove(a.Path(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("agent %s has no stored credential %s", name, cred)
 	}

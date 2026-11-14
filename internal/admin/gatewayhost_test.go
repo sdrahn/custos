@@ -19,8 +19,8 @@ import (
 // URL that is not the audience do.
 func TestGatewayHostNotes(t *testing.T) {
 	a, _ := newAdmin(t)
-	os.MkdirAll(a.p(filepath.Dir(GatewayConfig)), 0o755)
-	os.WriteFile(a.p(GatewayConfig), []byte("http:\n  issuer: https://idp.example.com/realms/mcp\n  audience: https://gw.example.com:8443/mcp\n"), 0o644)
+	os.MkdirAll(a.Path(filepath.Dir(GatewayConfig)), 0o755)
+	os.WriteFile(a.Path(GatewayConfig), []byte("http:\n  issuer: https://idp.example.com/realms/mcp\n  audience: https://gw.example.com:8443/mcp\n"), 0o644)
 	dns := map[string][]string{"gw.example.com": {"10.0.0.5"}, "loop.example.com": {"127.0.0.2"}}
 	a.LookupHost = func(h string) ([]string, error) {
 		if v, ok := dns[h]; ok {

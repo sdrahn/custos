@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -95,7 +96,7 @@ type Window struct {
 func (a *Admin) Categories() (map[string]Category, error) {
 	files := map[string]string{} // base name → path; /etc replaces /usr
 	for _, dir := range []string{CategoriesVendor, CategoriesSite} {
-		m, err := filepath.Glob(a.p(filepath.Join(dir, "*.yaml")))
+		m, err := filepath.Glob(a.Path(filepath.Join(dir, "*.yaml")))
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +230,7 @@ type Promotion struct {
 
 // Promote moves a category of an agent to bounded within an envelope.
 func (a *Admin) Promote(name, cat, by string, p Promotion) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if err := a.checkCategory(cat); err != nil {
@@ -290,7 +291,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if err := a.writeGateway(name, d, false); err != nil {
 		return err
 	}
-	a.record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
+	a.Record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
 		"CATEGORY": cat, "PROMOTION": id, "MODE_FROM": from, "MODE_TO": "bounded", "BY": by,
 		"REASON": p.Reason, "ENVELOPE_SHA256": envelopeHash(env), "READINESS": string(readinessJSON),
 	})
@@ -305,7 +306,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 // Demote moves a category back to supervised; its envelope stays for a
 // later promotion.
 func (a *Admin) Demote(name, cat, by, reason string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	d, err := a.readGateway(name)
@@ -321,7 +322,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 	if err := a.writeGateway(name, d, true); err != nil {
 		return err
 	}
-	a.record(journal.CategoryDemoted, name, fmt.Sprintf("%s demoted %s of agent %s to supervised", by, cat, name), journal.Fields{
+	a.Record(journal.CategoryDemoted, name, fmt.Sprintf("%s demoted %s of agent %s to supervised", by, cat, name), journal.Fields{
 		"CATEGORY": cat, "PROMOTION": c.Promotion, "MODE_FROM": "bounded", "MODE_TO": "supervised", "BY": by,
 		"REASON": reason, "ENVELOPE_SHA256": envelopeHash(c.Envelope),
 	})
@@ -353,16 +354,3 @@ func envelopeHash(e *Envelope) string {
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])
 }
-
-// record writes a promotion record (§10): SYSLOG_IDENTIFIER
-// custos-promotion, with AGENT_NAME the agent.
-func (a *Admin) record(event, name, msg string, f journal.Fields) {
-	l := a.Journal
-	if l == nil {
-		l = func(name string) journal.Logger { return journal.NewAs("custos-promotion", name, os.Stderr) }
-	}
-	l(name).Log(event, msg, f)
-}
-
-// ReadFrom reads a file, or In for "-" (an envelope from a control plane).
-func (a *Admin) ReadFrom(from string) ([]byte, error) { return a.readFrom(from) }
