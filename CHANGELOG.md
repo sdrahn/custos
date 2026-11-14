@@ -18,6 +18,10 @@ removed.
   delete NAME --keep-sate`, say), where it was ignored before. Its
   commands are a table with the standard library's `flag` per command;
   options and arguments are read in any order, as before.
+- `custos-tests`: the functional tests' checks are in one file per topic,
+  `/usr/libexec/custos/tests/sections/`, with the framework in `lib.sh`
+  next to `run-tests.sh`. The command, its options, the checks and their
+  order are unchanged.
 
 ## v0.6.2 — 2026-11-10
 
