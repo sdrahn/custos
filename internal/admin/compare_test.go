@@ -134,3 +134,21 @@ func compareOne(t *testing.T, a *Admin, name, tmpl string) Comparison {
 	}
 	return cs[0]
 }
+
+// The diff's form is the contract's (§17): "- " the agent's, "+ " the
+// template's, "  " both, two lines around each change, "…" between the
+// parts; keys sorted and comments left out; "" for the same content.
+func TestLineDiffForm(t *testing.T) {
+	cur := "# mine\nz: 1\na: 1\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\nh: 8\ni: 9\n"
+	want := "a: 0\nb: 2\nc: 3\nd: 4\ne: 5\nf: 6\ng: 7\nh: 8\ni: 9\nj: 10\nz: 1\n"
+	got, err := lineDiff([]byte(cur), []byte(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp := "- a: 1\n+ a: 0\n  b: 2\n  c: 3\n…\n  h: 8\n  i: 9\n+ j: 10\n  z: 1\n"; got != exp {
+		t.Errorf("diff:\n%s\nwant:\n%s", got, exp)
+	}
+	if same, err := lineDiff([]byte("b: 1\na: 2 # x\n"), []byte("a: 2\nb: 1\n")); err != nil || same != "" {
+		t.Errorf("the same content: %q %v", same, err)
+	}
+}
