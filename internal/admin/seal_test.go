@@ -21,12 +21,12 @@ func TestSeal(t *testing.T) {
 	if err := a.InitDiagnosticsOnly("setup"); err != nil {
 		t.Fatal(err)
 	}
-	cred := a.p(filepath.Join(CredstoreDir, SealCredential))
+	cred := a.Path(filepath.Join(CredstoreDir, SealCredential))
 	if fi, err := os.Stat(cred); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("the key's credential: %v %v", fi, err)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name="+SealCredential+" - "+cred) {
-		t.Errorf("not encrypted with systemd-creds: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemd-creds encrypt --name="+SealCredential+" - "+cred) {
+		t.Errorf("not encrypted with systemd-creds: %v", r.Cmds)
 	}
 	pub, err := a.sealPublicKey()
 	if err != nil || !strings.HasPrefix(pub, "-----BEGIN PUBLIC KEY-----") {
@@ -42,12 +42,12 @@ func TestSeal(t *testing.T) {
 	}
 
 	// The next change decrypts the same key: the seal stays.
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds decrypt --name="+SealCredential+" "+cred+" -") {
-		t.Errorf("the key was not decrypted: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemd-creds decrypt --name="+SealCredential+" "+cred+" -") {
+		t.Errorf("the key was not decrypted: %v", r.Cmds)
 	}
 	if pub2, _ := a.sealPublicKey(); pub2 != pub {
 		t.Error("the seal changed")
@@ -73,7 +73,7 @@ func TestSeal(t *testing.T) {
 	}
 
 	// Edited on file: show reports diagnostics-only, as the gateway does.
-	f := a.p(GatewayEnablement)
+	f := a.Path(GatewayEnablement)
 	b, _ := os.ReadFile(f)
 	os.WriteFile(f, []byte(strings.Replace(string(b), "- patch-errata", "- patch-errata\n    - config-lifecycle", 1)), 0o644)
 	p, _ = a.Show()

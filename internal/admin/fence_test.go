@@ -16,8 +16,8 @@ import (
 // host adds nothing, an address is taken as it is, a name as it resolves.
 func TestFenceAddresses(t *testing.T) {
 	a, _ := newAdmin(t)
-	os.MkdirAll(a.p("/etc"), 0o755)
-	os.WriteFile(a.p(ResolvConf), []byte("# resolv\nnameserver 10.0.2.3\nnameserver 127.0.0.53\nsearch example.com\n"), 0o644)
+	os.MkdirAll(a.Path("/etc"), 0o755)
+	os.WriteFile(a.Path(ResolvConf), []byte("# resolv\nnameserver 10.0.2.3\nnameserver 127.0.0.53\nsearch example.com\n"), 0o644)
 	a.LookupHost = func(h string) ([]string, error) {
 		switch h {
 		case "ai.example.com":
@@ -55,20 +55,20 @@ func TestFence(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Fence("patch-pilot"); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.cmds, "systemctl set-property --runtime agent@patch-pilot.service IPAddressAllow=10.0.5.20") {
-		t.Errorf("commands %v", r.cmds)
+	if !slices.Contains(r.Cmds, "systemctl set-property --runtime agent@patch-pilot.service IPAddressAllow=10.0.5.20") {
+		t.Errorf("commands %v", r.Cmds)
 	}
 	os.WriteFile(f, []byte(oshYml), 0o644)
 	if err := a.Create("sb", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
-	if err := a.Fence("sb"); err != nil || len(r.cmds) != 0 {
-		t.Errorf("an OpenShell agent: %v %v", err, r.cmds)
+	r.Cmds = nil
+	if err := a.Fence("sb"); err != nil || len(r.Cmds) != 0 {
+		t.Errorf("an OpenShell agent: %v %v", err, r.Cmds)
 	}
 	if err := a.Fence("../x"); err == nil {
 		t.Error("a bad name")

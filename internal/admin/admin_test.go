@@ -11,78 +11,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sdrahn/custos/internal/category"
+	"github.com/sdrahn/custos/internal/host"
+	"github.com/sdrahn/custos/internal/host/hosttest"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
 )
 
-type rec struct {
-	cmds []string
-	// fail makes the commands it reports fail (systemctl is-active, say).
-	fail func(cmd string) bool
-	// gone answers the probes (openshell sandbox get): nil when the sandbox is there.
-	gone func(cmd string) error
-	// journal holds agent-admin's records.
-	journal journal.Memory
-}
+// rec is what the test host was asked to do (hosttest.Rec).
+type rec = hosttest.Rec
 
+// newAdmin is agent-admin on a test host.
 func newAdmin(t *testing.T) (*Admin, *rec) {
-	r := &rec{}
+	h, r := hosttest.New(t)
+	r.Credential = SealCredential // the seal's key (#109)
 	a := &Admin{
-		Root: t.TempDir(),
-		Run: func(stdin io.Reader, name string, args ...string) error {
-			c := name + " " + strings.Join(args, " ")
-			r.cmds = append(r.cmds, c)
-			if r.fail != nil && r.fail(c) {
-				return errors.New("failed")
-			}
-			// The seal's key (#109): "encrypted" as it is, for Output's
-			// decrypt below.
-			if name == "systemd-creds" && len(args) == 4 && args[0] == "encrypt" && args[1] == "--name="+SealCredential {
-				b, _ := io.ReadAll(stdin)
-				return os.WriteFile(args[3], b, 0o600)
-			}
-			return nil
-		},
-		Output: func(_ io.Reader, name string, args ...string) ([]byte, error) {
-			r.cmds = append(r.cmds, name+" "+strings.Join(args, " "))
-			if name == "systemd-creds" && len(args) == 4 && args[0] == "decrypt" {
-				return os.ReadFile(args[2])
-			}
-			return nil, errors.New("no output of " + name)
-		},
-		Out: io.Discard, Now: func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) },
+		Host: h,
 		Control: func(sock, path string) error {
-			r.cmds = append(r.cmds, "POST "+sock+path)
+			r.Cmds = append(r.Cmds, "POST "+sock+path)
 			return nil
 		},
 		Start: func(sock string, body map[string]any) error {
 			o := body["origin"].(map[string]any)
-			r.cmds = append(r.cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
-			return nil
-		},
-		RunEnv: func(env []string, name string, args ...string) error {
-			r.cmds = append(r.cmds, strings.Join(env, " ")+" "+name+" "+strings.Join(args, " "))
+			r.Cmds = append(r.Cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
 			return nil
 		},
 		// No DNS in tests: names the test resolves are the test's.
-		LookupHost: func(h string) ([]string, error) { return nil, errors.New("no such host") },
-		Image:      "localhost/agent:test",
-		Secret:     func() string { return "0123456789abcdef0123456789abcdef" },
-		// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
-		Probe: func(name string, args ...string) error {
-			c := name + " " + strings.Join(args, " ")
-			r.cmds = append(r.cmds, c)
-			if r.gone != nil {
-				return r.gone(c)
-			}
-			return errors.New("not found")
-		},
-		Sleep:       func(time.Duration) {},
+		LookupHost:  func(h string) ([]string, error) { return nil, errors.New("no such host") },
+		Image:       "localhost/agent:test",
+		Secret:      func() string { return "0123456789abcdef0123456789abcdef" },
 		SandboxGone: 5 * time.Second,
-		// No records: nothing observed yet.
-		JournalJSON: func(...string) ([]byte, error) { return nil, nil },
 	}
-	a.Journal = func(string) journal.Logger { return &r.journal }
 	return a, r
 }
 
@@ -101,7 +60,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	read := func(p string) string { b, _ := os.ReadFile(a.p(p)); return string(b) }
+	read := func(p string) string { b, _ := os.ReadFile(a.Path(p)); return string(b) }
 	if s := read("/etc/sysusers.d/agent-patch-pilot.conf"); !strings.Contains(s, "u agent-patch-pilot -") || !strings.Contains(s, "m agent-patch-pilot mcp-users") {
 		t.Errorf("sysusers %q", s)
 	}
@@ -111,7 +70,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if s := read("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"); !strings.Contains(s, "OnCalendar=Mon..Fri 06:00") {
 		t.Errorf("timer %q", s)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	for _, want := range []string{"systemd-sysusers", "systemctl enable --now agent@patch-pilot.socket", "systemctl enable --now agent-schedule@patch-pilot_compliance.timer"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in\n%s", want, all)
@@ -139,7 +98,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if !testHas(s, "mode: bounded", "paused: true", "paused_by: alice 2026-11-03T12:00:00Z", "install_patches", "autonomous: true") {
 		t.Errorf("gateway data %q", s)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
 		t.Error("agent not told to pause")
 	}
 	if names, _ := a.List(); len(names) != 1 || names[0] != "patch-pilot" {
@@ -170,21 +129,21 @@ func TestCreateModePauseDelete(t *testing.T) {
 		t.Errorf("after release-all: %q", s)
 	}
 	// Root's records of both (O11: an emergency stop is an incident).
-	if s, rl := r.journal.Events(journal.AgentsStopped), r.journal.Events(journal.AgentsReleased); len(s) != 1 || s[0].Fields["BY"] != "alice" ||
+	if s, rl := r.Journal.Events(journal.AgentsStopped), r.Journal.Events(journal.AgentsReleased); len(s) != 1 || s[0].Fields["BY"] != "alice" ||
 		len(rl) != 1 || rl[0].Fields["BY"] != "bob" {
 		t.Errorf("stop records %v, release records %v", s, rl)
 	}
-	os.MkdirAll(a.p(filepath.Join(SocketDir, "patch-pilot")), 0o755)
+	os.MkdirAll(a.Path(filepath.Join(SocketDir, "patch-pilot")), 0o755)
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a.agentDir("patch-pilot")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.AgentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Error("config stays")
 	}
-	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
 		t.Error("gateway data stays")
 	}
-	if _, err := os.Stat(a.p(filepath.Join(SocketDir, "patch-pilot"))); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path(filepath.Join(SocketDir, "patch-pilot"))); !os.IsNotExist(err) {
 		t.Error("socket directory stays: the Cockpit page would list the agent")
 	}
 }
@@ -251,12 +210,12 @@ func TestSetCredentialMode(t *testing.T) {
 	if err := a.SetCredential("patch-pilot", "model-key", strings.NewReader("s")); err != nil {
 		t.Fatal(err)
 	}
-	f := a.p("/etc/credstore.encrypted/agent-patch-pilot.model-key")
+	f := a.Path("/etc/credstore.encrypted/agent-patch-pilot.model-key")
 	if st, err := os.Stat(f); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("%s: %v %v", f, st.Mode(), err)
 	}
-	if !testHas(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name=agent-patch-pilot.model-key - "+f) {
-		t.Errorf("commands %q", r.cmds)
+	if !testHas(strings.Join(r.Cmds, "\n"), "systemd-creds encrypt --name=agent-patch-pilot.model-key - "+f) {
+		t.Errorf("commands %q", r.Cmds)
 	}
 }
 
@@ -276,12 +235,12 @@ func TestTrigger(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Trigger("patch-pilot_compliance"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "START /run/agents/patch-pilot/api.sock Run the compliance check. schedule compliance agent-schedule@patch-pilot_compliance.timer"; len(r.cmds) != 1 || r.cmds[0] != want {
-		t.Errorf("got %v\nwant %s", r.cmds, want)
+	if want := "START /run/agents/patch-pilot/api.sock Run the compliance check. schedule compliance agent-schedule@patch-pilot_compliance.timer"; len(r.Cmds) != 1 || r.Cmds[0] != want {
+		t.Errorf("got %v\nwant %s", r.Cmds, want)
 	}
 	for _, bad := range []string{"patch-pilot_nope", "patch-pilot", "../x_y"} {
 		if err := a.Trigger(bad); err == nil {
@@ -304,7 +263,7 @@ func TestOpenShellAgent(t *testing.T) {
 	if err := a.Create("sb", f); err != nil {
 		t.Fatal(err)
 	}
-	dir := a.agentDir("sb")
+	dir := a.AgentDir("sb")
 	for name, want := range map[string]string{
 		"openshell-policy.yaml":  "run_as_user: sandbox",
 		"openshell-profile.yaml": "id: custos-gateway-sb",
@@ -319,7 +278,7 @@ func TestOpenShellAgent(t *testing.T) {
 	if st, _ := os.Stat(filepath.Join(dir, "relay.secret")); st.Mode().Perm() != 0o600 {
 		t.Errorf("relay.secret mode %v", st.Mode())
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if !strings.Contains(all, "openshell -g openshell profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global") {
 		t.Errorf("profile not imported:\n%s", all)
 	}
@@ -327,11 +286,11 @@ func TestOpenShellAgent(t *testing.T) {
 		t.Errorf("no systemd socket and no sandbox before the token:\n%s", all)
 	}
 
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.SetCredential("sb", "gateway-token", strings.NewReader("tok-123\n")); err != nil {
 		t.Fatal(err)
 	}
-	all = strings.Join(r.cmds, "\n")
+	all = strings.Join(r.Cmds, "\n")
 	for _, want := range []string{
 		"AGENT_GATEWAY_TOKEN=tok-123 openshell -g openshell provider create --name agent-sb-gateway --type custos-gateway-sb --credential AGENT_GATEWAY_TOKEN",
 		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy " + filepath.Join(dir, "openshell-policy.yaml"),
@@ -345,7 +304,7 @@ func TestOpenShellAgent(t *testing.T) {
 	}
 	// The relay secret only in the environment, never as an argument
 	// (security review H2): the recorded line is "ENV… name args…".
-	for _, c := range r.cmds {
+	for _, c := range r.Cmds {
 		if i := strings.Index(c, "openshell "); i >= 0 && strings.Contains(c[i:], "0123456789abcdef0123456789abcdef") {
 			t.Errorf("the relay secret on a command line: %s", c)
 		}
@@ -354,22 +313,22 @@ func TestOpenShellAgent(t *testing.T) {
 		t.Error("token on a command line")
 	}
 
-	r.cmds = nil
+	r.Cmds = nil
 	a.StopAll("alice")
-	all = strings.Join(r.cmds, "\n")
+	all = strings.Join(r.Cmds, "\n")
 	if !strings.Contains(all, "agent-openshell@*.service") || !strings.Contains(all, "openshell -g openshell sandbox stop agent-sb") {
 		t.Errorf("stop-all misses the sandbox:\n%s", all)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	a.ReleaseAll("alice")
-	if all = strings.Join(r.cmds, "\n"); !strings.Contains(all, "agent-openshell@sb.socket") {
+	if all = strings.Join(r.Cmds, "\n"); !strings.Contains(all, "agent-openshell@sb.socket") {
 		t.Errorf("release-all:\n%s", all)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Delete("sb", false); err != nil {
 		t.Fatal(err)
 	}
-	all = strings.Join(r.cmds, "\n")
+	all = strings.Join(r.Cmds, "\n")
 	for _, want := range []string{"disable --now agent-openshell@sb.socket", "sandbox delete agent-sb", "provider delete agent-sb-gateway", "profile delete custos-gateway-sb"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("delete misses %q:\n%s", want, all)
@@ -406,7 +365,7 @@ func TestOpenShellAgentOAuth(t *testing.T) {
 	if err := a.Create("sb", f); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell-profile.yaml"))
+	b, _ := os.ReadFile(filepath.Join(a.AgentDir("sb"), "openshell-profile.yaml"))
 	if !strings.Contains(string(b), "strategy: oauth2_client_credentials") || !strings.Contains(string(b), "token_url: https://idp.example.com/token") {
 		t.Errorf("profile without the refresh:\n%s", b)
 	}
@@ -414,11 +373,11 @@ func TestOpenShellAgentOAuth(t *testing.T) {
 		t.Error("a static token accepted for an agent with an OAuth client")
 	}
 
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.SetCredential("sb", "gateway-client-secret", strings.NewReader("s3cret-value\n")); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	want := []string{
 		"openshell -g openshell provider create --name agent-sb-gateway --type custos-gateway-sb --runtime-credentials",
 		"CUSTOS_GATEWAY_CLIENT_SECRET=s3cret-value openshell -g openshell provider refresh configure agent-sb-gateway --credential-key AGENT_GATEWAY_TOKEN --strategy oauth2-client-credentials --material client_id=agent-sb --secret-material-env client_secret=CUSTOS_GATEWAY_CLIENT_SECRET",
@@ -467,11 +426,11 @@ func TestOpenShellUser(t *testing.T) {
 	if err := a.Create("sb", f); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell.env"))
+	b, _ := os.ReadFile(filepath.Join(a.AgentDir("sb"), "openshell.env"))
 	if !strings.Contains(string(b), "\nOPENSHELL_USER=osh\n") {
 		t.Errorf("openshell.env:\n%s", b)
 	}
-	d, err := os.ReadFile(a.p(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf")))
+	d, err := os.ReadFile(a.Path(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf")))
 	if err != nil || !strings.Contains(string(d), "ReadWritePaths=-/home/osh/.local/share/containers -/run/user/1001\n") {
 		t.Errorf("relay drop-in: %v\n%s", err, d)
 	}
@@ -522,7 +481,7 @@ func openShellRunning(t *testing.T, yml string) (*Admin, *rec) {
 	if err := a.SetCredential("sb", cred, strings.NewReader(secret)); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	return a, r
 }
 
@@ -541,12 +500,12 @@ func TestEditSystemd(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	os.WriteFile(f, []byte(strings.Replace(yml, "name: m", "name: m2", 1)), 0o644)
 	if err := a.Edit("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if !strings.HasSuffix(all, "systemctl try-restart agent@patch-pilot.service") || strings.Contains(all, "openshell") {
 		t.Errorf("edit of a systemd agent:\n%s", all)
 	}
@@ -562,7 +521,7 @@ func TestEditSystemd(t *testing.T) {
 // and the relay runs again as it ran.
 func TestEditOpenShellRecreatesSandbox(t *testing.T) {
 	a, r := openShellRunning(t, oshYml)
-	dir := a.agentDir("sb")
+	dir := a.AgentDir("sb")
 	a.Image = "localhost/agent:other" // CUSTOS_OPENSHELL_IMAGE now; the sandbox keeps its own
 	edited := strings.Replace(oshYml, "http://127.0.0.1:8008/v1", "http://127.0.0.1:9009/v1", 1) + "limits: {max_llm_calls: 7}\n"
 	if err := edit(t, a, edited); err != nil {
@@ -571,17 +530,17 @@ func TestEditOpenShellRecreatesSandbox(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dir, "openshell-policy.yaml")); !strings.Contains(string(b), "port: 9009") {
 		t.Errorf("policy not rewritten:\n%s", b)
 	}
-	if w := inOrder(r.cmds,
+	if w := inOrder(r.Cmds,
 		"systemctl stop agent-openshell@sb.socket agent-openshell@sb.service",
 		"openshell -g openshell sandbox delete agent-sb",
 		"openshell -g openshell sandbox create --name agent-sb --from localhost/agent:test --policy "+filepath.Join(dir, "openshell-policy.yaml"),
 		"systemctl start agent-openshell@sb.socket agent-openshell@sb.service",
 	); w != "" {
-		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
 	// The new configuration is the sandbox's.
 	var create string
-	for _, c := range r.cmds {
+	for _, c := range r.Cmds {
 		if strings.Contains(c, "sandbox create") {
 			create = c
 		}
@@ -595,7 +554,7 @@ func TestEditOpenShellRecreatesSandbox(t *testing.T) {
 	if !strings.Contains(string(sc), "max_llm_calls: 7") || !strings.Contains(string(sc), "host.openshell.internal:9009") {
 		t.Errorf("the sandbox's configuration:\n%s", sc)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	// The profile did not change; the provider and its token stay.
 	if strings.Contains(all, "profile import") || strings.Contains(all, "openshell -g openshell provider") || strings.Contains(all, "agent@sb") {
 		t.Errorf("edit touched the profile, the provider or systemd's units:\n%s", all)
@@ -606,15 +565,15 @@ func TestEditOpenShellRecreatesSandbox(t *testing.T) {
 // the relay stays down.
 func TestEditOpenShellStopped(t *testing.T) {
 	a, r := openShellRunning(t, oshYml)
-	r.fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-active") }
+	r.Fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-active") }
 	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 7}\n"); err != nil {
 		t.Fatal(err)
 	}
-	if w := inOrder(r.cmds, "sandbox create --name agent-sb", "openshell -g openshell sandbox stop agent-sb"); w != "" {
-		t.Errorf("missing %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	if w := inOrder(r.Cmds, "sandbox create --name agent-sb", "openshell -g openshell sandbox stop agent-sb"); w != "" {
+		t.Errorf("missing %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
-	if n := countPrefix(r.cmds, "systemctl start"); n != 0 {
-		t.Errorf("the relay was started:\n%s", strings.Join(r.cmds, "\n"))
+	if n := countPrefix(r.Cmds, "systemctl start"); n != 0 {
+		t.Errorf("the relay was started:\n%s", strings.Join(r.Cmds, "\n"))
 	}
 }
 
@@ -622,18 +581,18 @@ func TestEditOpenShellStopped(t *testing.T) {
 // profile is imported again before the sandbox is recreated.
 func TestEditOpenShellProfile(t *testing.T) {
 	a, r := openShellRunning(t, oshYml)
-	dir := a.agentDir("sb")
+	dir := a.AgentDir("sb")
 	if err := edit(t, a, strings.Replace(oshYml, "gw.example.com:8443", "gw2.example.com:9443", 1)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "openshell-profile.yaml")); !strings.Contains(string(b), "host: gw2.example.com") {
 		t.Errorf("profile not rewritten:\n%s", b)
 	}
-	if w := inOrder(r.cmds,
+	if w := inOrder(r.Cmds,
 		"openshell -g openshell profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global",
 		"openshell -g openshell sandbox create --name agent-sb",
 	); w != "" {
-		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
 }
 
@@ -644,7 +603,7 @@ func TestEditOpenShellUnchanged(t *testing.T) {
 	if err := edit(t, a, oshYml); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if !strings.HasSuffix(all, "systemctl try-restart agent-openshell@sb.service") || strings.Contains(all, "sandbox") || strings.Contains(all, "agent@sb") {
 		t.Errorf("unchanged edit:\n%s", all)
 	}
@@ -659,16 +618,16 @@ func TestEditOpenShellBeforeCredential(t *testing.T) {
 	if err := a.Create("sb", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
-	r.fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-enabled agent-openshell@sb.socket") }
+	r.Cmds = nil
+	r.Fail = func(c string) bool { return strings.HasPrefix(c, "systemctl -q is-enabled agent-openshell@sb.socket") }
 	if err := edit(t, a, strings.Replace(oshYml, "8008", "9009", 1)); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if strings.Contains(all, "sandbox") || strings.Contains(all, "systemctl start") || strings.Contains(all, "try-restart") {
 		t.Errorf("edit before the sandbox exists:\n%s", all)
 	}
-	if b, _ := os.ReadFile(filepath.Join(a.agentDir("sb"), "openshell-policy.yaml")); !strings.Contains(string(b), "port: 9009") {
+	if b, _ := os.ReadFile(filepath.Join(a.AgentDir("sb"), "openshell-policy.yaml")); !strings.Contains(string(b), "port: 9009") {
 		t.Errorf("policy not rewritten:\n%s", b)
 	}
 }
@@ -681,15 +640,15 @@ func TestEditOpenShellCredentialKind(t *testing.T) {
 	if err := edit(t, a, oshOAuthYml); err != nil {
 		t.Fatal(err)
 	}
-	if w := inOrder(r.cmds,
+	if w := inOrder(r.Cmds,
 		"openshell -g openshell profile import",
 		"systemctl disable --now agent-openshell@sb.socket agent-openshell@sb.service",
 		"openshell -g openshell sandbox delete agent-sb",
 		"openshell -g openshell provider delete agent-sb-gateway",
 	); w != "" {
-		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
-	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "sandbox create") {
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "sandbox create") {
 		t.Errorf("a sandbox without a provider:\n%s", all)
 	}
 	// An OAuth agent whose scopes change keeps its client: recreated.
@@ -697,10 +656,10 @@ func TestEditOpenShellCredentialKind(t *testing.T) {
 	if err := edit(t, a, strings.Replace(oshOAuthYml, "scopes: [mcp]", "scopes: [mcp, more]", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if w := inOrder(r.cmds, "profile import", "sandbox create --name agent-sb", "systemctl start"); w != "" {
-		t.Errorf("missing %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	if w := inOrder(r.Cmds, "profile import", "sandbox create --name agent-sb", "systemctl start"); w != "" {
+		t.Errorf("missing %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
-	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "provider delete") {
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "provider delete") {
 		t.Errorf("the provider was deleted:\n%s", all)
 	}
 }
@@ -731,7 +690,7 @@ func TestConfigurationFromStdin(t *testing.T) {
 	if err := a.Create("patch-pilot", "-"); err != nil {
 		t.Fatalf("create --from -: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(a.agentDir("patch-pilot"), "agent.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(a.AgentDir("patch-pilot"), "agent.yaml")); err != nil {
 		t.Errorf("agent.yaml not installed: %v", err)
 	}
 	a.In = strings.NewReader(strings.Replace(yml, "Keeps", "Still keeps", 1))
@@ -750,7 +709,7 @@ func TestConfigurationFromStdin(t *testing.T) {
 func TestEditOpenShellWaitsForDeletion(t *testing.T) {
 	a, r := openShellRunning(t, oshYml)
 	left := 3
-	r.gone = func(c string) error {
+	r.Gone = func(c string) error {
 		if strings.Contains(c, "sandbox get agent-sb") && left > 0 {
 			left--
 			return nil
@@ -760,19 +719,19 @@ func TestEditOpenShellWaitsForDeletion(t *testing.T) {
 	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 7}\n"); err != nil {
 		t.Fatal(err)
 	}
-	if n := countPrefix(r.cmds, "openshell -g openshell sandbox get agent-sb"); n != 4 {
-		t.Errorf("%d probes, want 4:\n%s", n, strings.Join(r.cmds, "\n"))
+	if n := countPrefix(r.Cmds, "openshell -g openshell sandbox get agent-sb"); n != 4 {
+		t.Errorf("%d probes, want 4:\n%s", n, strings.Join(r.Cmds, "\n"))
 	}
-	if w := inOrder(r.cmds, "sandbox delete agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox create --name agent-sb"); w != "" {
-		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.cmds, "\n"))
+	if w := inOrder(r.Cmds, "sandbox delete agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox get agent-sb", "sandbox create --name agent-sb"); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
 	// A sandbox that does not go away: an error, no create.
 	a, r = openShellRunning(t, oshYml)
-	r.gone = func(string) error { return nil }
+	r.Gone = func(string) error { return nil }
 	if err := edit(t, a, oshYml+"limits: {max_llm_calls: 8}\n"); err == nil || !strings.Contains(err.Error(), "still there") {
 		t.Errorf("a sandbox that stays: %v", err)
 	}
-	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "sandbox create") {
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "sandbox create") {
 		t.Errorf("created over the old sandbox:\n%s", all)
 	}
 }
@@ -816,14 +775,14 @@ func TestEditKeepsDisabledSchedules(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	edited := strings.Replace(yml, `"Mon..Fri 06:00"`, `"Mon..Fri 07:00"`, 1) +
 		`  - {name: weekly, on_calendar: "Sun 03:00", prompt: "Report."}` + "\n"
 	os.WriteFile(f, []byte(edited), 0o644)
 	if err := a.Edit("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if !strings.Contains(all, "systemctl try-restart agent-schedule@patch-pilot_compliance.timer") ||
 		strings.Contains(all, "enable --now agent-schedule@patch-pilot_compliance.timer") {
 		t.Errorf("the existing schedule:\n%s", all)
@@ -831,7 +790,7 @@ func TestEditKeepsDisabledSchedules(t *testing.T) {
 	if !strings.Contains(all, "systemctl enable --now agent-schedule@patch-pilot_weekly.timer") {
 		t.Errorf("the new schedule:\n%s", all)
 	}
-	b, _ := os.ReadFile(a.p("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"))
+	b, _ := os.ReadFile(a.Path("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"))
 	if !strings.Contains(string(b), "OnCalendar=Mon..Fri 07:00") {
 		t.Errorf("calendar %q", b)
 	}
@@ -855,30 +814,30 @@ func TestReleaseAllKeepsDisabledUnits(t *testing.T) {
 	}
 	// Enabled: patch-pilot's socket. Disabled: its schedule's timer, and
 	// kept-off's socket and timer.
-	r.gone = func(c string) error {
+	r.Gone = func(c string) error {
 		if c == "systemctl is-enabled --quiet agent@patch-pilot.socket" {
 			return nil
 		}
 		return errors.New("disabled")
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.ReleaseAll("bob"); err != nil {
 		t.Fatal(err)
 	}
 	var start string
-	for _, c := range r.cmds {
+	for _, c := range r.Cmds {
 		if strings.HasPrefix(c, "systemctl start ") {
 			start = c
 		}
 	}
 	if start != "systemctl start agent@patch-pilot.socket" {
-		t.Errorf("start %q, want only the enabled socket (commands %q)", start, r.cmds)
+		t.Errorf("start %q, want only the enabled socket (commands %q)", start, r.Cmds)
 	}
 	// Nothing enabled: no start at all.
-	r.gone = func(string) error { return errors.New("disabled") }
-	r.cmds = nil
+	r.Gone = func(string) error { return errors.New("disabled") }
+	r.Cmds = nil
 	a.ReleaseAll("bob")
-	if all := strings.Join(r.cmds, "\n"); strings.Contains(all, "systemctl start") {
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "systemctl start") {
 		t.Errorf("started with nothing enabled:\n%s", all)
 	}
 }
@@ -909,10 +868,10 @@ func TestPauseWithoutGatewayData(t *testing.T) {
 	if err := a.Pause("mock", "alice", true); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.cmds) != 1 || r.cmds[0] != "POST /run/agents/mock/api.sock/v1/pause" {
-		t.Errorf("cmds %v", r.cmds)
+	if len(r.Cmds) != 1 || r.Cmds[0] != "POST /run/agents/mock/api.sock/v1/pause" {
+		t.Errorf("cmds %v", r.Cmds)
 	}
-	if _, err := os.Stat(a.gatewayFile("mock")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.GatewayFile("mock")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("gateway data was written for it")
 	}
 	a.Control = func(string, string) error { return errors.New("connection refused") }
@@ -940,9 +899,9 @@ func TestStopWithoutTheGatewaysPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.OPAData = func(string) (any, error) { return nil, nil } // never loads
-	r.cmds = nil
+	r.Cmds = nil
 	err := a.StopAll("alice")
-	all := strings.Join(r.cmds, "\n")
+	all := strings.Join(r.Cmds, "\n")
 	if err == nil || !strings.Contains(err.Error(), "the agents' units are stopped, but the gateway's policy has not loaded the stop yet") {
 		t.Errorf("stop-all with a stale gateway: %v", err)
 	}
@@ -952,15 +911,15 @@ func TestStopWithoutTheGatewaysPolicy(t *testing.T) {
 			t.Errorf("stop-all did not run %q:\n%s", want, all)
 		}
 	}
-	if b, _ := os.ReadFile(a.p(GatewayStop)); !strings.Contains(string(b), "stopped: true") {
+	if b, _ := os.ReadFile(a.Path(GatewayStop)); !strings.Contains(string(b), "stopped: true") {
 		t.Errorf("the flag: %s", b)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Pause("patch-pilot", "alice", true); err == nil {
 		t.Error("pause with a stale gateway: no error")
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
-		t.Errorf("the host was not paused: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "POST /run/agents/patch-pilot/api.sock/v1/pause") {
+		t.Errorf("the host was not paused: %v", r.Cmds)
 	}
 }
 
@@ -990,7 +949,7 @@ func TestOpenShellForwardPortTaken(t *testing.T) {
 	if err := create(second, oshYml); err == nil || !strings.Contains(err.Error(), "forward port") || !strings.Contains(err.Error(), first) {
 		t.Errorf("a second agent on %s's port: %v", first, err)
 	}
-	if _, err := os.Stat(a.agentDir(second)); err == nil {
+	if _, err := os.Stat(a.AgentDir(second)); err == nil {
 		t.Error("the refused agent's directory was made")
 	}
 	sys := "version: 1\nname: sb\nmodel: {provider: openai, name: m, endpoint: \"http://127.0.0.1:8008/v1\"}\ngateway: {servers: [zypp]}\n"
@@ -998,3 +957,43 @@ func TestOpenShellForwardPortTaken(t *testing.T) {
 		t.Errorf("a systemd agent of that name: %v", err)
 	}
 }
+
+// catalog writes the shipped categories (packaging/categories) into the
+// test root, and an agent with permissions in two of them.
+func withCategories(t *testing.T) (*Admin, *journal.Memory) {
+	t.Helper()
+	a, mem, _ := withCategoriesRec(t)
+	return a, mem
+}
+
+// withCategoriesRec is withCategories with the commands agent-admin ran.
+func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
+	t.Helper()
+	a, r := newAdmin(t)
+	m, err := filepath.Glob("../../packaging/categories/*.yaml")
+	if err != nil || len(m) == 0 {
+		t.Fatalf("no shipped categories: %v", err)
+	}
+	for _, f := range m {
+		b, _ := os.ReadFile(f)
+		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
+	}
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	perms := "- {server: zypp, tool: 'list_*', read_only: true}\n- {server: zypp, tool: install_patches, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"
+	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
+		t.Fatal(err)
+	}
+	if r := mem.Events(journal.PermissionsChanged); len(r) != 1 || r[0].Fields["PERMISSIONS_FROM"] != "[]" { // create gave none
+		t.Fatalf("permissions records: %v", r)
+	}
+	mem.Records = nil
+	return a, mem, r
+}
+
+const sat = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}\n"

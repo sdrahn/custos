@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // A systemd agent's network (CONTRACT.md §3a, security review M4): the
@@ -57,7 +58,7 @@ func (a *Admin) FenceAddresses(cfg *config.Config) ([]string, error) {
 	for _, s := range addrs {
 		add(s)
 	}
-	if b, err := os.ReadFile(a.p(ResolvConf)); err == nil {
+	if b, err := os.ReadFile(a.Path(ResolvConf)); err == nil {
 		for _, l := range strings.Split(string(b), "\n") {
 			if f := strings.Fields(strings.SplitN(l, "#", 2)[0]); len(f) >= 2 && f[0] == "nameserver" {
 				add(f[1])
@@ -70,10 +71,10 @@ func (a *Admin) FenceAddresses(cfg *config.Config) ([]string, error) {
 // Fence lets a systemd agent's unit reach its model endpoint, for this
 // start (agent@.service's ExecStartPre).
 func (a *Admin) Fence(name string) error {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	cfg, err := config.Load(a.agentDir(name))
+	cfg, err := config.Load(a.AgentDir(name))
 	if err != nil {
 		return err
 	}

@@ -45,7 +45,7 @@ func eventAdmin(t *testing.T) (*Admin, *rec, *[]map[string]any) {
 // removes the rest, and leaves the administrator's own drop-ins.
 func TestEventDropIns(t *testing.T) {
 	a, r, _ := eventAdmin(t)
-	read := func(p string) string { b, _ := os.ReadFile(a.p(p)); return string(b) }
+	read := func(p string) string { b, _ := os.ReadFile(a.Path(p)); return string(b) }
 	nginx := "/etc/systemd/system/nginx.service.d/50-custos-event-patch-pilot_web-down.conf"
 	if s := read(nginx); !strings.Contains(s, "[Unit]\nOnFailure=agent-event@patch-pilot_web-down_nginx.service.service\n") {
 		t.Errorf("nginx drop-in %q", s)
@@ -53,11 +53,11 @@ func TestEventDropIns(t *testing.T) {
 	if s := read("/etc/systemd/system/php-fpm.service.d/50-custos-event-patch-pilot_web-down.conf"); !strings.Contains(s, "OnFailure=agent-event@patch-pilot_web-down_php-fpm.service.service") {
 		t.Errorf("php-fpm drop-in %q", s)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemctl daemon-reload") {
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemctl daemon-reload") {
 		t.Error("no daemon-reload")
 	}
 	// The administrator's own drop-in on nginx stays through all of it.
-	own := a.p("/etc/systemd/system/nginx.service.d/override.conf")
+	own := a.Path("/etc/systemd/system/nginx.service.d/override.conf")
 	os.WriteFile(own, []byte("[Service]\nRestart=on-failure\n"), 0o644)
 
 	f := filepath.Join(t.TempDir(), "b.yaml")
@@ -65,7 +65,7 @@ func TestEventDropIns(t *testing.T) {
 	if err := a.Edit("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a.p(nginx)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.Path(nginx)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the drop-in of a unit no longer named stays: %v", err)
 	}
 	if _, err := os.Stat(own); err != nil {
@@ -74,11 +74,11 @@ func TestEventDropIns(t *testing.T) {
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
 	}
-	left, _ := filepath.Glob(a.p("/etc/systemd/system/*.d/50-custos-event-*"))
+	left, _ := filepath.Glob(a.Path("/etc/systemd/system/*.d/50-custos-event-*"))
 	if len(left) != 0 {
 		t.Errorf("left after delete: %v", left)
 	}
-	if _, err := os.Stat(a.p("/etc/systemd/system/php-fpm.service.d")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.Path("/etc/systemd/system/php-fpm.service.d")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("an emptied drop-in directory stays: %v", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestEventStartsAndDamps(t *testing.T) {
 	if _, ok := b["unit"]; ok || b["playbook"] != nil {
 		t.Errorf("without a playbook, no unit: %v", b)
 	}
-	if s, _ := os.ReadFile(a.p(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !strings.HasPrefix(string(s), "2026-11-07T10:00:00Z") {
+	if s, _ := os.ReadFile(a.Path(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !strings.HasPrefix(string(s), "2026-11-07T10:00:00Z") {
 		t.Errorf("state %q", s)
 	}
 
@@ -139,7 +139,7 @@ func TestEventStartsAndDamps(t *testing.T) {
 	if len(*started) != 1 {
 		t.Errorf("damped event started: %v", *started)
 	}
-	sk := r.journal.Events(journal.EventSkipped)
+	sk := r.Journal.Events(journal.EventSkipped)
 	if len(sk) != 1 || sk[0].Fields["ORIGIN_EVENT"] != "web-down" || sk[0].Fields["ORIGIN_BY"] != "unit-failure:nginx.service" ||
 		!strings.Contains(sk[0].Fields["REASON"], "minimum interval") {
 		t.Errorf("event.skipped %+v", sk)
@@ -159,7 +159,7 @@ func TestEventStartsAndDamps(t *testing.T) {
 	if err := a.Event("patch-pilot_web-down_nginx.service"); err != nil || len(*started) != 2 {
 		t.Errorf("started while its activity runs: %v %d", err, len(*started))
 	}
-	if sk := r.journal.Events(journal.EventSkipped); len(sk) != 2 || !strings.Contains(sk[1].Fields["REASON"], "e-run for nginx.service still runs") {
+	if sk := r.Journal.Events(journal.EventSkipped); len(sk) != 2 || !strings.Contains(sk[1].Fields["REASON"], "e-run for nginx.service still runs") {
 		t.Errorf("event.skipped %+v", sk)
 	}
 	a.Activities = func(string) ([]map[string]any, error) { return nil, nil }
@@ -176,10 +176,10 @@ func TestEventRefused(t *testing.T) {
 	if err := a.Event("patch-pilot_web-down_nginx.service"); err == nil {
 		t.Error("a refused start is no error")
 	}
-	if sk := r.journal.Events(journal.EventSkipped); len(sk) != 1 || !strings.Contains(sk[0].Fields["REASON"], "paused") {
+	if sk := r.Journal.Events(journal.EventSkipped); len(sk) != 1 || !strings.Contains(sk[0].Fields["REASON"], "paused") {
 		t.Errorf("event.skipped %+v", sk)
 	}
-	if _, err := os.Stat(a.p(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.Path(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !errors.Is(err, os.ErrNotExist) {
 		t.Error("a refused start counts toward the interval")
 	}
 	for _, bad := range []string{"patch-pilot_web-down_sshd.service", "patch-pilot_nope_nginx.service", "patch-pilot_web-down", "../x_y_z.service", "patch-pilot"} {

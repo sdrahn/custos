@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -41,7 +42,7 @@ func TestSealAgentData(t *testing.T) {
 	if err != nil || pub == "" || !agents {
 		t.Fatalf("the new seal does not cover agent data: %v %v", agents, err)
 	}
-	file := a.gatewayFile("patch-pilot")
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	if !strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "signed with the host's seal") {
 		t.Fatalf("not signed:\n%s", b)
@@ -99,12 +100,12 @@ func TestSealAgentData(t *testing.T) {
 
 	// Another agent's signed data under this name does not count.
 	b, _ = os.ReadFile(file)
-	os.WriteFile(a.gatewayFile("other"), []byte(strings.Replace(string(b), "patch-pilot:", "other:", 1)), 0o644)
+	os.WriteFile(a.GatewayFile("other"), []byte(strings.Replace(string(b), "patch-pilot:", "other:", 1)), 0o644)
 	p, _ = a.Show()
 	if tm := p.Agents["other"].Tampered; !strings.Contains(tm, "does not match its seal") {
 		t.Errorf("another agent's signature: %q", tm)
 	}
-	os.Remove(a.gatewayFile("other"))
+	os.Remove(a.GatewayFile("other"))
 
 	// An earlier signed file put back verifies, and is reported.
 	before, _ := os.ReadFile(file)
@@ -127,11 +128,11 @@ func TestIssuers(t *testing.T) {
 	if err := a.Issuers([]string{iss}, nil); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := a.agentIssuers()
+	got, _ := a.AgentIssuers()
 	if len(got) != 1 || got[0] != iss {
 		t.Fatalf("issuers %v", got)
 	}
-	b, _ := os.ReadFile(a.p(GatewayHTTPIssuers))
+	b, _ := os.ReadFile(a.Path(GatewayHTTPIssuers))
 	if !strings.Contains(string(b), "signature: ") {
 		t.Fatalf("not signed:\n%s", b)
 	}
@@ -139,7 +140,7 @@ func TestIssuers(t *testing.T) {
 	if p.IssuersTampered != "" {
 		t.Errorf("show: %q", p.IssuersTampered)
 	}
-	os.WriteFile(a.p(GatewayHTTPIssuers), []byte(strings.Replace(string(b), iss, "https://evil.example.com", 1)), 0o644)
+	os.WriteFile(a.Path(GatewayHTTPIssuers), []byte(strings.Replace(string(b), iss, "https://evil.example.com", 1)), 0o644)
 	p, _ = a.Show()
 	if !strings.Contains(p.IssuersTampered, "trusts no issuer") {
 		t.Errorf("a hand edit: %q", p.IssuersTampered)
@@ -147,7 +148,7 @@ func TestIssuers(t *testing.T) {
 	if err := a.Issuers(nil, []string{"https://evil.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := a.agentIssuers(); len(got) != 0 {
+	if got, _ := a.AgentIssuers(); len(got) != 0 {
 		t.Errorf("removed: %v", got)
 	}
 	for _, bad := range []string{"http://idp", "https://a b"} {
@@ -177,7 +178,7 @@ func TestSealAgentsLater(t *testing.T) {
 	if err := a.SetMode("patch-pilot", "supervised"); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	if strings.Contains(string(b), "signature: ") {
 		t.Fatalf("signed though the seal does not cover agent data:\n%s", b)
 	}
@@ -215,20 +216,20 @@ func TestSealAgentsLater(t *testing.T) {
 	// the agent more, and for the categories' state (security review
 	// 0.6, N2); a change that only takes from it is written unsigned
 	// (N3): the gateway denies the agent everything.
-	os.Remove(a.p(filepath.Join(CredstoreDir, SealCredential)))
+	os.Remove(a.Path(filepath.Join(CredstoreDir, SealCredential)))
 	if err := a.SetOwners("patch-pilot", []string{"user:alice"}); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Errorf("owners without the key: %v", err)
 	}
 	if err := a.Enable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Errorf("enable without the key: %v", err)
 	}
-	if _, err := os.Stat(a.p(filepath.Join(CredstoreDir, SealCredential))); err == nil {
+	if _, err := os.Stat(a.Path(filepath.Join(CredstoreDir, SealCredential))); err == nil {
 		t.Error("a new key was made")
 	}
 	if err := a.SetMode("patch-pilot", "advisory"); err != nil {
 		t.Errorf("a lower mode without the key: %v", err)
 	}
-	b, _ = os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ = os.ReadFile(a.GatewayFile("patch-pilot"))
 	if strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "mode: advisory") {
 		t.Errorf("a lower mode without the key is written unsigned:\n%s", b)
 	}
@@ -251,7 +252,7 @@ func TestCountAgents(t *testing.T) {
 func TestReducingWrites(t *testing.T) {
 	a, mem := diagnosticsHost(t)
 	a.JournalJSON = dataJournal(mem)
-	file := a.gatewayFile("patch-pilot")
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
 	var out bytes.Buffer
@@ -271,18 +272,18 @@ func TestReducingWrites(t *testing.T) {
 	if err := a.Issuers([]string{iss, "https://two.example.com"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	h, _ := os.ReadFile(a.p(GatewayHTTPIssuers))
-	os.WriteFile(a.p(GatewayHTTPIssuers), []byte(strings.Replace(string(h), iss, "https://evil.example.com", 1)), 0o644)
+	h, _ := os.ReadFile(a.Path(GatewayHTTPIssuers))
+	os.WriteFile(a.Path(GatewayHTTPIssuers), []byte(strings.Replace(string(h), iss, "https://evil.example.com", 1)), 0o644)
 	if err := a.Issuers([]string{"https://three.example.com"}, nil); err == nil || !strings.Contains(err.Error(), "--accept _http") {
 		t.Errorf("adding to issuers that do not verify: %v", err)
 	}
 	if err := a.Issuers(nil, []string{"https://two.example.com"}); err != nil {
 		t.Errorf("removing from issuers that do not verify: %v", err)
 	}
-	if h, _ = os.ReadFile(a.p(GatewayHTTPIssuers)); strings.Contains(string(h), "signature: ") {
+	if h, _ = os.ReadFile(a.Path(GatewayHTTPIssuers)); strings.Contains(string(h), "signature: ") {
 		t.Errorf("written signed:\n%s", h)
 	}
-	if got, why := a.trustedIssuers(); got != nil || !strings.Contains(why, "does not match its seal") {
+	if got, why := a.TrustedIssuers(); got != nil || !strings.Contains(why, "does not match its seal") {
 		t.Errorf("trusted issuers %v %q", got, why)
 	}
 }
@@ -293,12 +294,12 @@ func TestReducingWrites(t *testing.T) {
 func TestSealFreshness(t *testing.T) {
 	a, mem := diagnosticsHost(t)
 	a.JournalJSON = dataJournal(mem)
-	writeFile(a.p("/etc/machine-id"), []byte("aaaa\n"), 0o444)
+	host.WriteFile(a.Path("/etc/machine-id"), []byte("aaaa\n"), 0o444)
 	if err := a.SetMode("patch-pilot", "supervised"); err != nil {
 		t.Fatal(err)
 	}
 	pub, _, _ := a.sealInfo()
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	got, ok := verifyEntry(pub, "patch-pilot", b)
 	if !ok || got["host"] != "aaaa" || !strings.HasPrefix(fmt.Sprint(got["record"]), "d-") || got["at"] == nil {
 		t.Fatalf("payload %v %v", got, ok)
@@ -306,7 +307,7 @@ func TestSealFreshness(t *testing.T) {
 	if recs := records(mem, journal.GatewayData); recs[len(recs)-1].Fields["DATA_RECORD"] != got["record"] {
 		t.Errorf("the record is not journaled: %+v", recs[len(recs)-1].Fields)
 	}
-	writeFile(a.p("/etc/machine-id"), []byte("bbbb\n"), 0o444)
+	host.WriteFile(a.Path("/etc/machine-id"), []byte("bbbb\n"), 0o444)
 	p, _ := a.Show()
 	if tm := p.Agents["patch-pilot"].Tampered; !strings.Contains(tm, "signed on another host (machine-id aaaa)") {
 		t.Errorf("another host: %q", tm)
@@ -320,8 +321,8 @@ func TestRekey(t *testing.T) {
 	a, mem := diagnosticsHost(t)
 	a.JournalJSON = dataJournal(mem)
 	old, _, _ := a.sealInfo()
-	os.Remove(a.p(filepath.Join(CredstoreDir, SealCredential)))
-	file := a.gatewayFile("patch-pilot")
+	os.Remove(a.Path(filepath.Join(CredstoreDir, SealCredential)))
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
 	if err := a.Rekey("root", nil); err == nil || !strings.Contains(err.Error(), "patch-pilot") {

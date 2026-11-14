@@ -60,7 +60,7 @@ func (a *Admin) output(stdin io.Reader, name string, args ...string) ([]byte, er
 // with systemd-creds (its default key: the TPM and the host's, where
 // there is a TPM).
 func (a *Admin) sealKey() (*ecdsa.PrivateKey, error) {
-	path := a.p(filepath.Join(CredstoreDir, SealCredential))
+	path := a.Path(filepath.Join(CredstoreDir, SealCredential))
 	if _, err := os.Stat(path); err == nil {
 		b, err := a.output(nil, "systemd-creds", "decrypt", "--name="+SealCredential, path, "-")
 		if err != nil {
@@ -78,7 +78,7 @@ func (a *Admin) sealKey() (*ecdsa.PrivateKey, error) {
 // newSealKey makes a new key and keeps it as the credential, replacing
 // one there was (agent-admin seal --rekey).
 func (a *Admin) newSealKey() (*ecdsa.PrivateKey, error) {
-	path := a.p(filepath.Join(CredstoreDir, SealCredential))
+	path := a.Path(filepath.Join(CredstoreDir, SealCredential))
 	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -239,10 +239,10 @@ func (a *Admin) checkSeal(p *Posture) error {
 	return nil
 }
 
-// currentEnablement is the state the gateway enforces, which agent-admin
+// CurrentEnablement is the state the gateway enforces, which agent-admin
 // decides by: on a sealed host, a state the seal does not cover (edited,
 // unsigned, removed) is diagnostics-only.
-func (a *Admin) currentEnablement() (*Enablement, error) {
+func (a *Admin) CurrentEnablement() (*Enablement, error) {
 	e, err := a.GetEnablement()
 	if err != nil {
 		return nil, err

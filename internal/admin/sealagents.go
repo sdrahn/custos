@@ -20,6 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -49,7 +50,7 @@ type sealFile struct {
 // sealInfo is the seal's public key ("" without a seal) and whether it
 // covers the agents' data.
 func (a *Admin) sealInfo() (string, bool, error) {
-	b, err := os.ReadFile(a.p(GatewaySeal))
+	b, err := os.ReadFile(a.Path(GatewaySeal))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
@@ -77,7 +78,7 @@ func (a *Admin) writeSealFile(s sealFile) error {
 	if err := enc.Encode(map[string]sealFile{"_seal": s}); err != nil {
 		return err
 	}
-	return writeFile(a.p(GatewaySeal), buf.Bytes(), 0o644)
+	return host.WriteFile(a.Path(GatewaySeal), buf.Bytes(), 0o644)
 }
 
 // signedEntry is the payload of an entry's signature: the entry as YAML
@@ -156,7 +157,7 @@ func (a *Admin) sealedYAML(k *ecdsa.PrivateKey, head, name string, entry any, se
 
 // machineID is this host's /etc/machine-id, "" without one.
 func (a *Admin) machineID() string {
-	b, err := os.ReadFile(a.p("/etc/machine-id"))
+	b, err := os.ReadFile(a.Path("/etc/machine-id"))
 	if err != nil {
 		return ""
 	}
@@ -196,9 +197,9 @@ func verifyEntry(pub, name string, y []byte) (map[string]any, bool) {
 // entryFile is the file of a sealed entry: an agent's data, or _http.
 func (a *Admin) entryFile(name string) string {
 	if name == HTTPIssuersName {
-		return a.p(GatewayHTTPIssuers)
+		return a.Path(GatewayHTTPIssuers)
 	}
-	return a.gatewayFile(name)
+	return a.GatewayFile(name)
 }
 
 // entryVerified reports whether the entry's file (absent: nothing to
@@ -218,7 +219,7 @@ func (a *Admin) entryVerified(pub, name string) bool {
 // existingSealKey is the seal's key from its credential; it never makes
 // a new one (a new key would not match the seal the gateway has).
 func (a *Admin) existingSealKey() (*ecdsa.PrivateKey, error) {
-	if _, err := os.Stat(a.p(filepath.Join(CredstoreDir, SealCredential))); err != nil {
+	if _, err := os.Stat(a.Path(filepath.Join(CredstoreDir, SealCredential))); err != nil {
 		return nil, fmt.Errorf("the seal's key (%s) is missing: %w", filepath.Join(CredstoreDir, SealCredential), err)
 	}
 	return a.sealKey()
@@ -299,13 +300,13 @@ func (a *Admin) recordData(name string, payload map[string]any) {
 	if name == HTTPIssuersName {
 		agent = "" // no agent's: AGENT_DATA names it
 	}
-	a.record(journal.GatewayData, agent, fmt.Sprintf("%s signed %s", a.who(), what),
-		journal.Fields{"DATA": name, "DATA_SHA256": entryDigest(payload), "DATA_RECORD": fmt.Sprint(payload["record"]), "BY": a.who()})
+	a.Record(journal.GatewayData, agent, fmt.Sprintf("%s signed %s", a.Who(), what),
+		journal.Fields{"DATA": name, "DATA_SHA256": entryDigest(payload), "DATA_RECORD": fmt.Sprint(payload["record"]), "BY": a.Who()})
 }
 
 // agentFiles are the names of the agents with gateway data.
 func (a *Admin) agentFiles() ([]string, error) {
-	m, err := filepath.Glob(a.p(filepath.Join(GatewayAgents, "*.yaml")))
+	m, err := filepath.Glob(a.Path(filepath.Join(GatewayAgents, "*.yaml")))
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +343,7 @@ func (a *Admin) resign(k *ecdsa.PrivateKey, oldPub string, accept map[string]boo
 			"then accept it as it is with --accept NAME (_http for the token issuers)", strings.Join(refused, ", "))
 	}
 	for _, n := range names {
-		d, err := a.readGateway(n)
+		d, err := a.ReadGateway(n)
 		if err != nil {
 			return err
 		}
@@ -353,12 +354,12 @@ func (a *Admin) resign(k *ecdsa.PrivateKey, oldPub string, accept map[string]boo
 		if err != nil {
 			return err
 		}
-		if err := writeFile(a.gatewayFile(n), y, 0o644); err != nil {
+		if err := host.WriteFile(a.GatewayFile(n), y, 0o644); err != nil {
 			return err
 		}
 		a.recordData(n, payload)
 	}
-	issuers, err := a.agentIssuers()
+	issuers, err := a.AgentIssuers()
 	if err != nil {
 		return err
 	}
@@ -472,7 +473,7 @@ func (a *Admin) Rekey(by string, accept []string) error {
 			return err
 		}
 	}
-	a.record(journal.GatewayData, "", by+" gave the seal a new key", journal.Fields{"DATA": "_seal", "BY": by})
+	a.Record(journal.GatewayData, "", by+" gave the seal a new key", journal.Fields{"DATA": "_seal", "BY": by})
 	fmt.Fprintln(a.Out, "the seal has a new key; signed again with it: the task categories' state, the agents' data and the token issuers")
 	return nil
 }
@@ -518,13 +519,13 @@ func (a *Admin) writeIssuersWith(k *ecdsa.PrivateKey, issuers []string) error {
 		if err != nil {
 			return err
 		}
-		return writeFile(a.p(GatewayHTTPIssuers), y, 0o644)
+		return host.WriteFile(a.Path(GatewayHTTPIssuers), y, 0o644)
 	}
 	y, payload, err := a.sealedYAML(k, sealedIssuersHead, HTTPIssuersName, h, func(s string) { h.Signature = s })
 	if err != nil {
 		return err
 	}
-	if err := writeFile(a.p(GatewayHTTPIssuers), y, 0o644); err != nil {
+	if err := host.WriteFile(a.Path(GatewayHTTPIssuers), y, 0o644); err != nil {
 		return err
 	}
 	a.recordData(HTTPIssuersName, payload)
@@ -535,7 +536,7 @@ func (a *Admin) writeIssuersWith(k *ecdsa.PrivateKey, issuers []string) error {
 // issuers --add/--remove) and prints them. With neither it only prints.
 // On a host whose seal covers agent data the file is signed.
 func (a *Admin) Issuers(add, remove []string) error {
-	issuers, err := a.agentIssuers()
+	issuers, err := a.AgentIssuers()
 	if err != nil {
 		return err
 	}
@@ -650,7 +651,7 @@ func (a *Admin) checkAgentSeals(p *Posture) error {
 		return ""
 	}
 	for n, d := range p.Agents {
-		y, err := os.ReadFile(a.gatewayFile(n))
+		y, err := os.ReadFile(a.GatewayFile(n))
 		if why := check(n, y, err); why != "" {
 			d.Tampered = why
 			if strings.HasPrefix(why, "it does not match") || strings.HasPrefix(why, "its file") {
@@ -658,7 +659,7 @@ func (a *Admin) checkAgentSeals(p *Posture) error {
 			}
 		}
 	}
-	y, err := os.ReadFile(a.p(GatewayHTTPIssuers))
+	y, err := os.ReadFile(a.Path(GatewayHTTPIssuers))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
