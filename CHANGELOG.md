@@ -9,6 +9,11 @@ removed.
 
 ### Changed
 
+- The agents' records reach journald through
+  `github.com/coreos/go-systemd/v22/journal` instead of Custos's own
+  writer of journald's protocol. The records and their fields are
+  unchanged; a record too large for a datagram now reaches the journal
+  too, where it was kept as a JSON line on standard error before.
 - The client for OpenAI-compatible model servers builds its requests and
   reads the answers with the OpenAI Go SDK
   (`github.com/openai/openai-go/v3`, pinned to v3.50.0, the last that

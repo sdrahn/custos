@@ -1,17 +1,16 @@
 // Package journal writes the agents' audit records (CONTRACT.md §9) to
-// journald's native protocol, or as JSON lines when there is no journal.
+// journald, or as JSON lines when there is no journal.
 package journal
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"io"
-	"net"
 	"os"
 	"sort"
 	"strings"
 	"sync"
+
+	sdjournal "github.com/coreos/go-systemd/v22/journal"
 )
 
 // Event names and their MESSAGE_IDs (CONTRACT.md §9).
@@ -127,9 +126,6 @@ type Logger interface {
 	Log(event, message string, f Fields)
 }
 
-// SocketPath is journald's native socket.
-const SocketPath = "/run/systemd/journal/socket"
-
 // New returns a logger for agent name: journald if its socket is there,
 // else JSON lines on w.
 func New(name string, w io.Writer) Logger {
@@ -139,64 +135,51 @@ func New(name string, w io.Writer) Logger {
 // NewAs is New with another SYSLOG_IDENTIFIER: agent-admin's promotion
 // records are custos-promotion's (§10).
 func NewAs(ident, name string, w io.Writer) Logger {
-	if c, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: SocketPath, Net: "unixgram"}); err == nil {
-		return &native{ident: ident, name: name, conn: c, fallback: &JSON{Name: name, W: w}}
+	if sdjournal.Enabled() {
+		return &native{ident: ident, name: name, send: sdjournal.Send, fallback: &JSON{Name: name, W: w}}
 	}
 	return &JSON{Name: name, W: w}
 }
 
+// native writes to journald with go-systemd, which speaks its native
+// protocol (multi-line values, and a memfd for a record too large for a
+// datagram).
 type native struct {
 	ident    string
 	name     string
-	mu       sync.Mutex
-	conn     *net.UnixConn
+	send     func(message string, p sdjournal.Priority, vars map[string]string) error
 	fallback *JSON
 }
 
 func (n *native) Log(event, message string, f Fields) {
-	var b bytes.Buffer
-	put := func(k, v string) {
-		if strings.ContainsRune(v, '\n') {
-			b.WriteString(k)
-			b.WriteByte('\n')
-			binary.Write(&b, binary.LittleEndian, uint64(len(v)))
-			b.WriteString(v)
-			b.WriteByte('\n')
-			return
-		}
-		b.WriteString(k + "=" + v + "\n")
+	vars := map[string]string{
+		"MESSAGE_ID":        MessageIDs[event],
+		"SYSLOG_IDENTIFIER": n.ident,
+		"AGENT_CONTRACT":    "1",
+		"AGENT_NAME":        n.name,
+		"AGENT_EVENT":       event,
 	}
-	put("MESSAGE", message)
-	put("MESSAGE_ID", MessageIDs[event])
-	put("PRIORITY", priority(event))
-	put("SYSLOG_IDENTIFIER", n.ident)
-	put("AGENT_CONTRACT", "1")
-	put("AGENT_NAME", n.name)
-	put("AGENT_EVENT", event)
-	for _, k := range sortedKeys(f) {
+	for k, v := range f {
 		// A name journald would read otherwise (a newline, "=") never
 		// becomes fields of the caller's choosing.
-		if f[k] != "" && ValidField(k) {
-			put("AGENT_"+k, f[k])
+		if v != "" && ValidField(k) {
+			vars["AGENT_"+k] = v
 		}
 	}
-	n.mu.Lock()
-	_, err := n.conn.Write(b.Bytes())
-	n.mu.Unlock()
-	if err != nil {
-		// Too large for a datagram (or journald gone): keep the record.
+	if err := n.send(message, priority(event), vars); err != nil {
+		// journald gone: keep the record.
 		n.fallback.Log(event, message, f)
 	}
 }
 
-func priority(event string) string {
+func priority(event string) sdjournal.Priority {
 	switch event {
 	case ConfigInvalid:
-		return "3"
+		return sdjournal.PriErr
 	case ToolDeniedLocal, LimitExceeded, ApprovalPending:
-		return "5"
+		return sdjournal.PriNotice
 	}
-	return "6"
+	return sdjournal.PriInfo
 }
 
 // JSON writes records as JSON lines (lower-case keys, no AGENT_ prefix).
