@@ -1,13 +1,12 @@
 package admin
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
@@ -381,55 +383,33 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 
 // mintToken asks the issuer for a token with the client credentials grant.
 func (a *Admin) mintToken(o *config.OAuth, secret string) (string, error) {
-	form := url.Values{"grant_type": {"client_credentials"}}
-	if len(o.Scopes) > 0 {
-		form.Set("scope", strings.Join(o.Scopes, " "))
-	}
-	req, err := http.NewRequest(http.MethodPost, o.TokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(url.QueryEscape(o.ClientID), url.QueryEscape(secret))
 	c := a.HTTP
 	if c == nil {
 		c = &http.Client{Timeout: 30 * time.Second}
 	}
-	res, err := c.Do(req)
-	if err != nil {
+	cc := clientcredentials.Config{ClientID: o.ClientID, ClientSecret: secret, TokenURL: o.TokenURL,
+		Scopes: o.Scopes, AuthStyle: oauth2.AuthStyleInHeader}
+	tok, err := cc.Token(context.WithValue(context.Background(), oauth2.HTTPClient, c))
+	var refused *oauth2.RetrieveError
+	switch {
+	case errors.As(err, &refused):
+		why := strings.TrimSpace(refused.ErrorCode + " " + refused.ErrorDescription)
+		if why == "" {
+			why = strings.TrimSpace(string(refused.Body))
+		}
+		return "", fmt.Errorf("the issuer refused client %s (%d): %s", o.ClientID, refused.Response.StatusCode, why)
+	case err != nil:
 		return "", fmt.Errorf("the issuer (%s): %w", o.TokenURL, err)
 	}
-	defer res.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	var out struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-		Description string `json:"error_description"`
-	}
-	json.Unmarshal(b, &out)
-	if res.StatusCode != http.StatusOK || out.AccessToken == "" {
-		why := strings.TrimSpace(out.Error + " " + out.Description)
-		if why == "" {
-			why = strings.TrimSpace(string(b))
-		}
-		return "", fmt.Errorf("the issuer refused client %s (%d): %s", o.ClientID, res.StatusCode, why)
-	}
-	return out.AccessToken, nil
+	return tok.AccessToken, nil
 }
 
-// jwtClaims are a JWT's claims, its signature unchecked.
+// jwtClaims are a JWT's claims, its signature unchecked: check-token
+// compares them with what the gateway expects, and the gateway verifies.
 func jwtClaims(tok string) (map[string]any, error) {
-	parts := strings.Split(tok, ".")
-	if len(parts) != 3 {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(tok, claims); err != nil {
 		return nil, errors.New("not a JWT")
 	}
-	b, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return claims, nil
 }
