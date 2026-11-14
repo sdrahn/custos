@@ -14,6 +14,10 @@ removed.
   writer of journald's protocol. The records and their fields are
   unchanged; a record too large for a datagram now reaches the journal
   too, where it was kept as a JSON line on standard error before.
+- `agent-admin` refuses an option a command does not have (`agent-admin
+  delete NAME --keep-sate`, say), where it was ignored before. Its
+  commands are a table with the standard library's `flag` per command;
+  options and arguments are read in any order, as before.
 
 ## v0.6.2 — 2026-11-10
 
