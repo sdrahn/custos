@@ -79,7 +79,7 @@ jobs:
         env:
           KEYCLOAK_URL: http://127.0.0.1:8180
           KCADM: docker exec -i kc /opt/keycloak/bin/kcadm.sh
-        run: go test -tags keycloak -count=1 -v -run TestKeycloak ./internal/admin/
+        run: go test -tags keycloak -count=1 -v -run TestKeycloak ./internal/admin/idp/
       - name: Keycloak's log
         if: failure()
         run: docker logs kc 2>&1 | tail -100

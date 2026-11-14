@@ -11,9 +11,10 @@ import (
 	"strings"
 
 	udiff "github.com/aymanbagabas/go-udiff"
+	"gopkg.in/yaml.v3"
+
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
-	"gopkg.in/yaml.v3"
 )
 
 // TemplateFile is the file in an agent's configuration directory that
@@ -63,7 +64,7 @@ type PermissionDiff struct {
 
 // RecordedTemplate is the template recorded for the agent, "" for none.
 func (a *Admin) RecordedTemplate(name string) string {
-	b, err := os.ReadFile(filepath.Join(a.agentDir(name), TemplateFile))
+	b, err := os.ReadFile(filepath.Join(a.AgentDir(name), TemplateFile))
 	if err != nil {
 		return ""
 	}
@@ -75,7 +76,7 @@ func (a *Admin) RecordedTemplate(name string) string {
 }
 
 func (a *Admin) recordTemplate(name, tmpl string) error {
-	return host.WriteFile(filepath.Join(a.agentDir(name), TemplateFile), []byte(tmpl+"\n"), 0o644)
+	return host.WriteFile(filepath.Join(a.AgentDir(name), TemplateFile), []byte(tmpl+"\n"), 0o644)
 }
 
 // Compare compares agents with their templates: the recorded one, or
@@ -119,7 +120,7 @@ func (a *Admin) compare(c *Comparison) error {
 	if err != nil {
 		return err
 	}
-	cur, err := os.ReadFile(filepath.Join(a.agentDir(c.Agent), "agent.yaml"))
+	cur, err := os.ReadFile(filepath.Join(a.AgentDir(c.Agent), "agent.yaml"))
 	if err != nil {
 		return err
 	}
@@ -175,7 +176,7 @@ func (a *Admin) ApplyTemplate(name, tmpl string, configuration, permissions bool
 	}
 	var did []string
 	if configuration {
-		cur, err := os.ReadFile(filepath.Join(a.agentDir(name), "agent.yaml"))
+		cur, err := os.ReadFile(filepath.Join(a.AgentDir(name), "agent.yaml"))
 		if err != nil {
 			return err
 		}

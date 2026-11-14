@@ -25,8 +25,8 @@ func TestSeal(t *testing.T) {
 	if fi, err := os.Stat(cred); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("the key's credential: %v %v", fi, err)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name="+SealCredential+" - "+cred) {
-		t.Errorf("not encrypted with systemd-creds: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemd-creds encrypt --name="+SealCredential+" - "+cred) {
+		t.Errorf("not encrypted with systemd-creds: %v", r.Cmds)
 	}
 	pub, err := a.sealPublicKey()
 	if err != nil || !strings.HasPrefix(pub, "-----BEGIN PUBLIC KEY-----") {
@@ -42,12 +42,12 @@ func TestSeal(t *testing.T) {
 	}
 
 	// The next change decrypts the same key: the seal stays.
-	r.cmds = nil
+	r.Cmds = nil
 	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds decrypt --name="+SealCredential+" "+cred+" -") {
-		t.Errorf("the key was not decrypted: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemd-creds decrypt --name="+SealCredential+" "+cred+" -") {
+		t.Errorf("the key was not decrypted: %v", r.Cmds)
 	}
 	if pub2, _ := a.sealPublicKey(); pub2 != pub {
 		t.Error("the seal changed")

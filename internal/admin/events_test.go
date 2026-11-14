@@ -53,7 +53,7 @@ func TestEventDropIns(t *testing.T) {
 	if s := read("/etc/systemd/system/php-fpm.service.d/50-custos-event-patch-pilot_web-down.conf"); !strings.Contains(s, "OnFailure=agent-event@patch-pilot_web-down_php-fpm.service.service") {
 		t.Errorf("php-fpm drop-in %q", s)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemctl daemon-reload") {
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemctl daemon-reload") {
 		t.Error("no daemon-reload")
 	}
 	// The administrator's own drop-in on nginx stays through all of it.
@@ -139,7 +139,7 @@ func TestEventStartsAndDamps(t *testing.T) {
 	if len(*started) != 1 {
 		t.Errorf("damped event started: %v", *started)
 	}
-	sk := r.journal.Events(journal.EventSkipped)
+	sk := r.Journal.Events(journal.EventSkipped)
 	if len(sk) != 1 || sk[0].Fields["ORIGIN_EVENT"] != "web-down" || sk[0].Fields["ORIGIN_BY"] != "unit-failure:nginx.service" ||
 		!strings.Contains(sk[0].Fields["REASON"], "minimum interval") {
 		t.Errorf("event.skipped %+v", sk)
@@ -159,7 +159,7 @@ func TestEventStartsAndDamps(t *testing.T) {
 	if err := a.Event("patch-pilot_web-down_nginx.service"); err != nil || len(*started) != 2 {
 		t.Errorf("started while its activity runs: %v %d", err, len(*started))
 	}
-	if sk := r.journal.Events(journal.EventSkipped); len(sk) != 2 || !strings.Contains(sk[1].Fields["REASON"], "e-run for nginx.service still runs") {
+	if sk := r.Journal.Events(journal.EventSkipped); len(sk) != 2 || !strings.Contains(sk[1].Fields["REASON"], "e-run for nginx.service still runs") {
 		t.Errorf("event.skipped %+v", sk)
 	}
 	a.Activities = func(string) ([]map[string]any, error) { return nil, nil }
@@ -176,7 +176,7 @@ func TestEventRefused(t *testing.T) {
 	if err := a.Event("patch-pilot_web-down_nginx.service"); err == nil {
 		t.Error("a refused start is no error")
 	}
-	if sk := r.journal.Events(journal.EventSkipped); len(sk) != 1 || !strings.Contains(sk[0].Fields["REASON"], "paused") {
+	if sk := r.Journal.Events(journal.EventSkipped); len(sk) != 1 || !strings.Contains(sk[0].Fields["REASON"], "paused") {
 		t.Errorf("event.skipped %+v", sk)
 	}
 	if _, err := os.Stat(a.Path(filepath.Join(EventStateDir, "patch-pilot_web-down_nginx.service"))); !errors.Is(err, os.ErrNotExist) {

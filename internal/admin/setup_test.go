@@ -23,7 +23,7 @@ func setupHost(t *testing.T) (*Admin, *rec) {
 	}
 	host.WriteFile(a.Path(NetServerVendor), b, 0o644)
 	a.StopInstances = func(server string) (int, error) {
-		r.cmds = append(r.cmds, "stop instances of "+server)
+		r.Cmds = append(r.Cmds, "stop instances of "+server)
 		return 1, nil
 	}
 	return a, r
@@ -68,12 +68,12 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	if err != nil || g.Mode != "supervised" || len(g.Permissions) == 0 {
 		t.Errorf("health-check %+v %v", g, err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); !strings.Contains(string(b), "name: qwen3-8b") ||
+	if b, _ := os.ReadFile(filepath.Join(a.AgentDir(HealthCheck), "agent.yaml")); !strings.Contains(string(b), "name: qwen3-8b") ||
 		!strings.Contains(string(b), "credential: model-key") {
 		t.Errorf("agent.yaml has not the defaults' model:\n%s", b)
 	}
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemd-creds encrypt --name=agent-health-check.model-key") {
-		t.Errorf("credential not stored: %v", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemd-creds encrypt --name=agent-health-check.model-key") {
+		t.Errorf("credential not stored: %v", r.Cmds)
 	}
 	for _, f := range []string{"exec.d-diagnostics.yaml", "exec.d-disk-usage.yaml"} {
 		if _, err := os.Stat(a.Path(filepath.Join(ExecDir, f))); err != nil {
@@ -98,18 +98,18 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	// Commands added for an agent that is there already: it is restarted,
 	// for a session with them.
 	os.Remove(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")))
-	r.cmds = nil
+	r.Cmds = nil
 	if _, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
 		t.Fatal(err)
 	}
-	if c := strings.Join(r.cmds, "\n"); !strings.Contains(c, "stop instances of exec") || !strings.Contains(c, "systemctl try-restart agent@health-check.service") ||
+	if c := strings.Join(r.Cmds, "\n"); !strings.Contains(c, "stop instances of exec") || !strings.Contains(c, "systemctl try-restart agent@health-check.service") ||
 		strings.Index(c, "stop instances of exec") > strings.Index(c, "try-restart") {
-		t.Errorf("exec instances not stopped, then health-check restarted, for the new commands: %v", r.cmds)
+		t.Errorf("exec instances not stopped, then health-check restarted, for the new commands: %v", r.Cmds)
 	}
-	r.cmds = nil
+	r.Cmds = nil
 	a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"})
-	if c := strings.Join(r.cmds, "\n"); strings.Contains(c, "try-restart") || strings.Contains(c, "stop instances") {
-		t.Errorf("restarted with nothing new: %v", r.cmds)
+	if c := strings.Join(r.Cmds, "\n"); strings.Contains(c, "try-restart") || strings.Contains(c, "stop instances") {
+		t.Errorf("restarted with nothing new: %v", r.Cmds)
 	}
 
 	// After the administrator enabled more, setup does not go back.
@@ -135,7 +135,7 @@ func TestSetupBroaderInstall(t *testing.T) {
 	if e, _ := a.GetEnablement(); e != nil {
 		t.Error("enablement written")
 	}
-	if _, err := os.Stat(a.agentDir(HealthCheck)); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.AgentDir(HealthCheck)); !os.IsNotExist(err) {
 		t.Error("agent created")
 	}
 }
@@ -151,7 +151,7 @@ func TestSetupNeedsAFreshHost(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "outside diagnostics") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := os.Stat(a.agentDir(HealthCheck)); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.AgentDir(HealthCheck)); !os.IsNotExist(err) {
 		t.Error("health-check created all the same")
 	}
 	if d, _ := a.GetDefaults(); d.Model != nil {

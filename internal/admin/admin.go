@@ -109,7 +109,8 @@ func envOr(k, def string) string {
 	return def
 }
 
-func (a *Admin) agentDir(name string) string {
+// AgentDir is the agent's configuration directory.
+func (a *Admin) AgentDir(name string) string {
 	return a.Path(filepath.Join(config.ConfigRoot, name))
 }
 
@@ -132,7 +133,7 @@ func (a *Admin) Check(target string) error {
 	var cfg *config.Config
 	var err error
 	if config.ValidName(target) {
-		cfg, err = config.Load(a.agentDir(target))
+		cfg, err = config.Load(a.AgentDir(target))
 	} else {
 		var b []byte
 		if b, err = a.ReadFrom(target); err != nil {
@@ -174,7 +175,7 @@ func (a *Admin) create(name string, b []byte) (err error) {
 	if cfg.Name != name {
 		return fmt.Errorf("the file is for agent %q, not %q", cfg.Name, name)
 	}
-	dir := a.agentDir(name)
+	dir := a.AgentDir(name)
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("agent %s exists", name)
 	}
@@ -240,7 +241,7 @@ func (a *Admin) checkForwardPort(cfg *config.Config) error {
 		if n == cfg.Name || openshell.Port(n) != port {
 			continue
 		}
-		if other, err := config.Load(a.agentDir(n)); err == nil && other.Sandbox.Kind == "openshell" {
+		if other, err := config.Load(a.AgentDir(n)); err == nil && other.Sandbox.Kind == "openshell" {
 			return fmt.Errorf("agent %s would use OpenShell agent %s's forward port %d (both names hash to it): choose another name", cfg.Name, n, port)
 		}
 	}
@@ -278,7 +279,7 @@ func (a *Admin) writeRelayUserDropIn(name string) error {
 // sandbox itself is created once the gateway token is set
 // (set-credential NAME gateway-token), since its provider needs it.
 func (a *Admin) createOpenShell(cfg *config.Config) error {
-	dir := a.agentDir(cfg.Name)
+	dir := a.AgentDir(cfg.Name)
 	pol, err := openshell.Policy(cfg)
 	if err != nil {
 		return err
@@ -377,7 +378,7 @@ func (a *Admin) startSandbox(cfg *config.Config) error {
 // OpenShell starts it.
 func (a *Admin) createSandbox(cfg *config.Config, image string) error {
 	g := cfg.Sandbox.OpenShellGateway
-	dir := a.agentDir(cfg.Name)
+	dir := a.AgentDir(cfg.Name)
 	secret, err := os.ReadFile(filepath.Join(dir, "relay.secret"))
 	if err != nil {
 		return err
@@ -419,7 +420,7 @@ func (a *Admin) edit(name string, b []byte) (err error) {
 	if cfg.Name != name {
 		return fmt.Errorf("the file is for agent %q, not %q", cfg.Name, name)
 	}
-	dir := a.agentDir(name)
+	dir := a.AgentDir(name)
 	old, err := config.Load(dir)
 	if err != nil {
 		old = nil // the sandbox's inputs count as changed
@@ -466,7 +467,7 @@ func (a *Admin) edit(name string, b []byte) (err error) {
 // stays down until set-credential. Without any change the relay restarts
 // if it runs. openshell.env takes nothing from agent.yaml and stays.
 func (a *Admin) editOpenShell(old *config.Config, name string) error {
-	dir := a.agentDir(name)
+	dir := a.AgentDir(name)
 	cfg, err := config.Load(dir) // as the sandbox gets it: instruction_file read
 	if err != nil {
 		return err
@@ -583,7 +584,7 @@ func credentialChanged(old, cfg *config.Config) bool {
 // sandboxImage is the image the agent's sandbox was created from
 // (openshell.env's AGENT_IMAGE), so that an edit keeps it.
 func (a *Admin) sandboxImage(name string) string {
-	b, _ := os.ReadFile(filepath.Join(a.agentDir(name), "openshell.env"))
+	b, _ := os.ReadFile(filepath.Join(a.AgentDir(name), "openshell.env"))
 	for _, l := range strings.Split(string(b), "\n") {
 		if v, ok := strings.CutPrefix(l, "AGENT_IMAGE="); ok && v != "" {
 			return v
@@ -598,7 +599,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	cfg, _ := config.Load(a.agentDir(name))
+	cfg, _ := config.Load(a.AgentDir(name))
 	units := []string{"agent@" + name + ".socket", "agent@" + name + ".service"}
 	if cfg != nil && cfg.Sandbox.Kind == "openshell" {
 		units = []string{"agent-openshell@" + name + ".socket", "agent-openshell@" + name + ".service"}
@@ -615,7 +616,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 		}
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
-	rm := []string{a.agentDir(name), a.gatewayFile(name), a.Path(filepath.Join(UnitDir, "agent@"+name+".service.d")),
+	rm := []string{a.AgentDir(name), a.gatewayFile(name), a.Path(filepath.Join(UnitDir, "agent@"+name+".service.d")),
 		a.Path(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d")),
 		// The socket's directory: systemd removes the socket at stop
 		// (RemoveOnStop=) but leaves the directory, by which the
@@ -646,7 +647,7 @@ func (a *Admin) SetCredential(name, cred string, secret io.Reader) error {
 		return fmt.Errorf("%q is not a valid credential name", cred)
 	}
 	if cred == "gateway-token" || cred == "gateway-client-secret" {
-		cfg, err := config.Load(a.agentDir(name))
+		cfg, err := config.Load(a.AgentDir(name))
 		if err != nil {
 			return err
 		}
@@ -1047,7 +1048,7 @@ func (a *Admin) StopAll(by string) error {
 	// Sandboxes outlive their relay unit: stop them by name as well.
 	names, _ := a.List()
 	for _, n := range names {
-		if cfg, e := config.Load(a.agentDir(n)); e == nil && cfg.Sandbox.Kind == "openshell" {
+		if cfg, e := config.Load(a.AgentDir(n)); e == nil && cfg.Sandbox.Kind == "openshell" {
 			a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "sandbox", "stop", openshell.SandboxName(n))
 		}
 	}
@@ -1147,7 +1148,7 @@ func (a *Admin) ReleaseAll(by string) error {
 	}
 	var units []string
 	for _, n := range names {
-		cfg, err := config.Load(a.agentDir(n))
+		cfg, err := config.Load(a.AgentDir(n))
 		if err == nil && cfg.Sandbox.Kind == "openshell" {
 			units = append(units, "agent-openshell@"+n+".socket")
 		} else {
@@ -1190,7 +1191,7 @@ func (a *Admin) Trigger(instance string) error {
 	if !ok || host.CheckName(name) != nil {
 		return fmt.Errorf("%q: want NAME_SCHEDULE", instance)
 	}
-	cfg, err := config.Load(a.agentDir(name))
+	cfg, err := config.Load(a.AgentDir(name))
 	if err != nil {
 		return err
 	}

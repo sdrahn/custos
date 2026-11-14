@@ -286,8 +286,8 @@ func TestCreateFromTemplate(t *testing.T) {
 	if len(d.Categories) != 0 {
 		t.Errorf("a template promotes nothing: %+v", d.Categories)
 	}
-	if !slices.Contains(r.cmds, "systemctl enable --now agent@web-doctor.socket") {
-		t.Errorf("commands %q", r.cmds)
+	if !slices.Contains(r.Cmds, "systemctl enable --now agent@web-doctor.socket") {
+		t.Errorf("commands %q", r.Cmds)
 	}
 
 	// The configuration as a control plane edited it, with the template's

@@ -359,7 +359,7 @@ func (a *Admin) resign(k *ecdsa.PrivateKey, oldPub string, accept map[string]boo
 		}
 		a.recordData(n, payload)
 	}
-	issuers, err := a.agentIssuers()
+	issuers, err := a.AgentIssuers()
 	if err != nil {
 		return err
 	}
@@ -536,7 +536,7 @@ func (a *Admin) writeIssuersWith(k *ecdsa.PrivateKey, issuers []string) error {
 // issuers --add/--remove) and prints them. With neither it only prints.
 // On a host whose seal covers agent data the file is signed.
 func (a *Admin) Issuers(add, remove []string) error {
-	issuers, err := a.agentIssuers()
+	issuers, err := a.AgentIssuers()
 	if err != nil {
 		return err
 	}

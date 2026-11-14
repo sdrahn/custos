@@ -1,10 +1,8 @@
-package admin
+package idp
 
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/sdrahn/custos/internal/gatewayconf"
-	"github.com/sdrahn/custos/internal/host"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +10,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/gatewayconf"
+	"github.com/sdrahn/custos/internal/host"
+	"github.com/sdrahn/custos/internal/host/hosttest"
 )
 
 const gatewayYml = `http:
@@ -24,7 +27,7 @@ const gatewayYml = `http:
 
 // idpHost has agent sb (OpenShell, an OAuth client at a fake issuer that
 // answers with claims), the gateway's settings and its agent issuers.
-func idpHost(t *testing.T, claims map[string]any) (*Admin, *rec, *string) {
+func idpHost(t *testing.T, claims map[string]any) (*admin.Admin, *hosttest.Rec, *string) {
 	t.Helper()
 	a, r := newAdmin(t)
 	var gotAuth string
@@ -44,12 +47,12 @@ func idpHost(t *testing.T, claims map[string]any) (*Admin, *rec, *string) {
 		json.NewEncoder(w).Encode(map[string]string{"access_token": e(h) + "." + e(p) + ".c2ln", "token_type": "Bearer"})
 	}))
 	t.Cleanup(srv.Close)
-	dir := a.agentDir("sb")
+	dir := a.AgentDir("sb")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(oshOAuthYml, "https://idp.example.com/token", srv.URL+"/token", 1)), 0o640)
 	os.MkdirAll(a.Path(filepath.Dir(gatewayconf.Config)), 0o755)
 	os.WriteFile(a.Path(gatewayconf.Config), []byte(gatewayYml), 0o644)
-	host.WriteFile(a.Path(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\"https://idp.example.com/realms/mcp\"]\n"), 0o644)
+	host.WriteFile(a.Path(admin.GatewayHTTPIssuers), []byte("_http:\n  issuers: [\"https://idp.example.com/realms/mcp\"]\n"), 0o644)
 	a.Now = func() time.Time { return time.Unix(1_800_000_000, 0) }
 	return a, r, &gotAuth
 }
@@ -65,7 +68,7 @@ func TestCheckToken(t *testing.T) {
 	a, _, auth := idpHost(t, goodClaims())
 	var out strings.Builder
 	a.Out = &out
-	if err := a.CheckToken("sb", strings.NewReader("s3cret\n")); err != nil {
+	if err := CheckToken(a, "sb", strings.NewReader("s3cret\n")); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if *auth != "agent-sb:s3cret client_credentials mcp" {
@@ -98,17 +101,17 @@ func TestCheckTokenFailures(t *testing.T) {
 		a, _, _ := idpHost(t, c)
 		var out strings.Builder
 		a.Out = &out
-		if err := a.CheckToken("sb", strings.NewReader("s3cret\n")); err == nil || !strings.Contains(out.String(), tc.want) {
+		if err := CheckToken(a, "sb", strings.NewReader("s3cret\n")); err == nil || !strings.Contains(out.String(), tc.want) {
 			t.Errorf("%s: %v\n%s", name, err, out.String())
 		}
 	}
 	// A wrong secret: the issuer's own words.
 	a, _, _ := idpHost(t, goodClaims())
-	if err := a.CheckToken("sb", strings.NewReader("wrong")); err == nil || !strings.Contains(err.Error(), "refused client agent-sb (401): unauthorized_client Invalid client secret") {
+	if err := CheckToken(a, "sb", strings.NewReader("wrong")); err == nil || !strings.Contains(err.Error(), "refused client agent-sb (401): unauthorized_client Invalid client secret") {
 		t.Errorf("wrong secret: %v", err)
 	}
 	// No secret given.
-	if err := a.CheckToken("sb", strings.NewReader("\n")); err == nil || !strings.Contains(err.Error(), "check-token sb < secret") {
+	if err := CheckToken(a, "sb", strings.NewReader("\n")); err == nil || !strings.Contains(err.Error(), "check-token sb < secret") {
 		t.Errorf("no secret: %v", err)
 	}
 }
@@ -120,7 +123,7 @@ func TestIDPClient(t *testing.T) {
 	a, _, _ := idpHost(t, goodClaims())
 	var out strings.Builder
 	a.Out = &out
-	if err := a.IDPClient("sb", false); err != nil {
+	if err := Client(a, "sb", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"client id     agent-sb", "sub    agent-sb", "aud    https://gw.example.com:8443/mcp", "scope  mcp",
@@ -130,7 +133,7 @@ func TestIDPClient(t *testing.T) {
 		}
 	}
 	out.Reset()
-	if err := a.IDPClient("sb", true); err != nil {
+	if err := Client(a, "sb", true); err != nil {
 		t.Fatal(err)
 	}
 	s := out.String()
@@ -153,7 +156,24 @@ func TestIDPClient(t *testing.T) {
 	}
 	// A gateway without its HTTPS listener: nothing to say.
 	os.WriteFile(a.Path(gatewayconf.Config), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
-	if err := a.IDPClient("sb", false); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
+	if err := Client(a, "sb", false); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
 		t.Errorf("no listener: %v", err)
 	}
 }
+
+// newAdmin is agent-admin on a test host.
+func newAdmin(t *testing.T) (*admin.Admin, *hosttest.Rec) {
+	h, r := hosttest.New(t)
+	return &admin.Admin{Host: h}, r
+}
+
+// oshOAuthYml is an OpenShell agent with an OAuth client.
+const oshOAuthYml = `version: 1
+name: sb
+model: {provider: openai, name: m, endpoint: "http://127.0.0.1:8008/v1"}
+gateway:
+  url: "https://gw.example.com:8443/mcp"
+  servers: [zypp]
+  oauth: {token_url: "https://idp.example.com/token", client_id: agent-sb, scopes: [mcp]}
+sandbox: {kind: openshell}
+`
