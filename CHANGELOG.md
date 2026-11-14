@@ -7,6 +7,14 @@ removed.
 
 ## Unreleased
 
+### Changed
+
+- The agents' records reach journald through
+  `github.com/coreos/go-systemd/v22/journal` instead of Custos's own
+  writer of journald's protocol. The records and their fields are
+  unchanged; a record too large for a datagram now reaches the journal
+  too, where it was kept as a JSON line on standard error before.
+
 ## v0.6.2 — 2026-11-10
 
 A security fix for the OpenShell relay, which also fixes 0.6.1's build
