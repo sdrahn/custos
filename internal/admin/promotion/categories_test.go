@@ -1,10 +1,9 @@
-package admin
+package promotion
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,54 +12,25 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sdrahn/custos/internal/category"
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/admintest"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
 
-// catalog writes the shipped categories (packaging/categories) into the
-// test root, and an agent with permissions in two of them.
-func withCategories(t *testing.T) (*Admin, *journal.Memory) {
+// withCategories is agent-admin with the shipped categories and the agent
+// patch-pilot (admintest.WithAgent).
+func withCategories(t *testing.T) (*admin.Admin, *journal.Memory) {
 	t.Helper()
-	a, mem, _ := withCategoriesRec(t)
+	a, mem, _ := admintest.WithAgent(t)
 	return a, mem
-}
-
-// withCategoriesRec is withCategories with the commands agent-admin ran.
-func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
-	t.Helper()
-	a, r := newAdmin(t)
-	m, err := filepath.Glob("../../packaging/categories/*.yaml")
-	if err != nil || len(m) == 0 {
-		t.Fatalf("no shipped categories: %v", err)
-	}
-	for _, f := range m {
-		b, _ := os.ReadFile(f)
-		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
-	}
-	mem := &journal.Memory{}
-	a.Journal = func(string) journal.Logger { return mem }
-	f := filepath.Join(t.TempDir(), "a.yaml")
-	os.WriteFile(f, []byte(yml), 0o644)
-	if err := a.Create("patch-pilot", f); err != nil {
-		t.Fatal(err)
-	}
-	perms := "- {server: zypp, tool: 'list_*', read_only: true}\n- {server: zypp, tool: install_patches, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"
-	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
-		t.Fatal(err)
-	}
-	if r := mem.Events(journal.PermissionsChanged); len(r) != 1 || r[0].Fields["PERMISSIONS_FROM"] != "[]" { // create gave none
-		t.Fatalf("permissions records: %v", r)
-	}
-	mem.Records = nil
-	return a, mem, r
 }
 
 const sat = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}\n"
 
-func promote(a *Admin, cat, env string) error {
-	return a.Promote("patch-pilot", cat, "alice", Promotion{Envelope: []byte(env), Reason: "patching window", DespiteReadiness: true})
+func promote(a *admin.Admin, cat, env string) error {
+	return Promote(a, "patch-pilot", cat, "alice", Promotion{Envelope: []byte(env), Reason: "patching window", DespiteReadiness: true})
 }
 
 func TestPermissionsCategory(t *testing.T) {
@@ -90,7 +60,7 @@ func TestPromoteAndDemote(t *testing.T) {
 		t.Errorf("promotion touched more than its category: %+v", d)
 	}
 	// The data as the gateway's policy reads it.
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	var doc map[string]map[string]any
 	yaml.Unmarshal(b, &doc)
 	got := doc["patch-pilot"]["categories"].(map[string]any)["patch-errata"].(map[string]any)
@@ -120,7 +90,7 @@ func TestPromoteAndDemote(t *testing.T) {
 	if err := promote(a, "patch-errata", sat); err == nil || !strings.Contains(err.Error(), "already bounded") {
 		t.Errorf("promoted twice with the same envelope: %v", err)
 	}
-	if err := a.Demote("patch-pilot", "patch-errata", "bob", "override rate"); err != nil {
+	if err := Demote(a, "patch-pilot", "patch-errata", "bob", "override rate"); err != nil {
 		t.Fatal(err)
 	}
 	d, _ = a.ReadGateway("patch-pilot")
@@ -130,7 +100,7 @@ func TestPromoteAndDemote(t *testing.T) {
 	if r := mem.Events(journal.CategoryDemoted); len(r) != 1 || r[0].Fields["BY"] != "bob" || r[0].Fields["MODE_TO"] != "supervised" || r[0].Fields["REASON"] != "override rate" {
 		t.Errorf("demotion records: %v", r)
 	}
-	if err := a.Demote("patch-pilot", "patch-errata", "bob", ""); err == nil {
+	if err := Demote(a, "patch-pilot", "patch-errata", "bob", ""); err == nil {
 		t.Error("demoted a supervised category")
 	}
 }
@@ -143,12 +113,13 @@ func TestPromoteRefuses(t *testing.T) {
 		says string
 	}{
 		{"unknown category", func() error { return promote(a, "no-such", sat) }, `no task category "no-such"`},
+		{"diagnostics", func() error { return promote(a, admin.Diagnostics, sat) }, "never promoted"},
 		{"no permission in it", func() error { return promote(a, "security-response", sat) }, "no permission in category security-response"},
 		{"no readiness", func() error {
-			return a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)})
+			return Promote(a, "patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)})
 		}, "category patch-errata is not ready (observed 0.0 days of 14; 0 proposals of 50)"},
 		{"no reason", func() error {
-			return a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat), DespiteReadiness: true})
+			return Promote(a, "patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat), DespiteReadiness: true})
 		}, "needs --reason"},
 		{"no windows", func() error { return promote(a, "patch-errata", "windows: []\n") }, "no windows"},
 		{"rate per day", func() error { return promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1d}\n") }, `per "1d": want 1s, 1m or 1h`},
@@ -203,7 +174,7 @@ func TestPromoteWithRate(t *testing.T) {
 	if r := d.Categories["patch-errata"].Envelope.Rate; r == nil || r.Calls != 20 || r.Per != "1h" {
 		t.Errorf("rate: %+v", r)
 	}
-	b, _ := os.ReadFile(a.Path(GatewayAgents + "/patch-pilot.yaml"))
+	b, _ := os.ReadFile(a.Path(admin.GatewayAgents + "/patch-pilot.yaml"))
 	if !strings.Contains(string(b), "rate:\n") || !strings.Contains(string(b), "calls: 20") || !strings.Contains(string(b), "per: 1h") {
 		t.Errorf("agent data:\n%s", b)
 	}
@@ -236,7 +207,7 @@ func TestPromoteWaitsForThePolicy(t *testing.T) {
 	id := d.Categories["patch-errata"].Promotion
 	data = map[string]any{"mode": "supervised", "paused": false, "permissions": []any{1, 2, 3},
 		"categories": map[string]any{"patch-errata": map[string]any{"mode": "bounded", "promotion": id}}}
-	if err := a.Demote("patch-pilot", "patch-errata", "bob", ""); err == nil {
+	if err := Demote(a, "patch-pilot", "patch-errata", "bob", ""); err == nil {
 		t.Error("demote returned while the gateway still had bounded")
 	}
 	// As with mode: the file is written, the gateway is late.
@@ -303,7 +274,7 @@ func TestReadinessReport(t *testing.T) {
 	a, _ := withCategories(t)
 	start := a.Now().AddDate(0, 0, -20)
 	a.JournalJSON = readinessJournal(60, 4, start)
-	r, err := a.Readiness("patch-pilot")
+	r, err := Readiness(a, "patch-pilot")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +290,7 @@ func TestReadinessReport(t *testing.T) {
 	}
 	// The site's thresholds: 4 of 60 overrides is within 10 %.
 	host.WriteFile(a.Path(PromotionConfig), []byte("override_rate: 0.1\nproposals: 40\n"), 0o644)
-	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	r, _ = Readiness(a, "patch-pilot", "patch-errata")
 	if pe := r.Categories["patch-errata"]; !pe.Ready || r.Thresholds.Proposals != 40 || len(r.Categories) != 1 {
 		t.Errorf("with the site's thresholds: %+v %+v", r.Thresholds, pe)
 	}
@@ -333,7 +304,7 @@ func TestThresholdsFile(t *testing.T) {
 		"overide_rate: 0.1\n": "overide_rate",
 	} {
 		host.WriteFile(a.Path(PromotionConfig), []byte(body), 0o644)
-		if _, err := a.Thresholds(); err == nil || !strings.Contains(err.Error(), says) {
+		if _, err := Thresholds(a); err == nil || !strings.Contains(err.Error(), says) {
 			t.Errorf("%q: %v, want %q", body, err, says)
 		}
 	}
@@ -344,7 +315,7 @@ func TestThresholdsFile(t *testing.T) {
 func TestPromoteWhenReady(t *testing.T) {
 	a, mem := withCategories(t)
 	a.JournalJSON = readinessJournal(60, 0, a.Now().AddDate(0, 0, -20))
-	if err := a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err != nil {
+	if err := Promote(a, "patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err != nil {
 		t.Fatal(err)
 	}
 	r := mem.Events(journal.CategoryPromoted)
@@ -390,39 +361,39 @@ func TestReadinessCountsDiagnostics(t *testing.T) {
 	start := a.Now().AddDate(0, 0, -20)
 	ready := readinessJournal(60, 0, start) // every other threshold met
 	a.JournalJSON = ready
-	r, _ := a.Readiness("patch-pilot", "patch-errata")
+	r, _ := Readiness(a, "patch-pilot", "patch-errata")
 	if !r.Categories["patch-errata"].Ready || r.DiagnosticsApply {
 		t.Fatalf("without an enablement state: %+v", r)
 	}
 
-	host.WriteFile(a.Path(GatewayEnablement), []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata, config-lifecycle]\n"), 0o644)
-	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	host.WriteFile(a.Path(admin.GatewayEnablement), []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata, config-lifecycle]\n"), 0o644)
+	r, _ = Readiness(a, "patch-pilot", "patch-errata")
 	pe := r.Categories["patch-errata"]
 	if pe.Ready || !r.DiagnosticsApply || strings.Join(pe.Unmet, "; ") != "diagnosis reports with feedback 0 of 10; no hypothesis confirmed or rejected yet" {
 		t.Errorf("no history: %+v", pe)
 	}
 	a.JournalJSON = withDiagnostics(ready, start, 10, 6)
-	r, _ = a.Readiness("patch-pilot", "patch-errata")
+	r, _ = Readiness(a, "patch-pilot", "patch-errata")
 	if pe := r.Categories["patch-errata"]; pe.Ready || strings.Join(pe.Unmet, "; ") != "confirmed hypotheses 60.0 % below 70.0 %" {
 		t.Errorf("60 %% confirmed: %+v", pe)
 	}
 	a.JournalJSON = withDiagnostics(ready, start, 10, 8)
-	if r, _ = a.Readiness("patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
+	if r, _ = Readiness(a, "patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
 		t.Errorf("80 %% confirmed of 10: %+v", r.Categories["patch-errata"])
 	}
 	// promote follows readiness.
 	a.JournalJSON = withDiagnostics(ready, start, 10, 6)
-	if err := a.Promote("patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err == nil || !strings.Contains(err.Error(), "confirmed hypotheses 60.0 %") {
+	if err := Promote(a, "patch-pilot", "patch-errata", "alice", Promotion{Envelope: []byte(sat)}); err == nil || !strings.Contains(err.Error(), "confirmed hypotheses 60.0 %") {
 		t.Errorf("promote: %v", err)
 	}
 	// The site turns them off.
 	host.WriteFile(a.Path(PromotionConfig), []byte("diagnostics_feedback: 0\ndiagnostics_confirmed_rate: 0\n"), 0o644)
-	if r, _ = a.Readiness("patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
+	if r, _ = Readiness(a, "patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
 		t.Errorf("turned off: %+v", r.Categories["patch-errata"])
 	}
 	for _, bad := range []string{"diagnostics_feedback: -1\n", "diagnostics_confirmed_rate: 1.5\n"} {
 		host.WriteFile(a.Path(PromotionConfig), []byte(bad), 0o644)
-		if _, err := a.Readiness("patch-pilot"); err == nil {
+		if _, err := Readiness(a, "patch-pilot"); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
 	}
@@ -448,7 +419,7 @@ func TestReadinessCountsTheEmergencyStop(t *testing.T) {
 		}
 		return read(args...)
 	}
-	r, err := a.Readiness("patch-pilot", "patch-errata")
+	r, err := Readiness(a, "patch-pilot", "patch-errata")
 	if err != nil {
 		t.Fatal(err)
 	}

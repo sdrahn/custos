@@ -199,7 +199,7 @@ func (a *Admin) entryFile(name string) string {
 	if name == HTTPIssuersName {
 		return a.Path(GatewayHTTPIssuers)
 	}
-	return a.gatewayFile(name)
+	return a.GatewayFile(name)
 }
 
 // entryVerified reports whether the entry's file (absent: nothing to
@@ -354,7 +354,7 @@ func (a *Admin) resign(k *ecdsa.PrivateKey, oldPub string, accept map[string]boo
 		if err != nil {
 			return err
 		}
-		if err := host.WriteFile(a.gatewayFile(n), y, 0o644); err != nil {
+		if err := host.WriteFile(a.GatewayFile(n), y, 0o644); err != nil {
 			return err
 		}
 		a.recordData(n, payload)
@@ -651,7 +651,7 @@ func (a *Admin) checkAgentSeals(p *Posture) error {
 		return ""
 	}
 	for n, d := range p.Agents {
-		y, err := os.ReadFile(a.gatewayFile(n))
+		y, err := os.ReadFile(a.GatewayFile(n))
 		if why := check(n, y, err); why != "" {
 			d.Tampered = why
 			if strings.HasPrefix(why, "it does not match") || strings.HasPrefix(why, "its file") {

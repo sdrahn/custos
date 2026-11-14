@@ -1,17 +1,18 @@
-package admin
+package promotion
 
 import (
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/sdrahn/custos/internal/admin/admintest"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
 // Feedback on a report is recorded outside the agent with the person,
 // and only for a report that exists and its hypotheses.
 func TestFeedback(t *testing.T) {
-	a, _ := newAdmin(t)
+	a, _ := admintest.New(t)
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
 	report := `{"kind":"diagnosis","hypotheses":[{"id":"h1"},{"id":"h2"}]}`
@@ -23,7 +24,7 @@ func TestFeedback(t *testing.T) {
 		return nil, nil
 	}
 	f := Feedback{Hypotheses: map[string]string{"h1": "confirmed", "h2": "rejected"}, Plan: "useful", Executed: true, Comment: "right"}
-	if err := a.RecordFeedback("hc", "e-1", "alice", f); err != nil {
+	if err := RecordFeedback(a, "hc", "e-1", "alice", f); err != nil {
 		t.Fatal(err)
 	}
 	rec := mem.Events(journal.DiagnosisFeedback)
@@ -48,7 +49,7 @@ func TestFeedback(t *testing.T) {
 		{"hc", "e-1 OR x", f, "not an activity id"},
 		{"../x", "e-1", f, ""},
 	} {
-		if err := a.RecordFeedback(c.name, c.act, "alice", c.f); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := RecordFeedback(a, c.name, c.act, "alice", c.f); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s %s %+v: %v", c.name, c.act, c.f, err)
 		}
 	}

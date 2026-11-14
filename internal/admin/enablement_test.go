@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -81,7 +82,8 @@ func TestDisabledCategoriesRefused(t *testing.T) {
 			t.Errorf("%q: %v", perms, err)
 		}
 	}
-	if err := promote(a, "config-lifecycle", sat); err == nil || !strings.Contains(err.Error(), "not enabled") {
+	// What promote asks before it promotes.
+	if err := a.CheckCategoryEnabled("patch-pilot", "config-lifecycle"); err == nil || !strings.Contains(err.Error(), "not enabled") {
 		t.Errorf("promote: %v", err)
 	}
 	rec := records(mem, journal.CategoryRefused)
@@ -95,16 +97,13 @@ func TestDisabledCategoriesRefused(t *testing.T) {
 	}
 }
 
-// diagnostics only reads, and is never promoted.
+// diagnostics only reads (that it is never promoted: the promotion
+// package's tests).
 func TestDiagnosticsReadsOnly(t *testing.T) {
 	a, _, _ := withCategoriesRec(t)
 	err := a.SetPermissions("patch-pilot", strings.NewReader("- {server: systemd, tool: restart_unit, category: diagnostics}\n"))
 	if err == nil || !strings.Contains(err.Error(), "read_only") {
 		t.Errorf("%v", err)
-	}
-	a.SetPermissions("patch-pilot", strings.NewReader(diagPerms))
-	if err := promote(a, Diagnostics, sat); err == nil || !strings.Contains(err.Error(), "never promoted") {
-		t.Errorf("promote: %v", err)
 	}
 }
 
@@ -140,7 +139,7 @@ func TestEnable(t *testing.T) {
 	}
 
 	// --all: every category, supervised; the agent's data is untouched.
-	before, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	before, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	if err := a.Enable("alice", nil, true); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +153,7 @@ func TestEnable(t *testing.T) {
 			t.Errorf("%s not usable after --all", c)
 		}
 	}
-	after, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	after, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	if string(before) != string(after) {
 		t.Errorf("enable changed the agent's data:\n%s\n%s", before, after)
 	}
@@ -257,18 +256,28 @@ func TestDisable(t *testing.T) {
 	}
 
 	// Promoted, without the permission: still refused, until demoted.
-	if err := promote(a, "patch-errata", sat); err != nil {
-		t.Fatal(err)
+	setMode := func(mode string) {
+		t.Helper()
+		d, err := a.ReadGateway("patch-pilot")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Categories == nil {
+			d.Categories = map[string]*category.State{}
+		}
+		d.Categories["patch-errata"] = &category.State{Mode: mode}
+		if err := a.WriteGateway("patch-pilot", d, mode != "bounded"); err != nil {
+			t.Fatal(err)
+		}
 	}
+	setMode("bounded")
 	if err := a.SetPermissions("patch-pilot", strings.NewReader("- {server: systemd, tool: restart_unit, category: config-lifecycle}\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Disable("alice", []string{"patch-errata"}, false); err == nil || !strings.Contains(err.Error(), "has patch-errata promoted (agent-admin demote patch-pilot patch-errata)") {
 		t.Fatalf("promoted: %v", err)
 	}
-	if err := a.Demote("patch-pilot", "patch-errata", "alice", "going back"); err != nil {
-		t.Fatal(err)
-	}
+	setMode("supervised")
 	if err := a.Disable("alice", []string{"patch-errata"}, false); err != nil {
 		t.Fatal(err)
 	}

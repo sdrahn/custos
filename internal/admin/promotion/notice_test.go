@@ -1,17 +1,19 @@
-package admin
+package promotion
 
 import (
 	"errors"
-	"github.com/sdrahn/custos/internal/gatewayctl"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/gatewayctl"
 )
 
 // The notice of a demotion: about the agent's principal, for the servers
 // of the category's permissions (not a glob's), a warning.
 func TestDemotionNotice(t *testing.T) {
-	d := &GatewayData{Permissions: []map[string]any{
+	d := &admin.GatewayData{Permissions: []map[string]any{
 		{"server": "zypp", "tool": "patch", "category": "patch-errata"},
 		{"server": "zypp", "tool": "install", "category": "patch-errata"},
 		{"server": "snapper", "tool": "create", "category": "patch-errata"},

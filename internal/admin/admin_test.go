@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sdrahn/custos/internal/category"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/host/hosttest"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
@@ -869,7 +871,7 @@ func TestPauseWithoutGatewayData(t *testing.T) {
 	if len(r.Cmds) != 1 || r.Cmds[0] != "POST /run/agents/mock/api.sock/v1/pause" {
 		t.Errorf("cmds %v", r.Cmds)
 	}
-	if _, err := os.Stat(a.gatewayFile("mock")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.GatewayFile("mock")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("gateway data was written for it")
 	}
 	a.Control = func(string, string) error { return errors.New("connection refused") }
@@ -955,3 +957,43 @@ func TestOpenShellForwardPortTaken(t *testing.T) {
 		t.Errorf("a systemd agent of that name: %v", err)
 	}
 }
+
+// catalog writes the shipped categories (packaging/categories) into the
+// test root, and an agent with permissions in two of them.
+func withCategories(t *testing.T) (*Admin, *journal.Memory) {
+	t.Helper()
+	a, mem, _ := withCategoriesRec(t)
+	return a, mem
+}
+
+// withCategoriesRec is withCategories with the commands agent-admin ran.
+func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
+	t.Helper()
+	a, r := newAdmin(t)
+	m, err := filepath.Glob("../../packaging/categories/*.yaml")
+	if err != nil || len(m) == 0 {
+		t.Fatalf("no shipped categories: %v", err)
+	}
+	for _, f := range m {
+		b, _ := os.ReadFile(f)
+		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
+	}
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	perms := "- {server: zypp, tool: 'list_*', read_only: true}\n- {server: zypp, tool: install_patches, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"
+	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
+		t.Fatal(err)
+	}
+	if r := mem.Events(journal.PermissionsChanged); len(r) != 1 || r[0].Fields["PERMISSIONS_FROM"] != "[]" { // create gave none
+		t.Fatalf("permissions records: %v", r)
+	}
+	mem.Records = nil
+	return a, mem, r
+}
+
+const sat = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/Berlin}\n"

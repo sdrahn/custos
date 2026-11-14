@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
@@ -31,7 +32,7 @@ type Feedback struct {
 // diagnosis.feedback, outside the agent: it is trust evidence for the
 // promotion path (§6b), as the review verdicts are (§6a). It refuses an
 // activity without a report, and a hypothesis the report does not have.
-func (a *Admin) RecordFeedback(name, activity, by string, f Feedback) error {
+func RecordFeedback(a *admin.Admin, name, activity, by string, f Feedback) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
@@ -49,7 +50,7 @@ func (a *Admin) RecordFeedback(name, activity, by string, f Feedback) error {
 	if len(f.Hypotheses) == 0 && f.Plan == "" && !f.Executed && strings.TrimSpace(f.Comment) == "" {
 		return errors.New("no feedback: give --hypothesis, --plan, --executed or --comment")
 	}
-	ids, err := a.reportHypotheses(name, activity)
+	ids, err := reportHypotheses(a, name, activity)
 	if err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func (a *Admin) RecordFeedback(name, activity, by string, f Feedback) error {
 
 // reportHypotheses are the hypothesis ids of the activity's last
 // diagnosis.report in the journal.
-func (a *Admin) reportHypotheses(name, activity string) (map[string]bool, error) {
+func reportHypotheses(a *admin.Admin, name, activity string) (map[string]bool, error) {
 	read := a.JournalJSON
 	if read == nil {
 		read = func(args ...string) ([]byte, error) {

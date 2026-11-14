@@ -23,7 +23,7 @@ func TestSetOwners(t *testing.T) {
 	if strings.Join(d.Owners, ",") != "user:alice,group:web-team,remote-group:ops" || d.Mode != "supervised" {
 		t.Errorf("%+v", d)
 	}
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	if !strings.Contains(string(b), "owners:") {
 		t.Errorf("gateway data:\n%s", b)
 	}

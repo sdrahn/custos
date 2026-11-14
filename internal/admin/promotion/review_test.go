@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"encoding/json"
@@ -28,7 +28,7 @@ func TestReviewQueueAndVerdicts(t *testing.T) {
 	j.autonomous(at, "e-1", "ok")
 	j.autonomous(at.Add(time.Minute), "e-2", "ok")
 	j.proposal(at.Add(2*time.Minute), "e-3", "a-3", true) // asked: not autonomous
-	q, err := a.ReviewQueue("patch-pilot")
+	q, err := ReviewQueue(a, "patch-pilot")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestReviewQueueAndVerdicts(t *testing.T) {
 		t.Error("a category never promoted has no queue")
 	}
 	// ok: recorded, the category stays bounded.
-	if err := a.Review("patch-pilot", "patch-errata", "e-1", "c1", "ok", "alice", ""); err != nil {
+	if err := Review(a, "patch-pilot", "patch-errata", "e-1", "c1", "ok", "alice", ""); err != nil {
 		t.Fatal(err)
 	}
 	r := mem.Events(journal.CategoryReview)
@@ -52,15 +52,15 @@ func TestReviewQueueAndVerdicts(t *testing.T) {
 		t.Error("an ok review demoted the category")
 	}
 	feed(j, mem, a.Now().Add(-time.Hour))
-	q, _ = a.ReviewQueue("patch-pilot", "patch-errata")
+	q, _ = ReviewQueue(a, "patch-pilot", "patch-errata")
 	if pe := q.Categories["patch-errata"]; pe.Reviewed != 1 || len(pe.Pending) != 1 || pe.Pending[0].Activity != "e-2" {
 		t.Errorf("after one review %+v", pe)
 	}
 	// incident: needs a reason, demotes at once.
-	if err := a.Review("patch-pilot", "patch-errata", "e-2", "c1", "incident", "bob", ""); err == nil || !strings.Contains(err.Error(), "needs --reason") {
+	if err := Review(a, "patch-pilot", "patch-errata", "e-2", "c1", "incident", "bob", ""); err == nil || !strings.Contains(err.Error(), "needs --reason") {
 		t.Errorf("incident without a reason: %v", err)
 	}
-	if err := a.Review("patch-pilot", "patch-errata", "e-2", "c1", "incident", "bob", "patched a production host at noon"); err != nil {
+	if err := Review(a, "patch-pilot", "patch-errata", "e-2", "c1", "incident", "bob", "patched a production host at noon"); err != nil {
 		t.Fatal(err)
 	}
 	if mode(a, "patch-errata") != "supervised" {
@@ -82,7 +82,7 @@ func TestReviewRefuses(t *testing.T) {
 		{"patch-errata", "e-2", "ok", "no action c1 of activity e-2"}, // it had an approval
 		{"config-lifecycle", "e-1", "ok", "category config-lifecycle has not been promoted"},
 	} {
-		if err := a.Review("patch-pilot", c.cat, c.act, "c1", c.verdict, "alice", ""); err == nil || !strings.Contains(err.Error(), c.says) {
+		if err := Review(a, "patch-pilot", c.cat, c.act, "c1", c.verdict, "alice", ""); err == nil || !strings.Contains(err.Error(), c.says) {
 			t.Errorf("%+v: %v", c, err)
 		}
 	}
@@ -129,7 +129,7 @@ func TestReviewQueueFromTheGateway(t *testing.T) {
 	j.review(at.Add(3*time.Minute), "r-3", "ok", "")
 	// r-3 reviewed d-3 on the gateway.
 	j.gw[len(j.gw)-1] = strings.Replace(j.gw[len(j.gw)-1], `\"id\":\"r-3\"`, `\"id\":\"r-3\",\"decision_id\":\"d-3\"`, 1)
-	q, err := a.ReviewQueue("patch-pilot", "patch-errata")
+	q, err := ReviewQueue(a, "patch-pilot", "patch-errata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,14 +141,14 @@ func TestReviewQueueFromTheGateway(t *testing.T) {
 	if pe.Actions != 3 || pe.Reviewed != 1 || strings.Join(got, " ") != "e-1/d-1 e-2/d-2" {
 		t.Fatalf("queue %+v (%v)", pe, got)
 	}
-	if err := a.Review("patch-pilot", "patch-errata", "e-2", "c1", "ok", "alice", ""); err != nil {
+	if err := Review(a, "patch-pilot", "patch-errata", "e-2", "c1", "ok", "alice", ""); err != nil {
 		t.Fatal(err)
 	}
 	if r := mem.Events(journal.CategoryReview); len(r) != 1 || r[0].Fields["DECISION_ID"] != "d-2" || r[0].Fields["INVOCATION"] != "e-2" {
 		t.Errorf("record %+v", r)
 	}
 	// An action without an activity is not root's to review here.
-	if err := a.Review("patch-pilot", "patch-errata", "", "", "ok", "alice", ""); err == nil || !strings.Contains(err.Error(), "reviewed on the gateway") {
+	if err := Review(a, "patch-pilot", "patch-errata", "", "", "ok", "alice", ""); err == nil || !strings.Contains(err.Error(), "reviewed on the gateway") {
 		t.Errorf("%v", err)
 	}
 }

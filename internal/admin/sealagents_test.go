@@ -42,7 +42,7 @@ func TestSealAgentData(t *testing.T) {
 	if err != nil || pub == "" || !agents {
 		t.Fatalf("the new seal does not cover agent data: %v %v", agents, err)
 	}
-	file := a.gatewayFile("patch-pilot")
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	if !strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "signed with the host's seal") {
 		t.Fatalf("not signed:\n%s", b)
@@ -100,12 +100,12 @@ func TestSealAgentData(t *testing.T) {
 
 	// Another agent's signed data under this name does not count.
 	b, _ = os.ReadFile(file)
-	os.WriteFile(a.gatewayFile("other"), []byte(strings.Replace(string(b), "patch-pilot:", "other:", 1)), 0o644)
+	os.WriteFile(a.GatewayFile("other"), []byte(strings.Replace(string(b), "patch-pilot:", "other:", 1)), 0o644)
 	p, _ = a.Show()
 	if tm := p.Agents["other"].Tampered; !strings.Contains(tm, "does not match its seal") {
 		t.Errorf("another agent's signature: %q", tm)
 	}
-	os.Remove(a.gatewayFile("other"))
+	os.Remove(a.GatewayFile("other"))
 
 	// An earlier signed file put back verifies, and is reported.
 	before, _ := os.ReadFile(file)
@@ -178,7 +178,7 @@ func TestSealAgentsLater(t *testing.T) {
 	if err := a.SetMode("patch-pilot", "supervised"); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	if strings.Contains(string(b), "signature: ") {
 		t.Fatalf("signed though the seal does not cover agent data:\n%s", b)
 	}
@@ -229,7 +229,7 @@ func TestSealAgentsLater(t *testing.T) {
 	if err := a.SetMode("patch-pilot", "advisory"); err != nil {
 		t.Errorf("a lower mode without the key: %v", err)
 	}
-	b, _ = os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ = os.ReadFile(a.GatewayFile("patch-pilot"))
 	if strings.Contains(string(b), "signature: ") || !strings.Contains(string(b), "mode: advisory") {
 		t.Errorf("a lower mode without the key is written unsigned:\n%s", b)
 	}
@@ -252,7 +252,7 @@ func TestCountAgents(t *testing.T) {
 func TestReducingWrites(t *testing.T) {
 	a, mem := diagnosticsHost(t)
 	a.JournalJSON = dataJournal(mem)
-	file := a.gatewayFile("patch-pilot")
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
 	var out bytes.Buffer
@@ -299,7 +299,7 @@ func TestSealFreshness(t *testing.T) {
 		t.Fatal(err)
 	}
 	pub, _, _ := a.sealInfo()
-	b, _ := os.ReadFile(a.gatewayFile("patch-pilot"))
+	b, _ := os.ReadFile(a.GatewayFile("patch-pilot"))
 	got, ok := verifyEntry(pub, "patch-pilot", b)
 	if !ok || got["host"] != "aaaa" || !strings.HasPrefix(fmt.Sprint(got["record"]), "d-") || got["at"] == nil {
 		t.Fatalf("payload %v %v", got, ok)
@@ -322,7 +322,7 @@ func TestRekey(t *testing.T) {
 	a.JournalJSON = dataJournal(mem)
 	old, _, _ := a.sealInfo()
 	os.Remove(a.Path(filepath.Join(CredstoreDir, SealCredential)))
-	file := a.gatewayFile("patch-pilot")
+	file := a.GatewayFile("patch-pilot")
 	b, _ := os.ReadFile(file)
 	os.WriteFile(file, []byte(strings.Replace(string(b), "mode: supervised", "mode: bounded", 1)), 0o644)
 	if err := a.Rekey("root", nil); err == nil || !strings.Contains(err.Error(), "patch-pilot") {
