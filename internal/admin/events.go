@@ -98,7 +98,7 @@ func (a *Admin) Event(instance string) error {
 	if !ok || host.CheckName(name) != nil || event == "" || unit == "" {
 		return fmt.Errorf("%q: want AGENT_EVENT_UNIT", instance)
 	}
-	cfg, err := config.Load(a.agentDir(name))
+	cfg, err := config.Load(a.AgentDir(name))
 	if err != nil {
 		return err
 	}

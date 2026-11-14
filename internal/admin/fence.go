@@ -74,7 +74,7 @@ func (a *Admin) Fence(name string) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	cfg, err := config.Load(a.agentDir(name))
+	cfg, err := config.Load(a.AgentDir(name))
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 //go:build keycloak
 
-package admin
+package idp
 
 // A real Keycloak (#111): the CI job keycloak runs it and this test, with
 //
@@ -8,7 +8,7 @@ package admin
 //	KCADM         its kcadm.sh, logged in to its master realm,
 //	              e.g. "docker exec -i kc /opt/keycloak/bin/kcadm.sh"
 //
-//	go test -tags keycloak -run TestKeycloak ./internal/admin/
+//	go test -tags keycloak -run TestKeycloak ./internal/admin/idp/
 //
 // The script idp-client --keycloak prints creates agent sb's client in a
 // new realm; check-token then mints a token with it and finds every claim
@@ -16,14 +16,16 @@ package admin
 
 import (
 	"fmt"
-	"github.com/sdrahn/custos/internal/gatewayconf"
-	"github.com/sdrahn/custos/internal/host"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/gatewayconf"
+	"github.com/sdrahn/custos/internal/host"
 )
 
 func TestKeycloak(t *testing.T) {
@@ -54,15 +56,15 @@ func TestKeycloak(t *testing.T) {
 	gw := strings.Replace(gatewayYml, "https://idp.example.com/realms/mcp", issuer, 1)
 	os.MkdirAll(a.Path(filepath.Dir(gatewayconf.Config)), 0o755)
 	os.WriteFile(a.Path(gatewayconf.Config), []byte(gw), 0o644)
-	host.WriteFile(a.Path(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\""+issuer+"\"]\n"), 0o644)
-	dir := a.agentDir("sb")
+	host.WriteFile(a.Path(admin.GatewayHTTPIssuers), []byte("_http:\n  issuers: [\""+issuer+"\"]\n"), 0o644)
+	dir := a.AgentDir("sb")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "agent.yaml"),
 		[]byte(strings.Replace(oshOAuthYml, "https://idp.example.com/token", issuer+"/protocol/openid-connect/token", 1)), 0o640)
 
 	var script strings.Builder
 	a.Out = &script
-	if err := a.IDPClient("sb", true); err != nil {
+	if err := Client(a, "sb", true); err != nil {
 		t.Fatal(err)
 	}
 	secret := strings.TrimSpace(run(script.String()))
@@ -71,7 +73,7 @@ func TestKeycloak(t *testing.T) {
 	}
 	var out strings.Builder
 	a.Out = &out
-	if err := a.CheckToken("sb", strings.NewReader(secret+"\n")); err != nil {
+	if err := CheckToken(a, "sb", strings.NewReader(secret+"\n")); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	t.Logf("check-token against Keycloak:\n%s", out.String())

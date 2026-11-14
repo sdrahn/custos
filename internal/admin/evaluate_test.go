@@ -128,8 +128,8 @@ func mode(a *Admin, cat string) string {
 
 func TestPromoteEnablesTheEvaluator(t *testing.T) {
 	_, _, _, r := promoted(t, "")
-	if !strings.Contains(strings.Join(r.cmds, "\n"), "systemctl enable --now custos-demote.timer") {
-		t.Errorf("custos-demote.timer not enabled: %q", r.cmds)
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "systemctl enable --now custos-demote.timer") {
+		t.Errorf("custos-demote.timer not enabled: %q", r.Cmds)
 	}
 }
 

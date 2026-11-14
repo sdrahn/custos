@@ -128,7 +128,7 @@ func TestIssuers(t *testing.T) {
 	if err := a.Issuers([]string{iss}, nil); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := a.agentIssuers()
+	got, _ := a.AgentIssuers()
 	if len(got) != 1 || got[0] != iss {
 		t.Fatalf("issuers %v", got)
 	}
@@ -148,7 +148,7 @@ func TestIssuers(t *testing.T) {
 	if err := a.Issuers(nil, []string{"https://evil.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := a.agentIssuers(); len(got) != 0 {
+	if got, _ := a.AgentIssuers(); len(got) != 0 {
 		t.Errorf("removed: %v", got)
 	}
 	for _, bad := range []string{"http://idp", "https://a b"} {
@@ -283,7 +283,7 @@ func TestReducingWrites(t *testing.T) {
 	if h, _ = os.ReadFile(a.Path(GatewayHTTPIssuers)); strings.Contains(string(h), "signature: ") {
 		t.Errorf("written signed:\n%s", h)
 	}
-	if got, why := a.trustedIssuers(); got != nil || !strings.Contains(why, "does not match its seal") {
+	if got, why := a.TrustedIssuers(); got != nil || !strings.Contains(why, "does not match its seal") {
 		t.Errorf("trusted issuers %v %q", got, why)
 	}
 }

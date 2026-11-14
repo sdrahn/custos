@@ -1,4 +1,11 @@
-package admin
+// Package idp is agent-admin's help with the site's identity provider,
+// which issues an OpenShell agent's tokens (CONTRACT.md §16a, #111): one
+// OAuth client per agent, client credentials grant. Client says what
+// that client must be, from the gateway's own settings, with a Keycloak
+// script to create it; CheckToken mints a token with the agent's client
+// and its secret (on standard input, before set-credential hands it to
+// OpenShell, which keeps it) and checks it as the gateway will.
+package idp
 
 import (
 	"context"
@@ -7,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -15,67 +21,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
-	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/gatewayconf"
 	"github.com/sdrahn/custos/internal/host"
 )
 
-// The site's identity provider issues an OpenShell agent's tokens
-// (CONTRACT.md §16a, #111): one OAuth client per agent, client
-// credentials grant. idp-client says what that client must be, from the
-// gateway's own settings, with a Keycloak script to create it; check-token
-// mints a token with the agent's client and its secret (on standard input,
-// before set-credential hands it to OpenShell, which keeps it) and checks
-// it as the gateway will.
-
-// GatewayHTTPIssuers lists the issuers the gateway accepts agent-*
-// subjects from (§16a).
-const GatewayHTTPIssuers = "/etc/mcp-gateway/policy/agents/_http.yaml"
-
 // MaxTokenLifetime is the longest token lifetime check-token accepts
 // without a warning: OpenShell renews tokens, so they can be short.
 const MaxTokenLifetime = time.Hour
-
-// gatewayHTTP is what the gateway checks in a token.
-func (a *Admin) gatewayHTTP() (*gatewayconf.HTTP, error) {
-	return gatewayconf.ReadHTTP(a.Root, a.GatewayConfig)
-}
-
-func (a *Admin) agentIssuers() ([]string, error) {
-	b, err := os.ReadFile(a.Path(GatewayHTTPIssuers))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var doc struct {
-		HTTP struct {
-			Issuers []string `yaml:"issuers"`
-		} `yaml:"_http"`
-	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", GatewayHTTPIssuers, err)
-	}
-	return doc.HTTP.Issuers, nil
-}
-
-// trustedIssuers are the issuers the gateway trusts for agents: _http.yaml's,
-// unless the seal covers it and it does not match (then none, and why;
-// security review 0.6, N6).
-func (a *Admin) trustedIssuers() ([]string, string) {
-	issuers, err := a.agentIssuers()
-	if err != nil {
-		return nil, err.Error()
-	}
-	if pub, agents, err := a.sealInfo(); err == nil && agents && !a.entryVerified(pub, HTTPIssuersName) {
-		return nil, GatewayHTTPIssuers + " does not match its seal, so the gateway trusts no issuer: check it, then accept it " +
-			"(agent-admin seal --agents --accept _http)"
-	}
-	return issuers, ""
-}
 
 // keycloakRealm is the realm of a Keycloak issuer URL (…/realms/<realm>).
 func keycloakRealm(issuer string) (base, realm string, ok bool) {
@@ -86,19 +41,19 @@ func keycloakRealm(issuer string) (base, realm string, ok bool) {
 	return issuer[:i], strings.Trim(issuer[i+len("/realms/"):], "/"), true
 }
 
-// IDPClient prints what the agent's OAuth client must be, from the
+// Client prints what the agent's OAuth client must be, from the
 // gateway's settings; keycloak prints a script that creates it in the
 // gateway's Keycloak realm instead.
-func (a *Admin) IDPClient(name string, keycloak bool) error {
+func Client(a *admin.Admin, name string, keycloak bool) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	h, err := a.gatewayHTTP()
+	h, err := gatewayconf.ReadHTTP(a.Root, a.GatewayConfig)
 	if err != nil {
 		return err
 	}
 	clientID := "agent-" + name
-	if cfg, err := config.Load(a.agentDir(name)); err == nil && cfg.Gateway.OAuth != nil && cfg.Gateway.OAuth.ClientID != "" {
+	if cfg, err := config.Load(a.AgentDir(name)); err == nil && cfg.Gateway.OAuth != nil && cfg.Gateway.OAuth.ClientID != "" {
 		clientID = cfg.Gateway.OAuth.ClientID
 	}
 	if keycloak {
@@ -109,7 +64,7 @@ func (a *Admin) IDPClient(name string, keycloak bool) error {
 		fmt.Fprint(a.Out, keycloakScript(base, realm, clientID, "agent-"+name, h))
 		return nil
 	}
-	issuers, untrusted := a.trustedIssuers()
+	issuers, untrusted := a.TrustedIssuers()
 	listed := "listed"
 	switch {
 	case untrusted != "":
@@ -223,8 +178,8 @@ $kcadm get "clients/$id/client-secret" -r "$realm" --fields value --format csv -
 // relies on, printing one line per check. The token's signature is the
 // gateway's to check (with the issuer's keys); this checks what the
 // identity provider's client configuration decides.
-func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
-	cfg, err := config.Load(a.agentDir(name))
+func CheckToken(a *admin.Admin, name string, secretIn io.Reader) error {
+	cfg, err := config.Load(a.AgentDir(name))
 	if err != nil {
 		return err
 	}
@@ -232,7 +187,7 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	if o == nil {
 		return fmt.Errorf("agent %s has no OAuth client (gateway.oauth): its token is static (gateway-token)", name)
 	}
-	h, err := a.gatewayHTTP()
+	h, err := gatewayconf.ReadHTTP(a.Root, a.GatewayConfig)
 	if err != nil {
 		return err
 	}
@@ -244,7 +199,7 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	if secret == "" {
 		return fmt.Errorf("no client secret on standard input: agent-admin check-token %s < secret", name)
 	}
-	tok, err := a.mintToken(o, secret)
+	tok, err := mintToken(a.HTTP, o, secret)
 	if err != nil {
 		return err
 	}
@@ -252,7 +207,7 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("the issuer's access token: %w", err)
 	}
-	if _, err := a.agentIssuers(); err != nil {
+	if _, err := a.AgentIssuers(); err != nil {
 		return err
 	}
 	failed := 0
@@ -270,12 +225,12 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 	str := func(k string) string { s, _ := claims[k].(string); return s }
 	iss := str("iss")
 	say(iss == h.Issuer, "iss "+iss, "the gateway's http.issuer is "+h.Issuer)
-	trusted, untrusted := a.trustedIssuers()
+	trusted, untrusted := a.TrustedIssuers()
 	why := "agent-admin issuers --add " + iss + ", or the gateway denies agent-* subjects from it everything"
 	if untrusted != "" {
 		why = untrusted
 	}
-	say(untrusted == "" && slices.Contains(trusted, iss), "the issuer is listed for agents ("+GatewayHTTPIssuers+")", why)
+	say(untrusted == "" && slices.Contains(trusted, iss), "the issuer is listed for agents ("+admin.GatewayHTTPIssuers+")", why)
 	sub := str("sub")
 	say(sub == "agent-"+name, "sub "+sub, "want agent-"+name+" (in Keycloak: the client's hardcoded sub claim, and no default client scope that maps its own)")
 	var auds []string
@@ -319,8 +274,7 @@ func (a *Admin) CheckToken(name string, secretIn io.Reader) error {
 }
 
 // mintToken asks the issuer for a token with the client credentials grant.
-func (a *Admin) mintToken(o *config.OAuth, secret string) (string, error) {
-	c := a.HTTP
+func mintToken(c *http.Client, o *config.OAuth, secret string) (string, error) {
 	if c == nil {
 		c = &http.Client{Timeout: 30 * time.Second}
 	}

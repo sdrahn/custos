@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/idp"
 )
 
 const usage = `usage: agent-admin COMMAND …
@@ -439,7 +440,7 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		a.GatewayConfig, _ = flag("--gateway-config")
-		return a.IDPClient(args[0], has("--keycloak"))
+		return idp.Client(a, args[0], has("--keycloak"))
 	case "fence":
 		if err := need(1); err != nil {
 			return err
@@ -450,7 +451,7 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		a.GatewayConfig, _ = flag("--gateway-config")
-		return a.CheckToken(args[0], os.Stdin)
+		return idp.CheckToken(a, args[0], os.Stdin)
 	case "event":
 		if err := need(1); err != nil {
 			return err

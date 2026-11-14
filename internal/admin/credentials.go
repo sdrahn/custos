@@ -54,7 +54,7 @@ func (a *Admin) Credentials(names ...string) (map[string]*AgentCredentials, erro
 		}
 		// Without a readable configuration, what is stored is listed all
 		// the same.
-		cfg, _ := config.Load(a.agentDir(n))
+		cfg, _ := config.Load(a.AgentDir(n))
 		ac := &AgentCredentials{Credentials: []Credential{}, Missing: []string{}}
 		prefix := "agent-" + n + "."
 		files, _ := filepath.Glob(a.Path(filepath.Join(CredstoreDir, prefix+"*")))
@@ -109,7 +109,7 @@ func (a *Admin) RemoveCredential(name, cred string, force bool) error {
 	if cred == "gateway-token" || cred == "gateway-client-secret" {
 		return fmt.Errorf("%s is held by OpenShell, not in the credential store; set-credential replaces it", cred)
 	}
-	if cfg, err := config.Load(a.agentDir(name)); err == nil && cfg.Model.Credential == cred && !force {
+	if cfg, err := config.Load(a.AgentDir(name)); err == nil && cfg.Model.Credential == cred && !force {
 		return fmt.Errorf("agent %s's model uses %s, and the agent does not start without it: change model.credential first, or --force", name, cred)
 	}
 	err := os.Remove(a.Path(filepath.Join(CredstoreDir, "agent-"+name+"."+cred)))

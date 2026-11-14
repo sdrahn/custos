@@ -231,7 +231,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	execAdded = execAdded || restartsStep.Result == "done"
 
 	// 4. The health-check agent, from its template with the defaults.
-	if _, err := os.Stat(filepath.Join(a.agentDir(HealthCheck), "agent.yaml")); err == nil {
+	if _, err := os.Stat(filepath.Join(a.AgentDir(HealthCheck), "agent.yaml")); err == nil {
 		add("agent "+HealthCheck, "already", "its configuration is kept; change it with agent-admin edit")
 		if execAdded {
 			// A running agent sees new commands only in a new session.
@@ -247,7 +247,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	// 5. Its credential: stored again when given, so a new key replaces
 	// the old one.
 	if o.Credential != nil {
-		cfg, err := config.Load(a.agentDir(HealthCheck))
+		cfg, err := config.Load(a.AgentDir(HealthCheck))
 		switch {
 		case err != nil:
 			return steps, err

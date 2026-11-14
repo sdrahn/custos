@@ -28,7 +28,7 @@ func TestKeyAsCredentialName(t *testing.T) {
 	}
 	refused("check", a.Check(f))
 	refused("create", a.Create("patch-pilot", f))
-	if _, err := os.Stat(a.agentDir("patch-pilot")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.AgentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Fatal("created all the same")
 	}
 	refused("defaults", a.SetDefaults([]byte("model: {provider: openai, name: m, endpoint: \"http://ai/v1\", credential: sk-litellm-local}\n")))
@@ -120,7 +120,7 @@ func TestCredentialsList(t *testing.T) {
 	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key")), []byte("secret-value"), 0o600)
 	// Another agent's whose name starts the same is not this one's.
 	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot-2.model-key")), []byte("x"), 0o600)
-	r.gone = func(cmd string) error { return nil } // the relay's socket is enabled
+	r.Gone = func(cmd string) error { return nil } // the relay's socket is enabled
 	c, err = a.Credentials("patch-pilot", "sb")
 	if err != nil {
 		t.Fatal(err)

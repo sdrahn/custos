@@ -245,7 +245,7 @@ func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
 		!strings.Contains(err.Error(), "agent-admin enable config-lifecycle patch-errata") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := os.Stat(a.agentDir("patcher")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.AgentDir("patcher")); !os.IsNotExist(err) {
 		t.Error("created all the same")
 	}
 	// One record per disabled category, the one without a category too.
