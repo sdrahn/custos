@@ -8,9 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/gatewayconf"
 	"github.com/sdrahn/custos/internal/host"
 )
 
@@ -31,16 +30,6 @@ import (
 // before set-credential hands it to OpenShell, which keeps it) and checks
 // it as the gateway will.
 
-// GatewayConfig is mcp-gateway's configuration, whose http: section says
-// how it validates bearer tokens; like the gateway, agent-admin reads the
-// first of it and GatewayVendorConfig, with the drop-ins of
-// GatewayDropInDir over it.
-const (
-	GatewayConfig       = "/etc/mcp-gateway/gateway.yaml"
-	GatewayVendorConfig = "/usr/etc/mcp-gateway/gateway.yaml"
-	GatewayDropInDir    = "/etc/mcp-gateway/gateway.d"
-)
-
 // GatewayHTTPIssuers lists the issuers the gateway accepts agent-*
 // subjects from (§16a).
 const GatewayHTTPIssuers = "/etc/mcp-gateway/policy/agents/_http.yaml"
@@ -50,61 +39,8 @@ const GatewayHTTPIssuers = "/etc/mcp-gateway/policy/agents/_http.yaml"
 const MaxTokenLifetime = time.Hour
 
 // gatewayHTTP is what the gateway checks in a token.
-type gatewayHTTP struct {
-	Issuer         string   `yaml:"issuer"`
-	Audience       string   `yaml:"audience"`
-	Scopes         []string `yaml:"scopes"`
-	LocalUserClaim string   `yaml:"local_user_claim"`
-}
-
-func (a *Admin) gatewayHTTP() (*gatewayHTTP, error) {
-	var files []string
-	if a.GatewayConfig != "" {
-		files = []string{a.GatewayConfig} // explicit: no drop-ins, as the gateway's --config
-	} else {
-		for _, p := range []string{GatewayConfig, GatewayVendorConfig} {
-			if _, err := os.Stat(a.Path(p)); err == nil {
-				files = append(files, a.Path(p))
-				break
-			}
-		}
-		dropIns, _ := filepath.Glob(a.Path(filepath.Join(GatewayDropInDir, "*.yaml")))
-		sort.Strings(dropIns)
-		for _, p := range dropIns {
-			if !strings.HasPrefix(filepath.Base(p), ".") {
-				files = append(files, p)
-			}
-		}
-	}
-	if len(files) == 0 {
-		return nil, fmt.Errorf("mcp-gateway's configuration: neither %s nor %s exists", GatewayConfig, GatewayVendorConfig)
-	}
-	// The http section, key by key: a drop-in's key replaces the one before.
-	merged := map[string]any{}
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return nil, fmt.Errorf("mcp-gateway's configuration: %w", err)
-		}
-		var doc struct {
-			HTTP map[string]any `yaml:"http"`
-		}
-		if err := yaml.Unmarshal(b, &doc); err != nil {
-			return nil, fmt.Errorf("%s: %w", f, err)
-		}
-		for k, v := range doc.HTTP {
-			merged[k] = v
-		}
-	}
-	y, _ := yaml.Marshal(merged)
-	var h gatewayHTTP
-	if err := yaml.Unmarshal(y, &h); err != nil {
-		return nil, fmt.Errorf("mcp-gateway's http section: %w", err)
-	}
-	if h.Issuer == "" || h.Audience == "" {
-		return nil, fmt.Errorf("mcp-gateway's configuration (%s): http.issuer and http.audience are not set: the gateway's HTTPS listener is not configured (user guide, chapter 11, step 3)", strings.Join(files, ", "))
-	}
-	return &h, nil
+func (a *Admin) gatewayHTTP() (*gatewayconf.HTTP, error) {
+	return gatewayconf.ReadHTTP(a.Root, a.GatewayConfig)
 }
 
 func (a *Admin) agentIssuers() ([]string, error) {
@@ -223,7 +159,7 @@ func localUserNote(claim string) string {
 // token lifetime. The realm's default client scopes are left out, "basic"
 // with its own sub mapper among them, so that the hardcoded sub is the only
 // one.
-func keycloakScript(base, realm, clientID, sub string, h *gatewayHTTP) string {
+func keycloakScript(base, realm, clientID, sub string, h *gatewayconf.HTTP) string {
 	client := map[string]any{
 		"clientId": clientID, "enabled": true, "protocol": "openid-connect",
 		"publicClient": false, "clientAuthenticatorType": "client-secret",

@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/base64"
 	"encoding/json"
+	"github.com/sdrahn/custos/internal/gatewayconf"
 	"github.com/sdrahn/custos/internal/host"
 	"net/http"
 	"net/http/httptest"
@@ -46,8 +47,8 @@ func idpHost(t *testing.T, claims map[string]any) (*Admin, *rec, *string) {
 	dir := a.agentDir("sb")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(oshOAuthYml, "https://idp.example.com/token", srv.URL+"/token", 1)), 0o640)
-	os.MkdirAll(a.Path(filepath.Dir(GatewayConfig)), 0o755)
-	os.WriteFile(a.Path(GatewayConfig), []byte(gatewayYml), 0o644)
+	os.MkdirAll(a.Path(filepath.Dir(gatewayconf.Config)), 0o755)
+	os.WriteFile(a.Path(gatewayconf.Config), []byte(gatewayYml), 0o644)
 	host.WriteFile(a.Path(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\"https://idp.example.com/realms/mcp\"]\n"), 0o644)
 	a.Now = func() time.Time { return time.Unix(1_800_000_000, 0) }
 	return a, r, &gotAuth
@@ -151,38 +152,8 @@ func TestIDPClient(t *testing.T) {
 		t.Errorf("script:\n%s", s)
 	}
 	// A gateway without its HTTPS listener: nothing to say.
-	os.WriteFile(a.Path(GatewayConfig), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
+	os.WriteFile(a.Path(gatewayconf.Config), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
 	if err := a.IDPClient("sb", false); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
 		t.Errorf("no listener: %v", err)
-	}
-}
-
-// The gateway's settings as the gateway reads them: /etc over /usr/etc,
-// the drop-ins of gateway.d over that, key by key; --gateway-config alone.
-func TestGatewayHTTPResolution(t *testing.T) {
-	a, _ := newAdmin(t)
-	write := func(p, s string) {
-		os.MkdirAll(a.Path(filepath.Dir(p)), 0o755)
-		os.WriteFile(a.Path(p), []byte(s), 0o644)
-	}
-	write(GatewayVendorConfig, "http:\n  issuer: https://vendor/realms/x\n  audience: https://vendor/mcp\n")
-	h, err := a.gatewayHTTP()
-	if err != nil || h.Issuer != "https://vendor/realms/x" {
-		t.Fatalf("vendor default: %+v %v", h, err)
-	}
-	write(GatewayConfig, "http:\n  issuer: https://etc/realms/x\n  audience: https://etc/mcp\n  scopes: [a]\n")
-	write(filepath.Join(GatewayDropInDir, "50-mcp-gateway-admin.yaml"), "http:\n  audience: https://dropin/mcp\n")
-	write(filepath.Join(GatewayDropInDir, "60-more.yaml"), "http:\n  scopes: [b, c]\n")
-	write(filepath.Join(GatewayDropInDir, ".hidden.yaml"), "http:\n  issuer: https://hidden\n")
-	h, err = a.gatewayHTTP()
-	if err != nil || h.Issuer != "https://etc/realms/x" || h.Audience != "https://dropin/mcp" || strings.Join(h.Scopes, " ") != "b c" {
-		t.Fatalf("/etc with drop-ins: %+v %v", h, err)
-	}
-	other := filepath.Join(t.TempDir(), "gw.yaml")
-	os.WriteFile(other, []byte("http:\n  issuer: https://explicit/realms/x\n  audience: https://explicit/mcp\n"), 0o644)
-	a.GatewayConfig = other
-	h, err = a.gatewayHTTP()
-	if err != nil || h.Issuer != "https://explicit/realms/x" || len(h.Scopes) != 0 {
-		t.Fatalf("--gateway-config: %+v %v", h, err)
 	}
 }
