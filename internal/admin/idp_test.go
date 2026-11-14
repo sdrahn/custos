@@ -30,6 +30,7 @@ func idpHost(t *testing.T, claims map[string]any) (*Admin, *rec, *string) {
 		id, secret, _ := req.BasicAuth()
 		req.ParseForm()
 		gotAuth = id + ":" + secret + " " + req.Form.Get("grant_type") + " " + req.Form.Get("scope")
+		w.Header().Set("Content-Type", "application/json") // RFC 6749, 5.1
 		if secret != "s3cret" {
 			w.WriteHeader(401)
 			w.Write([]byte(`{"error":"unauthorized_client","error_description":"Invalid client secret"}`))
