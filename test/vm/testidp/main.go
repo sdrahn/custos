@@ -36,7 +36,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -48,6 +47,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func main() {
@@ -241,23 +242,14 @@ func (i *IDP) Token(sub, aud string, ttl time.Duration) (string, error) {
 // sign signs a JWT for sub and aud, valid for ttl, with extra claims.
 func (i *IDP) sign(sub, aud string, ttl time.Duration, extra map[string]any) (string, error) {
 	now := i.now()
-	h, _ := json.Marshal(map[string]any{"alg": "ES256", "typ": "JWT", "kid": "k1"})
-	claims := map[string]any{"iss": i.Issuer, "sub": sub, "aud": aud,
+	claims := jwt.MapClaims{"iss": i.Issuer, "sub": sub, "aud": aud,
 		"iat": now.Unix(), "nbf": now.Unix(), "exp": now.Add(ttl).Unix()}
 	for k, v := range extra {
 		claims[k] = v
 	}
-	c, _ := json.Marshal(claims)
-	in := b64(h) + "." + b64(c)
-	d := sha256.Sum256([]byte(in))
-	r, s, err := ecdsa.Sign(rand.Reader, i.key, d[:])
-	if err != nil {
-		return "", err
-	}
-	sig := make([]byte, 64)
-	r.FillBytes(sig[:32])
-	s.FillBytes(sig[32:])
-	return in + "." + b64(sig), nil
+	t := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	t.Header["kid"] = "k1"
+	return t.SignedString(i.key)
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
