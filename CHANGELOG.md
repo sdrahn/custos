@@ -14,6 +14,10 @@ removed.
   writer of journald's protocol. The records and their fields are
   unchanged; a record too large for a datagram now reaches the journal
   too, where it was kept as a JSON line on standard error before.
+- `custos-tests`: the functional tests' checks are in one file per topic,
+  `/usr/libexec/custos/tests/sections/`, with the framework in `lib.sh`
+  next to `run-tests.sh`. The command, its options, the checks and their
+  order are unchanged.
 
 ## v0.6.2 — 2026-11-10
 
