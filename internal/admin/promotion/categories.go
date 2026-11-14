@@ -1,3 +1,7 @@
+// Package promotion is agent-admin's promotion path (CONTRACT.md §6a): a
+// task category's readiness, promoting it to act within an envelope and
+// demoting it, the review of what it did without approval, the demotion
+// evaluator, and the feedback on diagnosis reports (§4a).
 package promotion
 
 import (

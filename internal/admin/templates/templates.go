@@ -1,3 +1,7 @@
+// Package templates is agent-admin's agent templates (CONTRACT.md §14a)
+// and the model defaults for new agents (§14b): creating an agent from a
+// template, a draft configuration, and comparing an agent with its
+// template and applying it again.
 package templates
 
 import (
