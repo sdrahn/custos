@@ -196,7 +196,7 @@ func (a *Admin) enablementKey() (*ecdsa.PrivateKey, error) {
 // that has enablement data, or an agent that uses another category or a
 // permission without one.
 func (a *Admin) InitDiagnosticsOnly(by string) error {
-	e, err := a.currentEnablement()
+	e, err := a.CurrentEnablement()
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (a *Admin) Enable(by string, cats []string, all bool) error {
 			return err
 		}
 	}
-	from, err := a.currentEnablement()
+	from, err := a.CurrentEnablement()
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 			return errors.New("disable: diagnostics is always enabled; --all leaves only it")
 		}
 	}
-	from, err := a.currentEnablement()
+	from, err := a.CurrentEnablement()
 	if err != nil {
 		return err
 	}
@@ -410,11 +410,11 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 	return nil
 }
 
-// checkEnabled refuses permissions of a disabled category, recording the
+// CheckEnabled refuses permissions of a disabled category, recording the
 // refusal (category.refused) for the person, once per disabled category.
 // what names the action. The error names everything that is disabled.
-func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
-	e, err := a.currentEnablement()
+func (a *Admin) CheckEnabled(name, what string, perms []map[string]any) error {
+	e, err := a.CurrentEnablement()
 	if err != nil || e == nil {
 		return err
 	}
@@ -457,7 +457,7 @@ func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
 
 // checkCategoryEnabled refuses a disabled category for promote.
 func (a *Admin) checkCategoryEnabled(name, cat string) error {
-	e, err := a.currentEnablement()
+	e, err := a.CurrentEnablement()
 	if err != nil || e.Usable(cat) {
 		return err
 	}

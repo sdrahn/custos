@@ -1,9 +1,11 @@
-package admin
+package templates
 
 import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/sdrahn/custos/internal/admin"
 )
 
 // An agent created from a template records it, compares the same, and
@@ -12,10 +14,10 @@ import (
 // mode and its categories.
 func TestCompareAndApplyTemplate(t *testing.T) {
 	a, _ := withTemplates(t)
-	if err := a.CreateFromTemplate("web-doctor", "service-doctor", ""); err != nil {
+	if err := Create(a, "web-doctor", "service-doctor", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.RecordedTemplate("web-doctor"); got != "service-doctor" {
+	if got := Recorded(a, "web-doctor"); got != "service-doctor" {
 		t.Fatalf("recorded %q", got)
 	}
 	c := compareOne(t, a, "web-doctor", "")
@@ -35,12 +37,12 @@ func TestCompareAndApplyTemplate(t *testing.T) {
 	if err := a.Edit("web-doctor", "-"); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("web-doctor")
+	d, _ := a.ReadGateway("web-doctor")
 	want := len(d.Permissions)
 	extra := map[string]any{"server": "systemd", "tool": "get_file", "read_only": true}
 	d.Permissions = append(d.Permissions[1:], extra)
 	d.Mode = "advisory"
-	if err := a.writeGateway("web-doctor", d, false); err != nil {
+	if err := a.WriteGateway("web-doctor", d, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,20 +67,20 @@ func TestCompareAndApplyTemplate(t *testing.T) {
 	}
 
 	// The permissions only: the configuration stays as edited.
-	if err := a.ApplyTemplate("web-doctor", "", false, true); err != nil {
+	if err := Apply(a, "web-doctor", "", false, true); err != nil {
 		t.Fatal(err)
 	}
 	c = compareOne(t, a, "web-doctor", "")
 	if !c.Permissions.Same || c.Configuration.Same {
 		t.Errorf("after --permissions: %+v %+v", c.Configuration, c.Permissions)
 	}
-	if d, _ := a.readGateway("web-doctor"); d.Mode != "advisory" || len(d.Permissions) != want {
+	if d, _ := a.ReadGateway("web-doctor"); d.Mode != "advisory" || len(d.Permissions) != want {
 		t.Errorf("mode %q, %d permissions (want %d): the mode is the agent's", d.Mode, len(d.Permissions), want)
 	}
 
 	// Then the configuration: the template's, with the agent's model and
 	// schedule.
-	if err := a.ApplyTemplate("web-doctor", "", true, false); err != nil {
+	if err := Apply(a, "web-doctor", "", true, false); err != nil {
 		t.Fatal(err)
 	}
 	c = compareOne(t, a, "web-doctor", "")
@@ -96,7 +98,7 @@ func TestCompareAndApplyTemplate(t *testing.T) {
 // template named, which applying records.
 func TestCompareUnrecorded(t *testing.T) {
 	a, _ := withTemplates(t)
-	if err := a.CreateFromTemplate("look", "triage", ""); err != nil {
+	if err := Create(a, "look", "triage", ""); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(a.Path("/etc/custos/agents/look/template"))
@@ -108,16 +110,16 @@ func TestCompareUnrecorded(t *testing.T) {
 	if c.Recorded || c.Error != "" || !c.Configuration.Same {
 		t.Errorf("%+v", c)
 	}
-	if err := a.ApplyTemplate("look", "", true, true); err == nil || !strings.Contains(err.Error(), "no template recorded") {
+	if err := Apply(a, "look", "", true, true); err == nil || !strings.Contains(err.Error(), "no template recorded") {
 		t.Errorf("err %v", err)
 	}
-	if err := a.ApplyTemplate("look", "triage", true, true); err != nil {
+	if err := Apply(a, "look", "triage", true, true); err != nil {
 		t.Fatal(err)
 	}
-	if a.RecordedTemplate("look") != "triage" {
+	if Recorded(a, "look") != "triage" {
 		t.Error("not recorded")
 	}
-	if _, err := a.Compare([]string{"look", "web"}, "triage"); err == nil {
+	if _, err := Compare(a, []string{"look", "web"}, "triage"); err == nil {
 		t.Error("--template with two agents")
 	}
 	// Compared with another template, the differences show.
@@ -126,9 +128,9 @@ func TestCompareUnrecorded(t *testing.T) {
 	}
 }
 
-func compareOne(t *testing.T, a *Admin, name, tmpl string) Comparison {
+func compareOne(t *testing.T, a *admin.Admin, name, tmpl string) Comparison {
 	t.Helper()
-	cs, err := a.Compare([]string{name}, tmpl)
+	cs, err := Compare(a, []string{name}, tmpl)
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("compare: %v %v", cs, err)
 	}

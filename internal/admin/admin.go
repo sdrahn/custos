@@ -160,11 +160,11 @@ func (a *Admin) Create(name, from string) error {
 	if err != nil {
 		return err
 	}
-	return a.create(name, b)
+	return a.CreateConfig(name, b)
 }
 
-// create installs a new agent from its configuration.
-func (a *Admin) create(name string, b []byte) (err error) {
+// CreateConfig installs a new agent from its configuration.
+func (a *Admin) CreateConfig(name string, b []byte) (err error) {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (a *Admin) create(name string, b []byte) (err error) {
 		return err
 	}
 	// Supervised by default, and nothing allowed until listed (§6).
-	if err := a.writeGateway(name, &GatewayData{Mode: "supervised", Permissions: []map[string]any{}}, false); err != nil {
+	if err := a.WriteGateway(name, &GatewayData{Mode: "supervised", Permissions: []map[string]any{}}, false); err != nil {
 		return err
 	}
 	if err := a.syncEvents(cfg); err != nil {
@@ -408,11 +408,11 @@ func (a *Admin) Edit(name, from string) (err error) {
 	if err != nil {
 		return err
 	}
-	return a.edit(name, b)
+	return a.EditConfig(name, b)
 }
 
-// edit replaces the agent's configuration with b and applies it.
-func (a *Admin) edit(name string, b []byte) (err error) {
+// EditConfig replaces the agent's configuration with b and applies it.
+func (a *Admin) EditConfig(name string, b []byte) (err error) {
 	cfg, err := config.Parse(b)
 	if err != nil {
 		return err
@@ -756,7 +756,8 @@ func (a *Admin) gatewayFile(name string) string {
 	return a.Path(filepath.Join(GatewayAgents, name+".yaml"))
 }
 
-func (a *Admin) readGateway(name string) (*GatewayData, error) {
+// ReadGateway reads the agent's gateway data.
+func (a *Admin) ReadGateway(name string) (*GatewayData, error) {
 	b, err := os.ReadFile(a.gatewayFile(name))
 	if err != nil {
 		return nil, err
@@ -771,11 +772,11 @@ func (a *Admin) readGateway(name string) (*GatewayData, error) {
 	return doc[name], nil
 }
 
-// writeGateway writes the agent's gateway data. reduces: the change only
+// WriteGateway writes the agent's gateway data. reduces: the change only
 // takes from the agent (a pause, a demotion, a lower mode), which a
 // sealed host writes even when the data does not verify, or the key
 // cannot be used (unsigned then; gatewayYAML).
-func (a *Admin) writeGateway(name string, d *GatewayData, reduces bool) error {
+func (a *Admin) WriteGateway(name string, d *GatewayData, reduces bool) error {
 	if d.Permissions == nil {
 		d.Permissions = []map[string]any{}
 	}
@@ -784,7 +785,7 @@ func (a *Admin) writeGateway(name string, d *GatewayData, reduces bool) error {
 		return err
 	}
 	from := []map[string]any{}
-	if prev, err := a.readGateway(name); err == nil && prev.Permissions != nil {
+	if prev, err := a.ReadGateway(name); err == nil && prev.Permissions != nil {
 		from = prev.Permissions
 	}
 	if err := host.WriteFile(a.gatewayFile(name), b, 0o644); err != nil {
@@ -849,13 +850,13 @@ func (a *Admin) SetMode(name, mode string) error {
 	default:
 		return fmt.Errorf("mode %q: want advisory, supervised or bounded", mode)
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
 	lower := modeRank[mode] < modeRank[d.Mode]
 	d.Mode = mode
-	return a.writeGateway(name, d, lower)
+	return a.WriteGateway(name, d, lower)
 }
 
 // ownerRE is an owner rule: the gateway's approver forms but "self"
@@ -891,12 +892,12 @@ func (a *Admin) SetOwners(name string, owners []string) error {
 			out = append(out, o)
 		}
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
 	d.Owners = out
-	if err := a.writeGateway(name, d, false); err != nil {
+	if err := a.WriteGateway(name, d, false); err != nil {
 		return err
 	}
 	if len(out) == 0 {
@@ -916,23 +917,23 @@ func (a *Admin) SetPermissions(name string, from io.Reader) error {
 	if err != nil {
 		return err
 	}
-	perms, err := a.parsePermissions(b)
+	perms, err := a.ParsePermissions(b)
 	if err != nil {
 		return err
 	}
-	if err := a.checkEnabled(name, "permissions", perms); err != nil {
+	if err := a.CheckEnabled(name, "permissions", perms); err != nil {
 		return err
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
 	d.Permissions = perms
-	return a.writeGateway(name, d, false)
+	return a.WriteGateway(name, d, false)
 }
 
-// parsePermissions reads and checks a YAML list of gateway permissions.
-func (a *Admin) parsePermissions(b []byte) ([]map[string]any, error) {
+// ParsePermissions reads and checks a YAML list of gateway permissions.
+func (a *Admin) ParsePermissions(b []byte) ([]map[string]any, error) {
 	var perms []map[string]any
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	if err := dec.Decode(&perms); err != nil && !errors.Is(err, io.EOF) {
@@ -987,7 +988,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 		path = "/v1/pause"
 	}
 	sock := filepath.Join(SocketDir, name, "api.sock")
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if errors.Is(err, os.ErrNotExist) {
 		// An agent the gateway has no data for (another host's, §3): the
 		// gateway denies it everything already; the host's part (§8) is
@@ -1007,7 +1008,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 		// The host first: a pause holds there whatever the gateway's
 		// policy does, and a slow OPA delays nothing (security review M3).
 		herr := a.Control(sock, path)
-		if err := a.writeGateway(name, d, true); err != nil {
+		if err := a.WriteGateway(name, d, true); err != nil {
 			if herr == nil {
 				return fmt.Errorf("agent %s is paused on its host, but the gateway's data: %w", name, err)
 			}
@@ -1019,7 +1020,7 @@ func (a *Admin) Pause(name, by string, on bool) error {
 		return nil
 	}
 	// Resuming: the gateway first, so the host never runs ahead of it.
-	if err := a.writeGateway(name, d, false); err != nil {
+	if err := a.WriteGateway(name, d, false); err != nil {
 		return err
 	}
 	if err := a.Control(sock, path); err != nil {
@@ -1256,7 +1257,7 @@ func (a *Admin) Show(names ...string) (*Posture, error) {
 		if err := host.CheckName(n); err != nil {
 			return nil, err
 		}
-		d, err := a.readGateway(n)
+		d, err := a.ReadGateway(n)
 		if err != nil {
 			return nil, err
 		}

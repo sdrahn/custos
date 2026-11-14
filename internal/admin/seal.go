@@ -239,10 +239,10 @@ func (a *Admin) checkSeal(p *Posture) error {
 	return nil
 }
 
-// currentEnablement is the state the gateway enforces, which agent-admin
+// CurrentEnablement is the state the gateway enforces, which agent-admin
 // decides by: on a sealed host, a state the seal does not cover (edited,
 // unsigned, removed) is diagnostics-only.
-func (a *Admin) currentEnablement() (*Enablement, error) {
+func (a *Admin) CurrentEnablement() (*Enablement, error) {
 	e, err := a.GetEnablement()
 	if err != nil {
 		return nil, err

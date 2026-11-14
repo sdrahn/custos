@@ -40,7 +40,7 @@ func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, readi
 	if err := host.CheckName(name); err != nil {
 		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}

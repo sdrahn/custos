@@ -343,7 +343,7 @@ func (a *Admin) resign(k *ecdsa.PrivateKey, oldPub string, accept map[string]boo
 			"then accept it as it is with --accept NAME (_http for the token issuers)", strings.Join(refused, ", "))
 	}
 	for _, n := range names {
-		d, err := a.readGateway(n)
+		d, err := a.ReadGateway(n)
 		if err != nil {
 			return err
 		}

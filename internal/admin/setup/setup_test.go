@@ -1,4 +1,4 @@
-package admin
+package setup
 
 import (
 	"os"
@@ -6,18 +6,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/admintest"
+	"github.com/sdrahn/custos/internal/admin/templates"
 	"github.com/sdrahn/custos/internal/host"
+	"github.com/sdrahn/custos/internal/host/hosttest"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
-func setupHost(t *testing.T) (*Admin, *rec) {
+func setupHost(t *testing.T) (*admin.Admin, *hosttest.Rec) {
 	t.Helper()
 	a, r := withTemplates(t)
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
 	os.MkdirAll(a.Path(ExecDir), 0o755)
 	os.MkdirAll(a.Path(GatewayServersDir), 0o755)
-	b, err := os.ReadFile("../../gateway/servers.d/custos-net.yaml")
+	b, err := os.ReadFile(admintest.Repo("gateway/servers.d/custos-net.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,8 +45,8 @@ func results(steps []Step) string {
 // credential and the exec commands; run again, nothing changes.
 func TestSetupDiagnosticsOnly(t *testing.T) {
 	a, r := setupHost(t)
-	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b", Credential: []byte("sk-local\n")}
-	steps, err := a.Setup(o)
+	o := Options{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b", Credential: []byte("sk-local\n")}
+	steps, err := Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,15 +60,15 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
 	e, _ := a.GetEnablement()
-	if e == nil || e.State != DiagnosticsOnly || !strings.HasPrefix(e.ChangedBy, "custos-setup ") {
+	if e == nil || e.State != admin.DiagnosticsOnly || !strings.HasPrefix(e.ChangedBy, "custos-setup ") {
 		t.Errorf("enablement %+v", e)
 	}
-	d, _ := a.GetDefaults()
+	d, _ := templates.GetDefaults(a)
 	if d.Model == nil || d.Model.Provider != "openai" || d.Model.Endpoint != DefaultOnHostEndpoint || d.Model.Name != "qwen3-8b" ||
 		d.Model.Credential != SetupCredential {
 		t.Errorf("defaults %+v", d.Model)
 	}
-	g, err := a.readGateway(HealthCheck)
+	g, err := a.ReadGateway(HealthCheck)
 	if err != nil || g.Mode != "supervised" || len(g.Permissions) == 0 {
 		t.Errorf("health-check %+v %v", g, err)
 	}
@@ -85,7 +89,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	}
 
 	// Again: nothing to do but the credential, which a new key replaces.
-	steps, err = a.Setup(o)
+	steps, err = Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +103,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	// for a session with them.
 	os.Remove(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")))
 	r.Cmds = nil
-	if _, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
+	if _, err := Run(a, Options{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
 		t.Fatal(err)
 	}
 	if c := strings.Join(r.Cmds, "\n"); !strings.Contains(c, "stop instances of exec") || !strings.Contains(c, "systemctl try-restart agent@health-check.service") ||
@@ -107,7 +111,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Errorf("exec instances not stopped, then health-check restarted, for the new commands: %v", r.Cmds)
 	}
 	r.Cmds = nil
-	a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"})
+	Run(a, Options{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"})
 	if c := strings.Join(r.Cmds, "\n"); strings.Contains(c, "try-restart") || strings.Contains(c, "stop instances") {
 		t.Errorf("restarted with nothing new: %v", r.Cmds)
 	}
@@ -116,11 +120,11 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
 		t.Fatal(err)
 	}
-	steps, _ = a.Setup(o)
+	steps, _ = Run(a, o)
 	if steps[0].Result != "skipped" || !strings.Contains(steps[0].Detail, "not going back") {
 		t.Errorf("after enable: %v", steps[0])
 	}
-	if e, _ := a.GetEnablement(); e.State != SomeCategories {
+	if e, _ := a.GetEnablement(); e.State != admin.SomeCategories {
 		t.Errorf("went back: %+v", e)
 	}
 }
@@ -128,7 +132,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 // Without --diagnostics-only nothing is written: the broader install.
 func TestSetupBroaderInstall(t *testing.T) {
 	a, _ := setupHost(t)
-	steps, err := a.Setup(SetupOptions{Backend: "on-host", Model: "m"})
+	steps, err := Run(a, Options{Backend: "on-host", Model: "m"})
 	if err != nil || len(steps) != 1 || steps[0].Result != "skipped" {
 		t.Fatalf("%v %v", steps, err)
 	}
@@ -144,17 +148,17 @@ func TestSetupBroaderInstall(t *testing.T) {
 // written.
 func TestSetupNeedsAFreshHost(t *testing.T) {
 	a, _ := setupHost(t)
-	if err := a.CreateFromTemplate("pp", "patch-pilot", ""); err != nil {
+	if err := templates.Create(a, "pp", "patch-pilot", ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	_, err := Run(a, Options{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
 	if err == nil || !strings.Contains(err.Error(), "outside diagnostics") {
 		t.Fatalf("%v", err)
 	}
 	if _, err := os.Stat(a.AgentDir(HealthCheck)); !os.IsNotExist(err) {
 		t.Error("health-check created all the same")
 	}
-	if d, _ := a.GetDefaults(); d.Model != nil {
+	if d, _ := templates.GetDefaults(a); d.Model != nil {
 		t.Error("defaults written all the same")
 	}
 }
@@ -163,20 +167,20 @@ func TestSetupNeedsAFreshHost(t *testing.T) {
 func TestSetupBackends(t *testing.T) {
 	key := []byte("k")
 	for _, c := range []struct {
-		o    SetupOptions
+		o    Options
 		want string // provider/endpoint, or the error
 	}{
-		{SetupOptions{Backend: "on-host", Model: "m"}, "openai " + DefaultOnHostEndpoint},
-		{SetupOptions{Backend: "on-host", Model: "m", Endpoint: "http://127.0.0.1:11434/v1"}, "openai http://127.0.0.1:11434/v1"},
-		{SetupOptions{Backend: "on-host", Model: "m", Provider: "gemini"}, "provider openai"},
-		{SetupOptions{Backend: "local-network", Model: "m"}, "needs --endpoint"},
-		{SetupOptions{Backend: "local-network", Model: "m", Endpoint: "http://ai.lan:8000/v1"}, "openai http://ai.lan:8000/v1"},
-		{SetupOptions{Backend: "customer-cloud", Model: "m"}, "needs --provider"},
-		{SetupOptions{Backend: "customer-cloud", Model: "gemini-2.5-pro", Provider: "vertex"}, "vertex "},
-		{SetupOptions{Backend: "vendor", Model: "gemini-2.5-flash"}, "needs --credential-file"},
-		{SetupOptions{Backend: "vendor", Model: "gemini-2.5-flash", Credential: key}, "gemini "},
-		{SetupOptions{Backend: "cloud", Model: "m"}, "want one of on-host, local-network, customer-cloud, vendor"},
-		{SetupOptions{Model: "m"}, "--backend: one of"},
+		{Options{Backend: "on-host", Model: "m"}, "openai " + DefaultOnHostEndpoint},
+		{Options{Backend: "on-host", Model: "m", Endpoint: "http://127.0.0.1:11434/v1"}, "openai http://127.0.0.1:11434/v1"},
+		{Options{Backend: "on-host", Model: "m", Provider: "gemini"}, "provider openai"},
+		{Options{Backend: "local-network", Model: "m"}, "needs --endpoint"},
+		{Options{Backend: "local-network", Model: "m", Endpoint: "http://ai.lan:8000/v1"}, "openai http://ai.lan:8000/v1"},
+		{Options{Backend: "customer-cloud", Model: "m"}, "needs --provider"},
+		{Options{Backend: "customer-cloud", Model: "gemini-2.5-pro", Provider: "vertex"}, "vertex "},
+		{Options{Backend: "vendor", Model: "gemini-2.5-flash"}, "needs --credential-file"},
+		{Options{Backend: "vendor", Model: "gemini-2.5-flash", Credential: key}, "gemini "},
+		{Options{Backend: "cloud", Model: "m"}, "want one of on-host, local-network, customer-cloud, vendor"},
+		{Options{Model: "m"}, "--backend: one of"},
 	} {
 		m, err := c.o.model()
 		got := ""
@@ -198,7 +202,7 @@ func TestSetupBackends(t *testing.T) {
 func TestSetupKeepsChangedExecCommands(t *testing.T) {
 	a, _ := setupHost(t)
 	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), []byte("version: 1\ncommands: {}\n"), 0o644)
-	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	steps, err := Run(a, Options{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +223,7 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	shippedBefore = map[string][]string{"exec.d-diagnostics.yaml": {sha256Hex(old)}}
 	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), old, 0o644)
 	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")), []byte("# mine\n"), 0o644)
-	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
+	steps, err := Run(a, Options{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +231,7 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	if !strings.Contains(got, "exec commands exec.d-diagnostics.yaml=done") || !strings.Contains(got, "exec commands exec.d-disk-usage.yaml=skipped") {
 		t.Errorf("steps: %s", got)
 	}
-	want, _ := os.ReadFile(a.Path(filepath.Join(TemplatesVendor, "exec.d-diagnostics.yaml")))
+	want, _ := os.ReadFile(a.Path(filepath.Join(templates.TemplatesVendor, "exec.d-diagnostics.yaml")))
 	if have, _ := os.ReadFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(have) != string(want) {
 		t.Error("the earlier release's copy was not replaced")
 	}
@@ -241,12 +245,12 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 // there that is not that link, and health-check may call its tool.
 func TestSetupRestartsServer(t *testing.T) {
 	a, _ := setupHost(t)
-	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
+	o := Options{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
 	host.WriteFile(a.Path(RestartsProfile), []byte("name: restarts\n"), 0o644)
 	dst := a.Path(filepath.Join(GatewayServersDir, "restarts.yaml"))
 	// Installed but not asked for (security review 0.6, P1): not linked,
 	// and the step says how.
-	steps, err := a.Setup(o)
+	steps, err := Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +266,7 @@ func TestSetupRestartsServer(t *testing.T) {
 		t.Fatal("linked without --restarts")
 	}
 	o.Restarts = true
-	steps, err = a.Setup(o)
+	steps, err = Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +276,7 @@ func TestSetupRestartsServer(t *testing.T) {
 	if target, err := os.Readlink(dst); err != nil || target != RestartsProfile {
 		t.Errorf("link %q %v", target, err)
 	}
-	g, err := a.readGateway(HealthCheck)
+	g, err := a.ReadGateway(HealthCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,28 +289,38 @@ func TestSetupRestartsServer(t *testing.T) {
 	if !allowed {
 		t.Errorf("health-check may not call restarts__pending_restarts: %+v", g.Permissions)
 	}
-	if steps, _ := a.Setup(o); !strings.Contains(results(steps), "server restarts=already") {
+	if steps, _ := Run(a, o); !strings.Contains(results(steps), "server restarts=already") {
 		t.Errorf("second run: %s", results(steps))
 	}
 	// A link that is there stays without the flag; one the administrator
 	// removed is not made again without it.
 	o.Restarts = false
-	if steps, _ := a.Setup(o); !strings.Contains(results(steps), "server restarts=already") {
+	if steps, _ := Run(a, o); !strings.Contains(results(steps), "server restarts=already") {
 		t.Errorf("kept link: %s", results(steps))
 	}
 	os.Remove(dst)
-	a.Setup(o)
+	Run(a, o)
 	if _, err := os.Lstat(dst); err == nil {
 		t.Error("linked again after the administrator removed it")
 	}
 	o.Restarts = true
 	// The administrator's own definition stays.
 	host.WriteFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
-	steps, _ = a.Setup(o)
+	steps, _ = Run(a, o)
 	if !strings.Contains(results(steps), "server restarts=skipped") {
 		t.Errorf("own file: %s", results(steps))
 	}
 	if b, _ := os.ReadFile(dst); !strings.Contains(string(b), "# mine") {
 		t.Errorf("replaced: %s", b)
 	}
+}
+
+// withTemplates is an agent-admin with the shipped categories and
+// templates installed.
+func withTemplates(t *testing.T) (*admin.Admin, *hosttest.Rec) {
+	t.Helper()
+	a, r := admintest.New(t)
+	admintest.Categories(t, a)
+	admintest.CopyTree(t, admintest.Repo("templates"), a.Path(templates.TemplatesVendor))
+	return a, r
 }

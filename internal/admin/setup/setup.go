@@ -1,4 +1,4 @@
-package admin
+package setup
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/templates"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/gatewayctl"
 	"github.com/sdrahn/custos/internal/host"
@@ -64,14 +66,14 @@ var shippedBefore = map[string][]string{
 	"exec.d-disk-usage.yaml": {"7e7f23fe449a005adf26de9b12d02287f37b2f742c294c60a860aa102b6d4f33"},
 }
 
-// SetupOptions are custos-setup's arguments.
-type SetupOptions struct {
+// Options are custos-setup's arguments.
+type Options struct {
 	DiagnosticsOnly bool
 	Backend         string
 	Provider        string
 	Endpoint        string
 	Model           string
-	// Credential is the key, read from --credential-file; nil: none.
+	// admin.Credential is the key, read from --credential-file; nil: none.
 	Credential []byte
 	// Restarts offers mcp-gateway's server restarts (--restarts).
 	Restarts bool
@@ -94,8 +96,8 @@ func (s Step) String() string {
 
 // model checks the options and gives the model defaults: the backend
 // decides the provider unless --provider says otherwise.
-func (o SetupOptions) model() (*ModelDefaults, error) {
-	m := &ModelDefaults{Name: o.Model, Endpoint: o.Endpoint, Provider: o.Provider}
+func (o Options) model() (*templates.ModelDefaults, error) {
+	m := &templates.ModelDefaults{Name: o.Model, Endpoint: o.Endpoint, Provider: o.Provider}
 	switch o.Backend {
 	case "on-host":
 		if m.Provider == "" {
@@ -136,7 +138,7 @@ func (o SetupOptions) model() (*ModelDefaults, error) {
 	if o.Credential != nil {
 		m.Credential = SetupCredential
 	}
-	if err := m.config().Check(); err != nil {
+	if err := m.Config().Check(); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -148,7 +150,7 @@ func (o SetupOptions) model() (*ModelDefaults, error) {
 // diagnostic commands. It is idempotent: run again, it changes only what
 // differs and goes back on nothing. Without DiagnosticsOnly it writes
 // nothing: the broader install needs no setup.
-func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
+func Run(a *admin.Admin, o Options) ([]Step, error) {
 	if !o.DiagnosticsOnly {
 		return []Step{{Name: "setup", Result: "skipped", Detail: "not the diagnostics-only install: nothing to set up"}}, nil
 	}
@@ -165,7 +167,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 
 	// 1. diagnostics-only first: it needs a fresh host, and nothing else
 	// is written if it is not one.
-	e, err := a.currentEnablement()
+	e, err := a.CurrentEnablement()
 	if err != nil {
 		return steps, err
 	}
@@ -175,18 +177,18 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 			return steps, fmt.Errorf("diagnostics-only: %w", err)
 		}
 		add("diagnostics-only", "done", "")
-	case e.State == DiagnosticsOnly:
+	case e.State == admin.DiagnosticsOnly:
 		add("diagnostics-only", "already", "")
 	default:
 		add("diagnostics-only", "skipped", "this host has more categories enabled ("+strings.Join(e.Enabled, ", ")+"): not going back")
 	}
 
 	// 2. The model defaults, for the agent and any created later.
-	y := renderModel(m, "")
-	if cur, err := a.GetDefaults(); err == nil && cur.Model != nil && string(renderModel(cur.Model, "")) == string(y) {
+	y := templates.RenderModel(m, "")
+	if cur, err := templates.GetDefaults(a); err == nil && cur.Model != nil && string(templates.RenderModel(cur.Model, "")) == string(y) {
 		add("model defaults", "already", m.Provider+" "+m.Name)
 	} else {
-		if err := a.SetDefaults(y); err != nil {
+		if err := templates.SetDefaults(a, y); err != nil {
 			return steps, fmt.Errorf("model defaults: %w", err)
 		}
 		add("model defaults", "done", m.Provider+" "+m.Name)
@@ -195,7 +197,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	// 3. The exec server's diagnostic commands, which the playbooks use,
 	// before the agent: its session with the gateway, and the exec server
 	// started for it, have the commands that are there when it starts.
-	execSteps := a.setupExec()
+	execSteps := setupExec(a)
 	steps = append(steps, execSteps...)
 	execAdded := false
 	for _, s := range execSteps {
@@ -222,11 +224,11 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	// Custos's server custos-net, for the network commands: its instances
 	// see the host's network (network_view: host), which the exec server's
 	// do not.
-	netStep := a.setupNetServer()
+	netStep := setupNetServer(a)
 	steps = append(steps, netStep)
 	execAdded = execAdded || netStep.Result == "done"
 	// mcp-gateway's server restarts, for update-status, when installed.
-	restartsStep := a.setupRestartsServer(o.Restarts)
+	restartsStep := setupRestartsServer(a, o.Restarts)
 	steps = append(steps, restartsStep)
 	execAdded = execAdded || restartsStep.Result == "done"
 
@@ -238,7 +240,7 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 			a.Run(nil, "systemctl", "try-restart", "agent@"+HealthCheck+".service")
 		}
 	} else {
-		if err := a.CreateFromTemplate(HealthCheck, HealthCheck, ""); err != nil {
+		if err := templates.Create(a, HealthCheck, HealthCheck, ""); err != nil {
 			return steps, fmt.Errorf("agent %s: %w", HealthCheck, err)
 		}
 		add("agent "+HealthCheck, "done", "")
@@ -267,13 +269,13 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 // setupExec puts the shipped diagnostic commands into the exec server's
 // directory, where the exec server is installed; one there already that
 // differs is the administrator's and stays.
-func (a *Admin) setupExec() []Step {
+func setupExec(a *admin.Admin) []Step {
 	if _, err := os.Stat(a.Path(ExecDir)); err != nil {
 		return []Step{{Name: "exec commands", Result: "skipped", Detail: ExecDir + " does not exist: install mcp-gateway-exec-server for the playbooks' commands"}}
 	}
 	var out []Step
 	for _, f := range []string{"exec.d-diagnostics.yaml", "exec.d-disk-usage.yaml"} {
-		src := a.Path(filepath.Join(TemplatesVendor, f))
+		src := a.Path(filepath.Join(templates.TemplatesVendor, f))
 		dst := a.Path(filepath.Join(ExecDir, f)) // its shipped name, as the user guide copies it
 		name := "exec commands " + filepath.Base(dst)
 		want, err := os.ReadFile(src)
@@ -328,7 +330,7 @@ func copyFile(src, dst string) error {
 // setupNetServer copies Custos's server definition custos-net into the
 // gateway's servers.d, where the gateway picks it up; one there already
 // that differs is the administrator's and stays.
-func (a *Admin) setupNetServer() Step {
+func setupNetServer(a *admin.Admin) Step {
 	const name = "server custos-net"
 	if _, err := os.Stat(a.Path(GatewayServersDir)); err != nil {
 		return Step{name, "skipped", GatewayServersDir + " does not exist"}
@@ -359,7 +361,7 @@ func (a *Admin) setupNetServer() Step {
 // a choice of its own, not one the package or an earlier run made
 // (security review 0.6, P1). A link that is there is kept; a file there
 // that is not that link is the administrator's and stays.
-func (a *Admin) setupRestartsServer(want bool) Step {
+func setupRestartsServer(a *admin.Admin, want bool) Step {
 	const name = "server restarts"
 	if _, err := os.Stat(a.Path(RestartsProfile)); err != nil {
 		return Step{name, "skipped", "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart"}

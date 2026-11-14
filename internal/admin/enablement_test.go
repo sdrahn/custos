@@ -3,12 +3,10 @@ package admin
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -160,7 +158,7 @@ func TestEnable(t *testing.T) {
 	if string(before) != string(after) {
 		t.Errorf("enable changed the agent's data:\n%s\n%s", before, after)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	if len(d.Categories) != 0 {
 		t.Errorf("a category left supervised: %+v", d.Categories)
 	}
@@ -225,34 +223,6 @@ func TestShowEnablementTampered(t *testing.T) {
 	p, _ = a.Show()
 	if !strings.Contains(p.Enablement.Tampered, "no record") {
 		t.Errorf("no record: %+v", p.Enablement)
-	}
-}
-
-// create --template refuses a template whose permissions name a disabled
-// category.
-func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
-	a, mem := diagnosticsHost(t)
-	dir := a.Path(filepath.Join(TemplatesSite, "patcher"))
-	host.WriteFile(filepath.Join(dir, "template.yaml"), []byte("title: Patcher\ndescription: x\nsystem: any\nmode: supervised\n"), 0o644)
-	host.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(yml, "patch-pilot", "patcher", 1)), 0o644)
-	// As the shipped patch-pilot: read-only permissions without a category
-	// first, then two disabled categories.
-	host.WriteFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: check_updates, read_only: true}\n"+
-		"- {server: zypp, tool: patch, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"+
-		"- {server: zypp, tool: install, category: patch-errata}\n"), 0o644)
-	err := a.CreateFromTemplate("patcher", "patcher", "")
-	if err == nil || !strings.Contains(err.Error(), "task categories config-lifecycle, patch-errata and permissions without a category are not enabled") ||
-		!strings.Contains(err.Error(), "agent-admin enable config-lifecycle patch-errata") {
-		t.Fatalf("%v", err)
-	}
-	if _, err := os.Stat(a.AgentDir("patcher")); !os.IsNotExist(err) {
-		t.Error("created all the same")
-	}
-	// One record per disabled category, the one without a category too.
-	rec := records(mem, journal.CategoryRefused)
-	if len(rec) != 3 || rec[0].Fields["REASON"] != "create --template patcher" || rec[0].Fields["CATEGORY"] != "(none)" ||
-		rec[1].Fields["CATEGORY"] != "patch-errata" || rec[2].Fields["CATEGORY"] != "config-lifecycle" {
-		t.Errorf("records %+v", rec)
 	}
 }
 

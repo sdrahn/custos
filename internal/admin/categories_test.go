@@ -81,7 +81,7 @@ func TestPromoteAndDemote(t *testing.T) {
 	if err := promote(a, "patch-errata", sat); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	c := d.Categories["patch-errata"]
 	if c == nil || c.Mode != "bounded" || c.PromotedBy != "alice 2026-11-03T12:00:00Z" || !strings.HasPrefix(c.Promotion, "p-") || len(c.Envelope.Windows) != 1 {
 		t.Fatalf("after promote: %+v", c)
@@ -114,7 +114,7 @@ func TestPromoteAndDemote(t *testing.T) {
 	if err := a.Pause("patch-pilot", "bob", true); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := a.readGateway("patch-pilot"); d.Categories["patch-errata"].Mode != "bounded" {
+	if d, _ := a.ReadGateway("patch-pilot"); d.Categories["patch-errata"].Mode != "bounded" {
 		t.Error("mode or pause dropped the category")
 	}
 	if err := promote(a, "patch-errata", sat); err == nil || !strings.Contains(err.Error(), "already bounded") {
@@ -123,7 +123,7 @@ func TestPromoteAndDemote(t *testing.T) {
 	if err := a.Demote("patch-pilot", "patch-errata", "bob", "override rate"); err != nil {
 		t.Fatal(err)
 	}
-	d, _ = a.readGateway("patch-pilot")
+	d, _ = a.ReadGateway("patch-pilot")
 	if c := d.Categories["patch-errata"]; c.Mode != "supervised" || c.DemotedBy != "bob 2026-11-03T12:00:00Z" || len(c.Envelope.Windows) != 1 {
 		t.Errorf("after demote: %+v", c)
 	}
@@ -189,7 +189,7 @@ func TestPromoteRefuses(t *testing.T) {
 	if len(mem.Records) != 0 {
 		t.Errorf("a refused promotion was recorded: %v", mem.Records)
 	}
-	if d, _ := a.readGateway("patch-pilot"); d.Categories != nil {
+	if d, _ := a.ReadGateway("patch-pilot"); d.Categories != nil {
 		t.Errorf("a refused promotion was written: %v", d.Categories)
 	}
 }
@@ -199,7 +199,7 @@ func TestPromoteWithRate(t *testing.T) {
 	if err := promote(a, "patch-errata", sat+"rate: {calls: 20, per: 1h}\n"); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	if r := d.Categories["patch-errata"].Envelope.Rate; r == nil || r.Calls != 20 || r.Per != "1h" {
 		t.Errorf("rate: %+v", r)
 	}
@@ -232,7 +232,7 @@ func TestPromoteWaitsForThePolicy(t *testing.T) {
 	if err := promote(a, "patch-errata", sat); err == nil || !strings.Contains(err.Error(), "did not load the change") {
 		t.Errorf("not loaded: %v", err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	id := d.Categories["patch-errata"].Promotion
 	data = map[string]any{"mode": "supervised", "paused": false, "permissions": []any{1, 2, 3},
 		"categories": map[string]any{"patch-errata": map[string]any{"mode": "bounded", "promotion": id}}}
@@ -240,7 +240,7 @@ func TestPromoteWaitsForThePolicy(t *testing.T) {
 		t.Error("demote returned while the gateway still had bounded")
 	}
 	// As with mode: the file is written, the gateway is late.
-	if d, _ := a.readGateway("patch-pilot"); d.Categories["patch-errata"].Mode != "supervised" {
+	if d, _ := a.ReadGateway("patch-pilot"); d.Categories["patch-errata"].Mode != "supervised" {
 		t.Error("the demotion was not written")
 	}
 	// Once the gateway has it, the next change returns at once.
@@ -257,7 +257,7 @@ func TestPromoteAgainWaitsForTheNewEnvelope(t *testing.T) {
 	if err := promote(a, "patch-errata", sat); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	first := d.Categories["patch-errata"].Promotion
 	// The gateway still has the first promotion.
 	a.OPAData = func(string) (any, error) {
