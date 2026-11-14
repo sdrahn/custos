@@ -616,7 +616,7 @@ func (a *Admin) Delete(name string, keepState bool) error {
 		}
 	}
 	a.Run(nil, "systemctl", append([]string{"disable", "--now"}, units...)...)
-	rm := []string{a.AgentDir(name), a.gatewayFile(name), a.Path(filepath.Join(UnitDir, "agent@"+name+".service.d")),
+	rm := []string{a.AgentDir(name), a.GatewayFile(name), a.Path(filepath.Join(UnitDir, "agent@"+name+".service.d")),
 		a.Path(filepath.Join(UnitDir, "agent-openshell@"+name+".service.d")),
 		// The socket's directory: systemd removes the socket at stop
 		// (RemoveOnStop=) but leaves the directory, by which the
@@ -750,24 +750,24 @@ type GatewayData struct {
 	Tampered string `yaml:"-" json:"tampered,omitempty"`
 }
 
-// gatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
+// GatewayFile is the agent's file in GatewayAgents: <name>.yaml, whose
 // top-level key is the name (data.mcp.agents.<name>).
-func (a *Admin) gatewayFile(name string) string {
+func (a *Admin) GatewayFile(name string) string {
 	return a.Path(filepath.Join(GatewayAgents, name+".yaml"))
 }
 
 // ReadGateway reads the agent's gateway data.
 func (a *Admin) ReadGateway(name string) (*GatewayData, error) {
-	b, err := os.ReadFile(a.gatewayFile(name))
+	b, err := os.ReadFile(a.GatewayFile(name))
 	if err != nil {
 		return nil, err
 	}
 	var doc map[string]*GatewayData
 	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", a.gatewayFile(name), err)
+		return nil, fmt.Errorf("%s: %w", a.GatewayFile(name), err)
 	}
 	if doc[name] == nil {
-		return nil, fmt.Errorf("%s: no data for agent %s", a.gatewayFile(name), name)
+		return nil, fmt.Errorf("%s: no data for agent %s", a.GatewayFile(name), name)
 	}
 	return doc[name], nil
 }
@@ -788,7 +788,7 @@ func (a *Admin) WriteGateway(name string, d *GatewayData, reduces bool) error {
 	if prev, err := a.ReadGateway(name); err == nil && prev.Permissions != nil {
 		from = prev.Permissions
 	}
-	if err := host.WriteFile(a.gatewayFile(name), b, 0o644); err != nil {
+	if err := host.WriteFile(a.GatewayFile(name), b, 0o644); err != nil {
 		return err
 	}
 	recordData()
@@ -951,7 +951,7 @@ func (a *Admin) ParsePermissions(b []byte) ([]map[string]any, error) {
 				if !ok {
 					return nil, fmt.Errorf("permissions[%d]: category is a name", i)
 				}
-				if err := a.checkCategory(c); err != nil {
+				if err := a.CheckCategory(c); err != nil {
 					return nil, fmt.Errorf("permissions[%d]: %w", i, err)
 				}
 				if p["autonomous"] != nil {

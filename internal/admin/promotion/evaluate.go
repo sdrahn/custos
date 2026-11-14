@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/gatewayctl"
 	"github.com/sdrahn/custos/internal/readiness"
@@ -44,7 +45,7 @@ type Demotion struct {
 // how that went. A gateway without notices is no error: Cockpit's
 // Approvals tab shows the demotion all the same; neither is a refused
 // notice an error of the demotion, which stands.
-func (a *Admin) noticeOf(name, c, reason string, d *GatewayData) string {
+func noticeOf(a *admin.Admin, name, c, reason string, d *admin.GatewayData) string {
 	if a.Notify == nil {
 		return ""
 	}
@@ -70,12 +71,12 @@ func (a *Admin) noticeOf(name, c, reason string, d *GatewayData) string {
 //
 // An agent whose records cannot be read is reported and the others are
 // still evaluated.
-func (a *Admin) Evaluate() ([]Demotion, error) {
+func Evaluate(a *admin.Admin) ([]Demotion, error) {
 	p, err := a.Show()
 	if err != nil {
 		return nil, err
 	}
-	th, err := a.Thresholds()
+	th, err := Thresholds(a)
 	if err != nil {
 		return nil, err
 	}
@@ -99,21 +100,21 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 		}
 		sort.Strings(cats)
 		now := a.Now()
-		recs, gw, err := a.journalRecords(name, now.Add(-OverrideWindow))
+		recs, gw, err := journalRecords(a, name, now.Add(-OverrideWindow))
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
 		for _, c := range cats {
-			reason := a.demotionReason(d, c, recs, gw, th, now)
+			reason := demotionReason(a, d, c, recs, gw, th, now)
 			if reason == "" {
 				continue
 			}
-			if err := a.Demote(name, c, DemoteBy, reason); err != nil {
+			if err := Demote(a, name, c, DemoteBy, reason); err != nil {
 				errs = append(errs, fmt.Sprintf("agent %s: demoting %s: %v", name, c, err))
 				continue
 			}
-			out = append(out, Demotion{name, c, reason, a.noticeOf(name, c, reason, d)})
+			out = append(out, Demotion{name, c, reason, noticeOf(a, name, c, reason, d)})
 		}
 	}
 	if len(errs) > 0 {
@@ -123,7 +124,7 @@ func (a *Admin) Evaluate() ([]Demotion, error) {
 }
 
 // demotionReason is why category c of agent d is to be demoted, or "".
-func (a *Admin) demotionReason(d *GatewayData, c string, recs []readiness.Record, gw readiness.Audit, th readiness.Thresholds, now time.Time) string {
+func demotionReason(a *admin.Admin, d *admin.GatewayData, c string, recs []readiness.Record, gw readiness.Audit, th readiness.Thresholds, now time.Time) string {
 	st := d.Categories[c]
 	since := promotedAt(st)
 	if from := now.Add(-OverrideWindow); since.Before(from) {

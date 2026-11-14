@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,7 +109,7 @@ func (a *Admin) Event(instance string) error {
 			ev = &cfg.Events[i]
 		}
 	}
-	if ev == nil || !contains(ev.OnUnitFailure, unit) {
+	if ev == nil || !slices.Contains(ev.OnUnitFailure, unit) {
 		// A drop-in agent-admin should have removed: say so, start nothing.
 		return fmt.Errorf("agent %s has no event %q for the unit %s (agent-admin edit %s rewrites its drop-ins)", name, event, unit, name)
 	}

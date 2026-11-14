@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -20,7 +21,7 @@ import (
 const PromotionConfig = "/etc/custos/promotion.yaml"
 
 // Thresholds reads PromotionConfig over the defaults.
-func (a *Admin) Thresholds() (readiness.Thresholds, error) {
+func Thresholds(a *admin.Admin) (readiness.Thresholds, error) {
 	th := readiness.Defaults
 	b, err := os.ReadFile(a.Path(PromotionConfig))
 	if errors.Is(err, os.ErrNotExist) {
@@ -51,7 +52,7 @@ type Report struct {
 	Agent      string                        `json:"agent"`
 	Thresholds readiness.Thresholds          `json:"thresholds"`
 	Categories map[string]readiness.Measures `json:"categories"`
-	// Diagnostics is the agent's diagnostics history over the window
+	// admin.Diagnostics is the agent's diagnostics history over the window
 	// (§6b). DiagnosticsApply: the host started diagnostics-only, so it
 	// is part of every category's readiness (diagnostics' own aside).
 	Diagnostics      readiness.Diagnostics `json:"diagnostics"`
@@ -61,7 +62,7 @@ type Report struct {
 // Readiness measures an agent's categories (or one), from the agent's
 // journal and the gateway's approval decisions over the thresholds'
 // window.
-func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
+func Readiness(a *admin.Admin, name string, only ...string) (*Report, error) {
 	if err := host.CheckName(name); err != nil {
 		return nil, err
 	}
@@ -69,7 +70,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	th, err := a.Thresholds()
+	th, err := Thresholds(a)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +79,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 		cats = only
 	}
 	now := a.Now()
-	recs, gw, err := a.journalRecords(name, now.AddDate(0, 0, -th.WindowDays))
+	recs, gw, err := journalRecords(a, name, now.AddDate(0, 0, -th.WindowDays))
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	perms := readiness.NewHistory(d.Permissions, recs)
 	for _, c := range cats {
 		m := readiness.Measure(c, perms, recs, gw, th, now)
-		if r.DiagnosticsApply && c != Diagnostics {
+		if r.DiagnosticsApply && c != admin.Diagnostics {
 			m.Unmet = append(m.Unmet, r.Diagnostics.Unmet(th)...)
 			m.Ready = len(m.Unmet) == 0
 		}
@@ -104,7 +105,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 
 // journalRecords reads the agent's records, and what the gateway's audit
 // says about it (decisions, call results R2, reviews R4), since then.
-func (a *Admin) journalRecords(name string, since time.Time) ([]readiness.Record, readiness.Audit, error) {
+func journalRecords(a *admin.Admin, name string, since time.Time) ([]readiness.Record, readiness.Audit, error) {
 	at := "@" + strconv.FormatInt(since.Unix(), 10)
 	read := a.JournalJSON
 	if read == nil {

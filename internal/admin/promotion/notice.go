@@ -1,17 +1,18 @@
-package admin
+package promotion
 
 import (
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/gatewayctl"
 )
 
 // demotionNotice is the notice of an automatic demotion of category c of
 // agent name: for the servers its permissions name (globs aside, whose
 // approvers the gateway cannot tell).
-func demotionNotice(name, c, reason string, d *GatewayData) gatewayctl.Notice {
+func demotionNotice(name, c, reason string, d *admin.GatewayData) gatewayctl.Notice {
 	set := map[string]bool{}
 	for _, p := range d.Permissions {
 		s, _ := p["server"].(string)

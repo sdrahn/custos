@@ -1,4 +1,4 @@
-package admin
+package promotion
 
 import (
 	"encoding/json"
@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/admintest"
+	"github.com/sdrahn/custos/internal/host/hosttest"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -94,9 +97,9 @@ func (j *fakeJournal) read(args ...string) ([]byte, error) {
 
 // promoted: patch-pilot with patch-errata promoted a day before now, with
 // the given rollback, and the journal j.
-func promoted(t *testing.T, rollback string) (*Admin, *journal.Memory, *fakeJournal, *rec) {
+func promoted(t *testing.T, rollback string) (*admin.Admin, *journal.Memory, *fakeJournal, *hosttest.Rec) {
 	t.Helper()
-	a, mem, r := withCategoriesRec(t)
+	a, mem, r := admintest.WithAgent(t)
 	// Promoted at the test clock, then evaluated a day later.
 	if err := promote(a, "patch-errata", sat+rollback); err != nil {
 		t.Fatal(err)
@@ -109,16 +112,16 @@ func promoted(t *testing.T, rollback string) (*Admin, *journal.Memory, *fakeJour
 	return a, mem, j, r
 }
 
-func evaluate(t *testing.T, a *Admin) []Demotion {
+func evaluate(t *testing.T, a *admin.Admin) []Demotion {
 	t.Helper()
-	d, err := a.Evaluate()
+	d, err := Evaluate(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return d
 }
 
-func mode(a *Admin, cat string) string {
+func mode(a *admin.Admin, cat string) string {
 	d, _ := a.ReadGateway("patch-pilot")
 	if c := d.Categories[cat]; c != nil {
 		return c.Mode
@@ -274,7 +277,7 @@ func TestRealHealthCheck(t *testing.T) {
 // supervised period's: the promotion time is kept to the fraction of the
 // second (as the functional tests found, demoting at once for 100 %).
 func TestDeclineInTheSecondBeforeThePromotion(t *testing.T) {
-	a, _, _ := withCategoriesRec(t)
+	a, _, _ := admintest.WithAgent(t)
 	at := time.Date(2026, 11, 3, 12, 0, 0, 900_000_000, time.UTC)
 	a.Now = func() time.Time { return at }
 	j := &fakeJournal{}
@@ -403,14 +406,14 @@ func TestHealthCheckOnlyFromSealedData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, _ := a.Thresholds()
+	th, _ := Thresholds(a)
 	d := p.Agents["patch-pilot"]
 	d.Tampered = "it does not match its seal (changed outside agent-admin): the gateway denies the agent everything"
-	if why := a.demotionReason(d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); why != "" || len(ran) != 0 {
+	if why := demotionReason(a, d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); why != "" || len(ran) != 0 {
 		t.Errorf("data that does not verify: %q, ran %q", why, ran)
 	}
 	d.Tampered = "an earlier version was put back: it is signed, but not the latest agent-admin wrote"
-	if why := a.demotionReason(d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); !strings.Contains(why, "health_check_failed") || len(ran) != 1 {
+	if why := demotionReason(a, d, "patch-errata", nil, readiness.Audit{}, th, a.Now()); !strings.Contains(why, "health_check_failed") || len(ran) != 1 {
 		t.Errorf("an earlier signed version: %q, ran %q", why, ran)
 	}
 }

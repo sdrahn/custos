@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/host/hosttest"
+	"github.com/sdrahn/custos/internal/journal"
 )
 
 // New is agent-admin on a test host, and what the host was asked to do.
@@ -79,4 +81,36 @@ func CopyTree(t *testing.T, from, to string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Yml is the configuration of the agent patch-pilot of WithAgent.
+const Yml = `version: 1
+name: patch-pilot
+model: {provider: openai, name: m, endpoint: "http://ai:8000/v1"}
+gateway: {servers: [zypp]}
+schedules:
+  - {name: compliance, on_calendar: "Mon..Fri 06:00", prompt: "Run the compliance check."}
+`
+
+// WithAgent is agent-admin with the shipped categories and the agent
+// patch-pilot, which has a read-only permission and one each in
+// patch-errata and config-lifecycle; root's records go to the memory
+// returned, which starts empty.
+func WithAgent(t *testing.T) (*admin.Admin, *journal.Memory, *hosttest.Rec) {
+	t.Helper()
+	a, r := New(t)
+	Categories(t, a)
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(Yml), 0o644)
+	if err := a.Create("patch-pilot", f); err != nil {
+		t.Fatal(err)
+	}
+	perms := "- {server: zypp, tool: 'list_*', read_only: true}\n- {server: zypp, tool: install_patches, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"
+	if err := a.SetPermissions("patch-pilot", strings.NewReader(perms)); err != nil {
+		t.Fatal(err)
+	}
+	mem.Records = nil
+	return a, mem, r
 }
