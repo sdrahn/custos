@@ -1,4 +1,4 @@
-package admin
+package gatewayctl
 
 import (
 	"encoding/json"
@@ -34,11 +34,11 @@ func TestStopInstances(t *testing.T) {
 	})}
 	go srv.Serve(l)
 	defer srv.Close()
-	n, err := stopInstancesOn(sock, "exec")
+	n, err := StopInstancesOn(sock, "exec")
 	if err != nil || n != 2 || strings.Join(stopped, ",") != "i-1,i-2" {
 		t.Errorf("stopped %d %v: %v", n, stopped, err)
 	}
-	if _, err := stopInstancesOn(filepath.Join(t.TempDir(), "none.sock"), "exec"); err != errNoControl {
+	if _, err := StopInstancesOn(filepath.Join(t.TempDir(), "none.sock"), "exec"); err != ErrNoControl {
 		t.Errorf("without the gateway: %v", err)
 	}
 }

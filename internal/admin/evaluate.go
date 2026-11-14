@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/gatewayctl"
 	"github.com/sdrahn/custos/internal/readiness"
 )
 
@@ -48,7 +49,7 @@ func (a *Admin) noticeOf(name, c, reason string, d *GatewayData) string {
 	}
 	id, err := a.Notify(demotionNotice(name, c, reason, d))
 	switch {
-	case errors.Is(err, errNoNotices):
+	case errors.Is(err, gatewayctl.ErrNoNotices):
 		return "no notice: this mcp-gateway takes none"
 	case err != nil:
 		return "no notice: " + err.Error()
