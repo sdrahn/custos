@@ -1,3 +1,6 @@
+// Package setup is custos-setup: the bundled diagnostics install
+// (CONTRACT.md §17a), from a fresh host to a diagnostics-only one with the
+// health-check agent, step by step and safe to run again.
 package setup
 
 import (

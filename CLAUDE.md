@@ -30,6 +30,10 @@ Guidance for Claude Code (and other agents) working in this repository.
 
 ## Where things are
 
+- `docs/architecture.md` says which package owns what, what a package
+  may import and where a change of a given kind goes. `test/boundaries`
+  checks it: a new package or third-party module needs its place in
+  that test's tables and its line in the document.
 - `CONTRACT.md` is the interface between all parts. Part I (the
   control-plane contract) must stay independent of any agent host.
   Within contract version 1, names, paths and fields are added, never
