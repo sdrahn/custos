@@ -49,7 +49,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 	if p.DespiteReadiness && strings.TrimSpace(p.Reason) == "" {
 		return errors.New("--despite-readiness needs --reason TEXT")
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (a *Admin) Promote(name, cat, by string, p Promotion) error {
 		d.Categories = map[string]*category.State{}
 	}
 	d.Categories[cat] = &category.State{Mode: "bounded", Envelope: env, PromotedBy: by + " " + now, Promotion: id}
-	if err := a.writeGateway(name, d, false); err != nil {
+	if err := a.WriteGateway(name, d, false); err != nil {
 		return err
 	}
 	a.Record(journal.CategoryPromoted, name, fmt.Sprintf("%s promoted %s of agent %s to bounded", by, cat, name), journal.Fields{
@@ -109,7 +109,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (a *Admin) Demote(name, cat, by, reason string) error {
 	}
 	c.Mode = "supervised"
 	c.DemotedBy = by + " " + a.Now().UTC().Format(time.RFC3339Nano)
-	if err := a.writeGateway(name, d, true); err != nil {
+	if err := a.WriteGateway(name, d, true); err != nil {
 		return err
 	}
 	a.Record(journal.CategoryDemoted, name, fmt.Sprintf("%s demoted %s of agent %s to supervised", by, cat, name), journal.Fields{

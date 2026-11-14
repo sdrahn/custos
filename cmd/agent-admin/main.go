@@ -10,6 +10,7 @@ import (
 
 	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/admin/idp"
+	"github.com/sdrahn/custos/internal/admin/templates"
 )
 
 const usage = `usage: agent-admin COMMAND …
@@ -162,7 +163,7 @@ func run(a *admin.Admin, args []string) error {
 		}
 		if t, ok := flag("--template"); ok && cmd == "create" {
 			f, _ := flag("--from")
-			return a.CreateFromTemplate(args[0], t, f)
+			return templates.Create(a, args[0], t, f)
 		}
 		f, err := from()
 		if err != nil {
@@ -272,7 +273,7 @@ func run(a *admin.Admin, args []string) error {
 			}
 			names = append(names, args[i])
 		}
-		c, err := a.Compare(names, t)
+		c, err := templates.Compare(a, names, t)
 		if err != nil {
 			return err
 		}
@@ -284,13 +285,13 @@ func run(a *admin.Admin, args []string) error {
 			return err
 		}
 		t, _ := flag("--template")
-		return a.ApplyTemplate(args[0], t, has("--configuration"), has("--permissions"))
+		return templates.Apply(a, args[0], t, has("--configuration"), has("--permissions"))
 	case "draft":
 		if err := need(1); err != nil {
 			return err
 		}
 		t, _ := flag("--template")
-		b, err := a.Draft(args[0], t)
+		b, err := templates.Draft(a, args[0], t)
 		if err != nil {
 			return err
 		}
@@ -302,12 +303,12 @@ func run(a *admin.Admin, args []string) error {
 			if err != nil {
 				return err
 			}
-			return a.SetDefaults(b)
+			return templates.SetDefaults(a, b)
 		}
 		if has("--clear") {
-			return a.SetDefaults(nil)
+			return templates.SetDefaults(a, nil)
 		}
-		d, err := a.GetDefaults()
+		d, err := templates.GetDefaults(a)
 		if err != nil {
 			return err
 		}
@@ -358,7 +359,7 @@ func run(a *admin.Admin, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(p)
 	case "templates":
-		t, err := a.ListTemplates()
+		t, err := templates.List(a)
 		if err != nil {
 			return err
 		}

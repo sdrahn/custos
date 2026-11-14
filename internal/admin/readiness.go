@@ -65,7 +65,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	if err := host.CheckName(name); err != nil {
 		return nil, err
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
 	r := &Report{Agent: name, Thresholds: th, Categories: map[string]readiness.Measures{}, Diagnostics: readiness.DiagnosticsOf(recs)}
 	// A host has an enablement state only when it started diagnostics-only
 	// (§6b): there, what the diagnostics agent did is part of readiness.
-	e, err := a.currentEnablement()
+	e, err := a.CurrentEnablement()
 	if err != nil {
 		return nil, err
 	}

@@ -119,7 +119,7 @@ func evaluate(t *testing.T, a *Admin) []Demotion {
 }
 
 func mode(a *Admin, cat string) string {
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	if c := d.Categories[cat]; c != nil {
 		return c.Mode
 	}
@@ -287,7 +287,7 @@ func TestDeclineInTheSecondBeforeThePromotion(t *testing.T) {
 	if err := promote(a, "patch-errata", sat); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	if pb := d.Categories["patch-errata"].PromotedBy; pb != "alice 2026-11-03T12:00:00.9Z" {
 		t.Errorf("promoted_by %q", pb)
 	}

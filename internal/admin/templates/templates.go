@@ -1,4 +1,4 @@
-package admin
+package templates
 
 import (
 	"bufio"
@@ -13,10 +13,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
-	"github.com/sdrahn/custos/internal/playbook"
 )
 
 // Agent templates (CONTRACT.md §14a): starting points for agents, each a
@@ -59,7 +59,7 @@ type Templates struct {
 }
 
 // ListTemplates reads the templates.
-func (a *Admin) ListTemplates() (*Templates, error) {
+func List(a *admin.Admin) (*Templates, error) {
 	dirs := map[string]string{} // name → directory; /etc replaces /usr
 	for _, root := range []string{TemplatesVendor, TemplatesSite} {
 		es, err := os.ReadDir(a.Path(root))
@@ -72,12 +72,12 @@ func (a *Admin) ListTemplates() (*Templates, error) {
 			}
 		}
 	}
-	out := &Templates{Transactional: a.transactional(), Templates: map[string]Template{}}
+	out := &Templates{Transactional: transactional(a), Templates: map[string]Template{}}
 	for name, dir := range dirs {
 		if _, err := os.Stat(filepath.Join(dir, "template.yaml")); errors.Is(err, os.ErrNotExist) {
 			continue // hidden by the administrator
 		}
-		t, err := a.loadTemplate(name, dir)
+		t, err := loadTemplate(a, name, dir)
 		if err != nil {
 			out.Templates[name] = Template{Title: name, Dir: dir, Error: err.Error()}
 			continue
@@ -88,7 +88,7 @@ func (a *Admin) ListTemplates() (*Templates, error) {
 }
 
 // template finds one template.
-func (a *Admin) template(name string) (*Template, error) {
+func getTemplate(a *admin.Admin, name string) (*Template, error) {
 	if !config.ValidName(name) {
 		return nil, fmt.Errorf("%q is not a valid template name", name)
 	}
@@ -98,14 +98,14 @@ func (a *Admin) template(name string) (*Template, error) {
 			if _, err := os.Stat(filepath.Join(dir, "template.yaml")); err != nil {
 				break // hidden
 			}
-			return a.loadTemplate(name, dir)
+			return loadTemplate(a, name, dir)
 		}
 	}
 	return nil, fmt.Errorf("no template %q (agent-admin templates lists them)", name)
 }
 
 // loadTemplate reads and checks a template's directory.
-func (a *Admin) loadTemplate(name, dir string) (*Template, error) {
+func loadTemplate(a *admin.Admin, name, dir string) (*Template, error) {
 	bad := func(f string, err error) error { return fmt.Errorf("template %s: %s: %w", name, f, err) }
 	if !config.ValidName(name) {
 		return nil, fmt.Errorf("template %q: not a valid name", name)
@@ -146,7 +146,7 @@ func (a *Admin) loadTemplate(name, dir string) (*Template, error) {
 		return nil, bad("agent.yaml", fmt.Errorf("name %q: want the template's name", cfg.Name))
 	}
 	t.Servers = cfg.Gateway.Servers
-	perms, err := a.templatePermissions(dir)
+	perms, err := templatePermissions(a, dir)
 	if err != nil {
 		return nil, bad("permissions.yaml", err)
 	}
@@ -179,17 +179,17 @@ func (a *Admin) loadTemplate(name, dir string) (*Template, error) {
 }
 
 // templatePermissions reads and checks a template's permissions.yaml.
-func (a *Admin) templatePermissions(dir string) ([]map[string]any, error) {
+func templatePermissions(a *admin.Admin, dir string) ([]map[string]any, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "permissions.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	return a.parsePermissions(b)
+	return a.ParsePermissions(b)
 }
 
 // transactional reports whether the root file system is mounted
 // read-only, as on a transactional system.
-func (a *Admin) transactional() bool {
+func transactional(a *admin.Admin) bool {
 	f, err := os.Open(a.Path("/proc/self/mounts"))
 	if err != nil {
 		return false
@@ -224,11 +224,11 @@ func WithName(cfg []byte, name string) []byte {
 // (Draft); then the template's permissions and
 // mode. Categories stay supervised: promoting one is a separate,
 // deliberate step (§6a).
-func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
+func Create(a *admin.Admin, name, tmpl, from string) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
-	t, err := a.template(tmpl)
+	t, err := getTemplate(a, tmpl)
 	if err != nil {
 		return err
 	}
@@ -237,36 +237,31 @@ func (a *Admin) CreateFromTemplate(name, tmpl, from string) error {
 		if cfg, err = a.ReadFrom(from); err != nil {
 			return err
 		}
-	} else if cfg, err = a.Draft(name, tmpl); err != nil {
+	} else if cfg, err = Draft(a, name, tmpl); err != nil {
 		return err
 	}
-	perms, err := a.templatePermissions(t.Dir)
+	perms, err := templatePermissions(a, t.Dir)
 	if err != nil {
 		return fmt.Errorf("template %s: permissions.yaml: %w", tmpl, err)
 	}
-	if err := a.checkEnabled(name, "create --template "+tmpl, perms); err != nil {
+	if err := a.CheckEnabled(name, "create --template "+tmpl, perms); err != nil {
 		return fmt.Errorf("template %s: %w", tmpl, err)
 	}
-	if err := a.create(name, cfg); err != nil {
+	if err := a.CreateConfig(name, cfg); err != nil {
 		return err
 	}
-	if err := a.recordTemplate(name, tmpl); err != nil {
+	if err := recordTemplate(a, name, tmpl); err != nil {
 		return err
 	}
-	d, err := a.readGateway(name)
+	d, err := a.ReadGateway(name)
 	if err != nil {
 		return err
 	}
 	d.Mode, d.Permissions = t.Mode, perms
-	if err := a.writeGateway(name, d, false); err != nil {
+	if err := a.WriteGateway(name, d, false); err != nil {
 		return fmt.Errorf("agent %s was created, but setting the template's permissions failed (agent-admin permissions %s < %s): %w",
 			name, name, filepath.Join(t.Dir, "permissions.yaml"), err)
 	}
 	fmt.Fprintf(a.Out, "agent %s created from template %s: %s, %d permissions\n", name, tmpl, t.Mode, len(perms))
 	return nil
 }
-
-// Playbooks are the diagnostic playbooks (§14c): the package's, replaced
-// or hidden by the administrator's; a file that does not parse is listed
-// with its error.
-func (a *Admin) Playbooks() (map[string]*playbook.Playbook, error) { return playbook.Load(a.Root) }

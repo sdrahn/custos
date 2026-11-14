@@ -1,7 +1,6 @@
-package admin
+package templates
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,9 +9,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sdrahn/custos/internal/category"
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/admintest"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
+	"github.com/sdrahn/custos/internal/host/hosttest"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/playbook"
 )
@@ -62,7 +63,7 @@ var knownTools = map[string]struct{ read, change []string }{
 // custos-net's those of gateway/custos-net.d; the read-only ones among
 // them change nothing.
 func init() {
-	for server, glob := range map[string]string{"exec": "../../templates/exec.d-*.yaml", "custos-net": "../../gateway/custos-net.d/*.yaml"} {
+	for server, glob := range map[string]string{"exec": admintest.Repo("templates/exec.d-*.yaml"), "custos-net": admintest.Repo("gateway/custos-net.d/*.yaml")} {
 		knownTools[server] = commandTools(glob)
 	}
 }
@@ -103,42 +104,20 @@ var (
 
 // withTemplates is an agent-admin with the shipped categories and
 // templates installed.
-func withTemplates(t *testing.T) (*Admin, *rec) {
+func withTemplates(t *testing.T) (*admin.Admin, *hosttest.Rec) {
 	t.Helper()
-	a, r := newAdmin(t)
-	m, _ := filepath.Glob("../../packaging/categories/*.yaml")
-	for _, f := range m {
-		b, _ := os.ReadFile(f)
-		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
-	}
-	copyTree(t, "../../templates", a.Path(TemplatesVendor))
+	a, r := admintest.New(t)
+	admintest.Categories(t, a)
+	admintest.CopyTree(t, admintest.Repo("templates"), a.Path(TemplatesVendor))
 	return a, r
 }
 
 // copyTemplate copies a shipped template as another one.
 func copyTemplate(t *testing.T, from, name, to string) {
 	t.Helper()
-	copyTree(t, filepath.Join("../../templates", from), to)
+	admintest.CopyTree(t, admintest.Repo("templates", from), to)
 	b, _ := os.ReadFile(filepath.Join(to, "agent.yaml"))
 	host.WriteFile(filepath.Join(to, "agent.yaml"), WithName(b, name), 0o644)
-}
-
-func copyTree(t *testing.T, from, to string) {
-	t.Helper()
-	err := filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(from, p)
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		return host.WriteFile(filepath.Join(to, rel), b, 0o644)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func readPerms(t *testing.T, f string) []map[string]any {
@@ -194,11 +173,11 @@ func checkTools(t *testing.T, f string, template bool) {
 
 func TestShippedTemplates(t *testing.T) {
 	a, _ := withTemplates(t)
-	l, err := a.ListTemplates()
+	l, err := List(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirs, _ := filepath.Glob("../../templates/*/template.yaml")
+	dirs, _ := filepath.Glob(admintest.Repo("templates/*/template.yaml"))
 	if len(l.Templates) != len(dirs) || len(dirs) < 7 {
 		t.Fatalf("%d templates listed, %d shipped", len(l.Templates), len(dirs))
 	}
@@ -207,7 +186,7 @@ func TestShippedTemplates(t *testing.T) {
 			t.Errorf("template %s: %s", name, tm.Error)
 			continue
 		}
-		src := filepath.Join("../../templates", name)
+		src := filepath.Join(admintest.Repo("templates"), name)
 		checkTools(t, filepath.Join(src, "permissions.yaml"), true)
 		cfg, err := config.Load(src)
 		if err != nil {
@@ -261,26 +240,26 @@ func TestShippedTemplates(t *testing.T) {
 
 // The example installed beside the templates names real tools, too.
 func TestExampleTools(t *testing.T) {
-	checkTools(t, "../../examples/patch-pilot/permissions.yaml", false)
-	if _, err := config.Load("../../examples/patch-pilot"); err != nil {
+	checkTools(t, admintest.Repo("examples/patch-pilot/permissions.yaml"), false)
+	if _, err := config.Load(admintest.Repo("examples/patch-pilot")); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestCreateFromTemplate(t *testing.T) {
 	a, r := withTemplates(t)
-	if err := a.CreateFromTemplate("web-doctor", "service-doctor", ""); err != nil {
+	if err := Create(a, "web-doctor", "service-doctor", ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(a.Path("/etc/custos/agents/web-doctor/agent.yaml"))
 	if !strings.Contains(string(b), "\nname: web-doctor\n") || !strings.Contains(string(b), "# Agent template service-doctor") {
 		t.Errorf("agent.yaml:\n%s", b)
 	}
-	d, err := a.readGateway("web-doctor")
+	d, err := a.ReadGateway("web-doctor")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Mode != "supervised" || len(d.Permissions) != len(readPerms(t, "../../templates/service-doctor/permissions.yaml")) {
+	if d.Mode != "supervised" || len(d.Permissions) != len(readPerms(t, admintest.Repo("templates/service-doctor/permissions.yaml"))) {
 		t.Errorf("gateway data %+v", d)
 	}
 	if len(d.Categories) != 0 {
@@ -292,25 +271,25 @@ func TestCreateFromTemplate(t *testing.T) {
 
 	// The configuration as a control plane edited it, with the template's
 	// permissions and mode.
-	src, _ := os.ReadFile("../../templates/triage/agent.yaml")
+	src, _ := os.ReadFile(admintest.Repo("templates/triage/agent.yaml"))
 	edited := strings.Replace(string(WithName(src, "look")), "qwen3-32b", "granite-4", 1)
 	a.In = strings.NewReader(edited)
-	if err := a.CreateFromTemplate("look", "triage", "-"); err != nil {
+	if err := Create(a, "look", "triage", "-"); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(a.Path("/etc/custos/agents/look/agent.yaml")); !strings.Contains(string(b), "granite-4") {
 		t.Errorf("agent.yaml:\n%s", b)
 	}
-	if d, _ := a.readGateway("look"); d.Mode != "advisory" {
+	if d, _ := a.ReadGateway("look"); d.Mode != "advisory" {
 		t.Errorf("mode %q", d.Mode)
 	}
 
 	// A configuration for another name is refused, and no agent made.
 	a.In = strings.NewReader(string(src))
-	if err := a.CreateFromTemplate("other", "triage", "-"); err == nil || !strings.Contains(err.Error(), `for agent "triage", not "other"`) {
+	if err := Create(a, "other", "triage", "-"); err == nil || !strings.Contains(err.Error(), `for agent "triage", not "other"`) {
 		t.Errorf("err %v", err)
 	}
-	if err := a.CreateFromTemplate("x1", "no-such", ""); err == nil || !strings.Contains(err.Error(), `no template "no-such"`) {
+	if err := Create(a, "x1", "no-such", ""); err == nil || !strings.Contains(err.Error(), `no template "no-such"`) {
 		t.Errorf("err %v", err)
 	}
 	if _, err := os.Stat(a.Path("/etc/custos/agents/x1")); err == nil {
@@ -322,13 +301,13 @@ func TestSiteTemplates(t *testing.T) {
 	a, _ := withTemplates(t)
 	// An administrator's template of a shipped name replaces it; a
 	// directory without template.yaml hides one.
-	copyTree(t, "../../templates/triage", a.Path(filepath.Join(TemplatesSite, "triage")))
+	admintest.CopyTree(t, admintest.Repo("templates/triage"), a.Path(filepath.Join(TemplatesSite, "triage")))
 	host.WriteFile(a.Path(filepath.Join(TemplatesSite, "triage", "template.yaml")), []byte("title: Our triage\nsystem: any\nmode: advisory\n"), 0o644)
 	os.MkdirAll(a.Path(filepath.Join(TemplatesSite, "exposure-watch")), 0o755)
 	// One naming a category the catalog lacks is listed with its error.
 	copyTemplate(t, "disk-watch", "cleaner", a.Path(filepath.Join(TemplatesSite, "cleaner")))
 	host.WriteFile(a.Path(filepath.Join(TemplatesSite, "cleaner", "permissions.yaml")), []byte("- {server: snapper, tool: delete_snapshots, category: tidy}\n"), 0o644)
-	l, err := a.ListTemplates()
+	l, err := List(a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,20 +320,20 @@ func TestSiteTemplates(t *testing.T) {
 	if e := l.Templates["cleaner"].Error; !strings.Contains(e, `no task category "tidy"`) {
 		t.Errorf("cleaner: %q", e)
 	}
-	if err := a.CreateFromTemplate("watch", "exposure-watch", ""); err == nil {
+	if err := Create(a, "watch", "exposure-watch", ""); err == nil {
 		t.Error("created from a hidden template")
 	}
 }
 
 func TestTransactional(t *testing.T) {
-	a, _ := newAdmin(t)
+	a, _ := admintest.New(t)
 	mounts := "/dev/vda3 / btrfs ro,relatime,ssd,subvol=/@/.snapshots/5/snapshot 0 0\n/dev/vda3 /var btrfs rw,relatime 0 0\n"
 	host.WriteFile(a.Path("/proc/self/mounts"), []byte(mounts), 0o644)
-	if !a.transactional() {
+	if !transactional(a) {
 		t.Error("read-only root: transactional")
 	}
 	host.WriteFile(a.Path("/proc/self/mounts"), []byte(strings.Replace(mounts, "ro,", "rw,", 1)), 0o644)
-	if a.transactional() {
+	if transactional(a) {
 		t.Error("writable root: not transactional")
 	}
 }
@@ -374,7 +353,7 @@ func TestBadTemplate(t *testing.T) {
 			os.RemoveAll(dir)
 			copyTemplate(t, "service-doctor", "bad", dir)
 			host.WriteFile(filepath.Join(dir, c.file), []byte(c.body), 0o644)
-			_, err := a.template("bad")
+			_, err := getTemplate(a, "bad")
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err %v, want %q", err, c.want)
 			}
@@ -392,8 +371,8 @@ func TestWithName(t *testing.T) {
 
 // agent-admin playbooks lists the shipped set (§14c).
 func TestPlaybooksShipped(t *testing.T) {
-	a, _ := newAdmin(t)
-	m, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
+	a, _ := admintest.New(t)
+	m, _ := filepath.Glob(admintest.Repo("packaging/playbooks/*.yaml"))
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
 		host.WriteFile(a.Path(filepath.Join(playbook.Vendor, filepath.Base(f))), b, 0o644)
@@ -411,16 +390,16 @@ func TestPlaybooksShipped(t *testing.T) {
 // diagnostics only, so it runs on a diagnostics-only host; it can run
 // every shipped playbook, and its schedules name shipped ones.
 func TestHealthCheckTemplate(t *testing.T) {
-	src := "../../templates/health-check"
+	src := admintest.Repo("templates/health-check")
 	perms := readPerms(t, filepath.Join(src, "permissions.yaml"))
 	allowed := map[string]bool{}
 	for _, p := range perms {
-		if p["read_only"] != true || p["category"] != Diagnostics {
+		if p["read_only"] != true || p["category"] != admin.Diagnostics {
 			t.Errorf("not read-only in diagnostics: %v", p)
 		}
 		allowed[p["server"].(string)+"__"+p["tool"].(string)] = true
 	}
-	files, _ := filepath.Glob("../../packaging/playbooks/*.yaml")
+	files, _ := filepath.Glob(admintest.Repo("packaging/playbooks/*.yaml"))
 	shipped := map[string]bool{}
 	for _, f := range files {
 		b, _ := os.ReadFile(f)
@@ -458,14 +437,14 @@ func TestHealthCheckTemplate(t *testing.T) {
 	if err := a.InitDiagnosticsOnly("setup"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.CreateFromTemplate("health-check", "health-check", ""); err != nil {
+	if err := Create(a, "health-check", "health-check", ""); err != nil {
 		t.Fatalf("on a diagnostics-only host: %v", err)
 	}
-	d, _ := a.readGateway("health-check")
+	d, _ := a.ReadGateway("health-check")
 	if d.Mode != "supervised" || len(d.Permissions) != len(perms) {
 		t.Errorf("gateway data: %s, %d permissions", d.Mode, len(d.Permissions))
 	}
-	if err := a.CreateFromTemplate("pp", "patch-pilot", ""); err == nil {
+	if err := Create(a, "pp", "patch-pilot", ""); err == nil {
 		t.Error("patch-pilot created on a diagnostics-only host")
 	}
 }
@@ -474,7 +453,7 @@ func TestHealthCheckTemplate(t *testing.T) {
 // instances for what they are (see the playbook failed-units).
 func TestTemplatesKnowGatewayInstances(t *testing.T) {
 	for _, name := range []string{"health-check", "triage"} {
-		cfg, err := config.Load("../../templates/" + name)
+		cfg, err := config.Load(admintest.Repo("templates", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -484,5 +463,59 @@ func TestTemplatesKnowGatewayInstances(t *testing.T) {
 				t.Errorf("%s: the instruction lacks %q", name, want)
 			}
 		}
+	}
+}
+
+const patcherYml = `version: 1
+name: patcher
+model: {provider: openai, name: m, endpoint: "http://ai:8000/v1"}
+gateway: {servers: [zypp]}
+`
+
+// create --template refuses a template whose permissions name a disabled
+// category, on a diagnostics-only host.
+func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
+	a, _ := admintest.New(t)
+	admintest.Categories(t, a)
+	mem := &journal.Memory{}
+	a.Journal = func(string) journal.Logger { return mem }
+	if err := a.InitDiagnosticsOnly("setup"); err != nil {
+		t.Fatal(err)
+	}
+	mem.Records = nil
+	dir := a.Path(filepath.Join(TemplatesSite, "patcher"))
+	host.WriteFile(filepath.Join(dir, "template.yaml"), []byte("title: Patcher\ndescription: x\nsystem: any\nmode: supervised\n"), 0o644)
+	host.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(patcherYml), 0o644)
+	// As the shipped patch-pilot: read-only permissions without a category
+	// first, then two disabled categories.
+	host.WriteFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: check_updates, read_only: true}\n"+
+		"- {server: zypp, tool: patch, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"+
+		"- {server: zypp, tool: install, category: patch-errata}\n"), 0o644)
+	err := Create(a, "patcher", "patcher", "")
+	if err == nil || !strings.Contains(err.Error(), "task categories config-lifecycle, patch-errata and permissions without a category are not enabled") ||
+		!strings.Contains(err.Error(), "agent-admin enable config-lifecycle patch-errata") {
+		t.Fatalf("%v", err)
+	}
+	if _, err := os.Stat(a.AgentDir("patcher")); !os.IsNotExist(err) {
+		t.Error("created all the same")
+	}
+	// One record per disabled category, the one without a category too.
+	rec := mem.Events(journal.CategoryRefused)
+	if len(rec) != 3 || rec[0].Fields["REASON"] != "create --template patcher" || rec[0].Fields["CATEGORY"] != "(none)" ||
+		rec[1].Fields["CATEGORY"] != "patch-errata" || rec[2].Fields["CATEGORY"] != "config-lifecycle" {
+		t.Errorf("records %+v", rec)
+	}
+}
+
+// A model default whose credential looks like a key, not a name, is
+// refused, and nothing is written.
+func TestDefaultsRefuseAKeyAsCredential(t *testing.T) {
+	a, _ := admintest.New(t)
+	err := SetDefaults(a, []byte("model: {provider: openai, name: m, endpoint: \"http://ai/v1\", credential: sk-litellm-local}\n"))
+	if err == nil || !strings.Contains(err.Error(), "looks like a key") || strings.Contains(err.Error(), "litellm") {
+		t.Errorf("%v", err)
+	}
+	if _, err := os.Stat(a.Path(DefaultsFile)); !os.IsNotExist(err) {
+		t.Error("defaults written all the same")
 	}
 }

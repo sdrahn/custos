@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/admin/setup"
 )
 
 const usage = `usage: custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
@@ -29,7 +30,7 @@ services update-status finds waiting for a restart. Without
 --diagnostics-only it does nothing: the full install needs no setup.
 
 The backends, in the documented order:
-  on-host         a model server on this host (provider openai; --endpoint, default ` + admin.DefaultOnHostEndpoint + `)
+  on-host         a model server on this host (provider openai; --endpoint, default ` + setup.DefaultOnHostEndpoint + `)
   local-network   a model server on the local network (provider openai, --endpoint)
   customer-cloud  your own cloud account (--provider vertex, or openai with --endpoint)
   vendor          a vendor-hosted service (--provider gemini by default, or openai with --endpoint; --credential-file)
@@ -42,7 +43,7 @@ func main() {
 func run(args []string) int {
 	fs := flag.NewFlagSet("custos-setup", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
-	var o admin.SetupOptions
+	var o setup.Options
 	var credFile string
 	fs.BoolVar(&o.DiagnosticsOnly, "diagnostics-only", false, "")
 	fs.StringVar(&o.Backend, "backend", "", "")
@@ -73,7 +74,7 @@ func run(args []string) int {
 	a := admin.New()
 	a.Out = os.Stderr // agent-admin's own messages; the steps go to stdout
 	a.By = "custos-setup"
-	steps, err := a.Setup(o)
+	steps, err := setup.Run(a, o)
 	for _, s := range steps {
 		fmt.Println("custos-setup:", s)
 	}

@@ -1,4 +1,4 @@
-package admin
+package templates
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	udiff "github.com/aymanbagabas/go-udiff"
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
 )
@@ -63,7 +64,7 @@ type PermissionDiff struct {
 }
 
 // RecordedTemplate is the template recorded for the agent, "" for none.
-func (a *Admin) RecordedTemplate(name string) string {
+func Recorded(a *admin.Admin, name string) string {
 	b, err := os.ReadFile(filepath.Join(a.AgentDir(name), TemplateFile))
 	if err != nil {
 		return ""
@@ -75,13 +76,13 @@ func (a *Admin) RecordedTemplate(name string) string {
 	return t
 }
 
-func (a *Admin) recordTemplate(name, tmpl string) error {
+func recordTemplate(a *admin.Admin, name, tmpl string) error {
 	return host.WriteFile(filepath.Join(a.AgentDir(name), TemplateFile), []byte(tmpl+"\n"), 0o644)
 }
 
 // Compare compares agents with their templates: the recorded one, or
 // tmpl (only with one agent). Without names, every agent.
-func (a *Admin) Compare(names []string, tmpl string) ([]Comparison, error) {
+func Compare(a *admin.Admin, names []string, tmpl string) ([]Comparison, error) {
 	if tmpl != "" && len(names) != 1 {
 		return nil, errors.New("compare: --template needs exactly one agent")
 	}
@@ -97,7 +98,7 @@ func (a *Admin) Compare(names []string, tmpl string) ([]Comparison, error) {
 			return nil, err
 		}
 		c := Comparison{Agent: n, Template: tmpl}
-		rec := a.RecordedTemplate(n)
+		rec := Recorded(a, n)
 		if c.Template == "" {
 			c.Template = rec
 		}
@@ -107,7 +108,7 @@ func (a *Admin) Compare(names []string, tmpl string) ([]Comparison, error) {
 			out = append(out, c)
 			continue
 		}
-		if err := a.compare(&c); err != nil {
+		if err := compare(a, &c); err != nil {
 			c.Error = err.Error()
 		}
 		out = append(out, c)
@@ -115,8 +116,8 @@ func (a *Admin) Compare(names []string, tmpl string) ([]Comparison, error) {
 	return out, nil
 }
 
-func (a *Admin) compare(c *Comparison) error {
-	t, err := a.template(c.Template)
+func compare(a *admin.Admin, c *Comparison) error {
+	t, err := getTemplate(a, c.Template)
 	if err != nil {
 		return err
 	}
@@ -124,7 +125,7 @@ func (a *Admin) compare(c *Comparison) error {
 	if err != nil {
 		return err
 	}
-	want, err := a.templateConfig(c.Agent, t.Dir, cur)
+	want, err := templateConfig(a, c.Agent, t.Dir, cur)
 	if err != nil {
 		return err
 	}
@@ -133,11 +134,11 @@ func (a *Admin) compare(c *Comparison) error {
 		return err
 	}
 	c.Configuration = &ConfigDiff{Same: d == "", Diff: d}
-	g, err := a.readGateway(c.Agent)
+	g, err := a.ReadGateway(c.Agent)
 	if err != nil {
 		return err
 	}
-	perms, err := a.templatePermissions(t.Dir)
+	perms, err := templatePermissions(a, t.Dir)
 	if err != nil {
 		return fmt.Errorf("template %s: permissions.yaml: %w", c.Template, err)
 	}
@@ -149,28 +150,28 @@ func (a *Admin) compare(c *Comparison) error {
 // agent's own keys kept, agentKeys) and/or its permissions; its mode,
 // promoted categories, owners and credentials stay. tmpl "" is the
 // recorded template; a template named is recorded.
-func (a *Admin) ApplyTemplate(name, tmpl string, configuration, permissions bool) error {
+func Apply(a *admin.Admin, name, tmpl string, configuration, permissions bool) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
 	if tmpl == "" {
-		if tmpl = a.RecordedTemplate(name); tmpl == "" {
+		if tmpl = Recorded(a, name); tmpl == "" {
 			return fmt.Errorf("no template recorded for agent %s: name one with --template", name)
 		}
 	}
 	if !configuration && !permissions {
 		configuration, permissions = true, true
 	}
-	t, err := a.template(tmpl)
+	t, err := getTemplate(a, tmpl)
 	if err != nil {
 		return err
 	}
 	var perms []map[string]any
 	if permissions {
-		if perms, err = a.templatePermissions(t.Dir); err != nil {
+		if perms, err = templatePermissions(a, t.Dir); err != nil {
 			return fmt.Errorf("template %s: permissions.yaml: %w", tmpl, err)
 		}
-		if err := a.checkEnabled(name, "apply-template "+tmpl, perms); err != nil {
+		if err := a.CheckEnabled(name, "apply-template "+tmpl, perms); err != nil {
 			return fmt.Errorf("template %s: %w", tmpl, err)
 		}
 	}
@@ -180,27 +181,27 @@ func (a *Admin) ApplyTemplate(name, tmpl string, configuration, permissions bool
 		if err != nil {
 			return err
 		}
-		want, err := a.templateConfig(name, t.Dir, cur)
+		want, err := templateConfig(a, name, t.Dir, cur)
 		if err != nil {
 			return err
 		}
-		if err := a.edit(name, want); err != nil {
+		if err := a.EditConfig(name, want); err != nil {
 			return err
 		}
 		did = append(did, "configuration")
 	}
 	if permissions {
-		d, err := a.readGateway(name)
+		d, err := a.ReadGateway(name)
 		if err != nil {
 			return err
 		}
 		d.Permissions = perms
-		if err := a.writeGateway(name, d, false); err != nil {
+		if err := a.WriteGateway(name, d, false); err != nil {
 			return err
 		}
 		did = append(did, fmt.Sprintf("%d permissions", len(perms)))
 	}
-	if err := a.recordTemplate(name, tmpl); err != nil {
+	if err := recordTemplate(a, name, tmpl); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.Out, "agent %s: %s from template %s\n", name, strings.Join(did, " and "), tmpl)
@@ -210,7 +211,7 @@ func (a *Admin) ApplyTemplate(name, tmpl string, configuration, permissions bool
 // templateConfig is the template's agent.yaml for the agent: the
 // template's document, its comments kept, with the agent's own keys
 // (agentKeys, and gateway's but servers and tools) taken from cur.
-func (a *Admin) templateConfig(name, dir string, cur []byte) ([]byte, error) {
+func templateConfig(a *admin.Admin, name, dir string, cur []byte) ([]byte, error) {
 	tb, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
 	if err != nil {
 		return nil, err

@@ -31,11 +31,6 @@ func TestKeyAsCredentialName(t *testing.T) {
 	if _, err := os.Stat(a.AgentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Fatal("created all the same")
 	}
-	refused("defaults", a.SetDefaults([]byte("model: {provider: openai, name: m, endpoint: \"http://ai/v1\", credential: sk-litellm-local}\n")))
-	if _, err := os.Stat(a.Path(DefaultsFile)); !os.IsNotExist(err) {
-		t.Error("defaults written all the same")
-	}
-
 	ok := filepath.Join(t.TempDir(), "ok.yaml")
 	os.WriteFile(ok, []byte(modelYAML("model-key")), 0o644)
 	if err := a.Create("patch-pilot", ok); err != nil {

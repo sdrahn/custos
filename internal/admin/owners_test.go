@@ -19,7 +19,7 @@ func TestSetOwners(t *testing.T) {
 	if err := a.SetOwners("patch-pilot", []string{"user:alice", "group:web-team", "user:alice", "remote-group:ops"}); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := a.readGateway("patch-pilot")
+	d, _ := a.ReadGateway("patch-pilot")
 	if strings.Join(d.Owners, ",") != "user:alice,group:web-team,remote-group:ops" || d.Mode != "supervised" {
 		t.Errorf("%+v", d)
 	}
@@ -34,13 +34,13 @@ func TestSetOwners(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	if d, _ := a.readGateway("patch-pilot"); len(d.Owners) != 3 {
+	if d, _ := a.ReadGateway("patch-pilot"); len(d.Owners) != 3 {
 		t.Error("a refused change changed the owners")
 	}
 	if err := a.SetOwners("patch-pilot", nil); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ := a.readGateway("patch-pilot"); len(d.Owners) != 0 {
+	if d, _ := a.ReadGateway("patch-pilot"); len(d.Owners) != 0 {
 		t.Errorf("not cleared: %v", d.Owners)
 	}
 	p, _ := a.Show("patch-pilot")

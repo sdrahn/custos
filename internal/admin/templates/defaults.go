@@ -1,4 +1,4 @@
-package admin
+package templates
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
 )
@@ -43,7 +44,8 @@ type ModelDefaults struct {
 	ReasoningEffort string `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 
-func (m *ModelDefaults) config() config.Model {
+// Config is the defaults as a configuration's model block.
+func (m *ModelDefaults) Config() config.Model {
 	return config.Model{Provider: m.Provider, Name: m.Name, Endpoint: m.Endpoint, Credential: m.Credential, Temperature: m.Temperature,
 		TimeoutSeconds: m.TimeoutSeconds, MaxOutputTokens: m.MaxOutputTokens, ReasoningEffort: m.ReasoningEffort}
 }
@@ -57,7 +59,7 @@ func ParseDefaults(b []byte) (*Defaults, error) {
 		return nil, fmt.Errorf("defaults: %w", err)
 	}
 	if d.Model != nil {
-		if err := d.Model.config().Check(); err != nil {
+		if err := d.Model.Config().Check(); err != nil {
 			return nil, fmt.Errorf("defaults: %w", err)
 		}
 	}
@@ -65,7 +67,7 @@ func ParseDefaults(b []byte) (*Defaults, error) {
 }
 
 // GetDefaults reads the host's defaults; none: empty.
-func (a *Admin) GetDefaults() (*Defaults, error) {
+func GetDefaults(a *admin.Admin) (*Defaults, error) {
 	b, err := os.ReadFile(a.Path(DefaultsFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return &Defaults{}, nil
@@ -81,7 +83,7 @@ func (a *Admin) GetDefaults() (*Defaults, error) {
 }
 
 // SetDefaults replaces the host's defaults; an empty one removes them.
-func (a *Admin) SetDefaults(b []byte) error {
+func SetDefaults(a *admin.Admin, b []byte) error {
 	d, err := ParseDefaults(b)
 	if err != nil {
 		return err
@@ -100,7 +102,7 @@ func (a *Admin) SetDefaults(b []byte) error {
 	var out bytes.Buffer
 	out.WriteString("# Defaults for new agents (CONTRACT.md §14b), written by agent-admin defaults.\n" +
 		"# A new agent's configuration takes them over; existing agents keep theirs.\n")
-	out.Write(renderModel(d.Model, ""))
+	out.Write(RenderModel(d.Model, ""))
 	if err := host.WriteFile(a.Path(DefaultsFile), out.Bytes(), 0o644); err != nil {
 		return err
 	}
@@ -108,8 +110,8 @@ func (a *Admin) SetDefaults(b []byte) error {
 	return nil
 }
 
-// renderModel writes a model block, with a comment after "model:".
-func renderModel(m *ModelDefaults, comment string) []byte {
+// RenderModel writes a model block, with a comment after "model:".
+func RenderModel(m *ModelDefaults, comment string) []byte {
 	var b strings.Builder
 	b.WriteString("model:")
 	if comment != "" {
@@ -153,7 +155,7 @@ var modelBlock = regexp.MustCompile(`(?m)^model:.*\n(?:[ \t]+.*\n)*`)
 
 // WithModel is a configuration with its model block replaced by m.
 func WithModel(cfg []byte, m *ModelDefaults) []byte {
-	block := renderModel(m, "the host's defaults ("+DefaultsFile+")")
+	block := RenderModel(m, "the host's defaults ("+DefaultsFile+")")
 	if loc := modelBlock.FindIndex(cfg); loc != nil {
 		return append(append(append([]byte{}, cfg[:loc[0]]...), block...), cfg[loc[1]:]...)
 	}
@@ -195,13 +197,13 @@ interaction:
 
 // Draft is a new agent's starting configuration: a template's, or a
 // blank one, named name, with the host's model defaults.
-func (a *Admin) Draft(name, tmpl string) ([]byte, error) {
+func Draft(a *admin.Admin, name, tmpl string) ([]byte, error) {
 	if err := host.CheckName(name); err != nil {
 		return nil, err
 	}
 	cfg := []byte(blank)
 	if tmpl != "" {
-		t, err := a.template(tmpl)
+		t, err := getTemplate(a, tmpl)
 		if err != nil {
 			return nil, err
 		}
@@ -210,7 +212,7 @@ func (a *Admin) Draft(name, tmpl string) ([]byte, error) {
 		}
 	}
 	cfg = WithName(cfg, name)
-	d, err := a.GetDefaults()
+	d, err := GetDefaults(a)
 	if err != nil {
 		return nil, err
 	}
