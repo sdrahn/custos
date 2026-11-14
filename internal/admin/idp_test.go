@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/base64"
 	"encoding/json"
+	"github.com/sdrahn/custos/internal/host"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,9 +46,9 @@ func idpHost(t *testing.T, claims map[string]any) (*Admin, *rec, *string) {
 	dir := a.agentDir("sb")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(oshOAuthYml, "https://idp.example.com/token", srv.URL+"/token", 1)), 0o640)
-	os.MkdirAll(a.p(filepath.Dir(GatewayConfig)), 0o755)
-	os.WriteFile(a.p(GatewayConfig), []byte(gatewayYml), 0o644)
-	writeFile(a.p(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\"https://idp.example.com/realms/mcp\"]\n"), 0o644)
+	os.MkdirAll(a.Path(filepath.Dir(GatewayConfig)), 0o755)
+	os.WriteFile(a.Path(GatewayConfig), []byte(gatewayYml), 0o644)
+	host.WriteFile(a.Path(GatewayHTTPIssuers), []byte("_http:\n  issuers: [\"https://idp.example.com/realms/mcp\"]\n"), 0o644)
 	a.Now = func() time.Time { return time.Unix(1_800_000_000, 0) }
 	return a, r, &gotAuth
 }
@@ -150,7 +151,7 @@ func TestIDPClient(t *testing.T) {
 		t.Errorf("script:\n%s", s)
 	}
 	// A gateway without its HTTPS listener: nothing to say.
-	os.WriteFile(a.p(GatewayConfig), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
+	os.WriteFile(a.Path(GatewayConfig), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
 	if err := a.IDPClient("sb", false); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
 		t.Errorf("no listener: %v", err)
 	}
@@ -161,8 +162,8 @@ func TestIDPClient(t *testing.T) {
 func TestGatewayHTTPResolution(t *testing.T) {
 	a, _ := newAdmin(t)
 	write := func(p, s string) {
-		os.MkdirAll(a.p(filepath.Dir(p)), 0o755)
-		os.WriteFile(a.p(p), []byte(s), 0o644)
+		os.MkdirAll(a.Path(filepath.Dir(p)), 0o755)
+		os.WriteFile(a.Path(p), []byte(s), 0o644)
 	}
 	write(GatewayVendorConfig, "http:\n  issuer: https://vendor/realms/x\n  audience: https://vendor/mcp\n")
 	h, err := a.gatewayHTTP()

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
 )
@@ -28,29 +29,47 @@ type rec struct {
 func newAdmin(t *testing.T) (*Admin, *rec) {
 	r := &rec{}
 	a := &Admin{
-		Root: t.TempDir(),
-		Run: func(stdin io.Reader, name string, args ...string) error {
-			c := name + " " + strings.Join(args, " ")
-			r.cmds = append(r.cmds, c)
-			if r.fail != nil && r.fail(c) {
-				return errors.New("failed")
-			}
-			// The seal's key (#109): "encrypted" as it is, for Output's
-			// decrypt below.
-			if name == "systemd-creds" && len(args) == 4 && args[0] == "encrypt" && args[1] == "--name="+SealCredential {
-				b, _ := io.ReadAll(stdin)
-				return os.WriteFile(args[3], b, 0o600)
-			}
-			return nil
+		Host: host.Host{
+			Root: t.TempDir(),
+			Run: func(stdin io.Reader, name string, args ...string) error {
+				c := name + " " + strings.Join(args, " ")
+				r.cmds = append(r.cmds, c)
+				if r.fail != nil && r.fail(c) {
+					return errors.New("failed")
+				}
+				// The seal's key (#109): "encrypted" as it is, for Output's
+				// decrypt below.
+				if name == "systemd-creds" && len(args) == 4 && args[0] == "encrypt" && args[1] == "--name="+SealCredential {
+					b, _ := io.ReadAll(stdin)
+					return os.WriteFile(args[3], b, 0o600)
+				}
+				return nil
+			},
+			Output: func(_ io.Reader, name string, args ...string) ([]byte, error) {
+				r.cmds = append(r.cmds, name+" "+strings.Join(args, " "))
+				if name == "systemd-creds" && len(args) == 4 && args[0] == "decrypt" {
+					return os.ReadFile(args[2])
+				}
+				return nil, errors.New("no output of " + name)
+			},
+			Out: io.Discard, Now: func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) },
+			RunEnv: func(env []string, name string, args ...string) error {
+				r.cmds = append(r.cmds, strings.Join(env, " ")+" "+name+" "+strings.Join(args, " "))
+				return nil
+			},
+			// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
+			Probe: func(name string, args ...string) error {
+				c := name + " " + strings.Join(args, " ")
+				r.cmds = append(r.cmds, c)
+				if r.gone != nil {
+					return r.gone(c)
+				}
+				return errors.New("not found")
+			},
+			Sleep: func(time.Duration) {},
+			// No records: nothing observed yet.
+			JournalJSON: func(...string) ([]byte, error) { return nil, nil },
 		},
-		Output: func(_ io.Reader, name string, args ...string) ([]byte, error) {
-			r.cmds = append(r.cmds, name+" "+strings.Join(args, " "))
-			if name == "systemd-creds" && len(args) == 4 && args[0] == "decrypt" {
-				return os.ReadFile(args[2])
-			}
-			return nil, errors.New("no output of " + name)
-		},
-		Out: io.Discard, Now: func() time.Time { return time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC) },
 		Control: func(sock, path string) error {
 			r.cmds = append(r.cmds, "POST "+sock+path)
 			return nil
@@ -60,27 +79,11 @@ func newAdmin(t *testing.T) (*Admin, *rec) {
 			r.cmds = append(r.cmds, "START "+sock+" "+body["prompt"].(string)+" "+o["kind"].(string)+" "+o["schedule"].(string)+" "+o["by"].(string))
 			return nil
 		},
-		RunEnv: func(env []string, name string, args ...string) error {
-			r.cmds = append(r.cmds, strings.Join(env, " ")+" "+name+" "+strings.Join(args, " "))
-			return nil
-		},
 		// No DNS in tests: names the test resolves are the test's.
-		LookupHost: func(h string) ([]string, error) { return nil, errors.New("no such host") },
-		Image:      "localhost/agent:test",
-		Secret:     func() string { return "0123456789abcdef0123456789abcdef" },
-		// OpenShell has deleted a sandbox by the first look, unless gone says otherwise.
-		Probe: func(name string, args ...string) error {
-			c := name + " " + strings.Join(args, " ")
-			r.cmds = append(r.cmds, c)
-			if r.gone != nil {
-				return r.gone(c)
-			}
-			return errors.New("not found")
-		},
-		Sleep:       func(time.Duration) {},
+		LookupHost:  func(h string) ([]string, error) { return nil, errors.New("no such host") },
+		Image:       "localhost/agent:test",
+		Secret:      func() string { return "0123456789abcdef0123456789abcdef" },
 		SandboxGone: 5 * time.Second,
-		// No records: nothing observed yet.
-		JournalJSON: func(...string) ([]byte, error) { return nil, nil },
 	}
 	a.Journal = func(string) journal.Logger { return &r.journal }
 	return a, r
@@ -101,7 +104,7 @@ func TestCreateModePauseDelete(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	read := func(p string) string { b, _ := os.ReadFile(a.p(p)); return string(b) }
+	read := func(p string) string { b, _ := os.ReadFile(a.Path(p)); return string(b) }
 	if s := read("/etc/sysusers.d/agent-patch-pilot.conf"); !strings.Contains(s, "u agent-patch-pilot -") || !strings.Contains(s, "m agent-patch-pilot mcp-users") {
 		t.Errorf("sysusers %q", s)
 	}
@@ -174,17 +177,17 @@ func TestCreateModePauseDelete(t *testing.T) {
 		len(rl) != 1 || rl[0].Fields["BY"] != "bob" {
 		t.Errorf("stop records %v, release records %v", s, rl)
 	}
-	os.MkdirAll(a.p(filepath.Join(SocketDir, "patch-pilot")), 0o755)
+	os.MkdirAll(a.Path(filepath.Join(SocketDir, "patch-pilot")), 0o755)
 	if err := a.Delete("patch-pilot", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.agentDir("patch-pilot")); !os.IsNotExist(err) {
 		t.Error("config stays")
 	}
-	if _, err := os.Stat(a.p("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path("/etc/mcp-gateway/policy/agents/patch-pilot.yaml")); !os.IsNotExist(err) {
 		t.Error("gateway data stays")
 	}
-	if _, err := os.Stat(a.p(filepath.Join(SocketDir, "patch-pilot"))); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path(filepath.Join(SocketDir, "patch-pilot"))); !os.IsNotExist(err) {
 		t.Error("socket directory stays: the Cockpit page would list the agent")
 	}
 }
@@ -251,7 +254,7 @@ func TestSetCredentialMode(t *testing.T) {
 	if err := a.SetCredential("patch-pilot", "model-key", strings.NewReader("s")); err != nil {
 		t.Fatal(err)
 	}
-	f := a.p("/etc/credstore.encrypted/agent-patch-pilot.model-key")
+	f := a.Path("/etc/credstore.encrypted/agent-patch-pilot.model-key")
 	if st, err := os.Stat(f); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("%s: %v %v", f, st.Mode(), err)
 	}
@@ -471,7 +474,7 @@ func TestOpenShellUser(t *testing.T) {
 	if !strings.Contains(string(b), "\nOPENSHELL_USER=osh\n") {
 		t.Errorf("openshell.env:\n%s", b)
 	}
-	d, err := os.ReadFile(a.p(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf")))
+	d, err := os.ReadFile(a.Path(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf")))
 	if err != nil || !strings.Contains(string(d), "ReadWritePaths=-/home/osh/.local/share/containers -/run/user/1001\n") {
 		t.Errorf("relay drop-in: %v\n%s", err, d)
 	}
@@ -831,7 +834,7 @@ func TestEditKeepsDisabledSchedules(t *testing.T) {
 	if !strings.Contains(all, "systemctl enable --now agent-schedule@patch-pilot_weekly.timer") {
 		t.Errorf("the new schedule:\n%s", all)
 	}
-	b, _ := os.ReadFile(a.p("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"))
+	b, _ := os.ReadFile(a.Path("/etc/systemd/system/agent-schedule@patch-pilot_compliance.timer.d/schedule.conf"))
 	if !strings.Contains(string(b), "OnCalendar=Mon..Fri 07:00") {
 		t.Errorf("calendar %q", b)
 	}
@@ -952,7 +955,7 @@ func TestStopWithoutTheGatewaysPolicy(t *testing.T) {
 			t.Errorf("stop-all did not run %q:\n%s", want, all)
 		}
 	}
-	if b, _ := os.ReadFile(a.p(GatewayStop)); !strings.Contains(string(b), "stopped: true") {
+	if b, _ := os.ReadFile(a.Path(GatewayStop)); !strings.Contains(string(b), "stopped: true") {
 		t.Errorf("the flag: %s", b)
 	}
 	r.cmds = nil

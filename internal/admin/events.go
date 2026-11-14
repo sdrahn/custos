@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -40,7 +41,7 @@ func (a *Admin) syncEvents(cfg *config.Config) error {
 	want := map[string]string{} // drop-in path → content
 	for _, e := range cfg.Events {
 		for _, u := range e.OnUnitFailure {
-			path := a.p(filepath.Join(UnitDir, u+".d", eventDropIn(cfg.Name, e.Name)))
+			path := a.Path(filepath.Join(UnitDir, u+".d", eventDropIn(cfg.Name, e.Name)))
 			want[path] = fmt.Sprintf("# agent-admin: event %s of agent %s (CONTRACT.md §15)\n[Unit]\nOnFailure=%s\n",
 				e.Name, cfg.Name, eventUnit(cfg.Name, e.Name, u))
 		}
@@ -50,12 +51,12 @@ func (a *Admin) syncEvents(cfg *config.Config) error {
 		if b, err := os.ReadFile(path); err == nil && string(b) == conf {
 			continue
 		}
-		if err := writeFile(path, []byte(conf), 0o644); err != nil {
+		if err := host.WriteFile(path, []byte(conf), 0o644); err != nil {
 			return err
 		}
 		changed = true
 	}
-	old, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "*.d", "50-custos-event-"+cfg.Name+"_*.conf")))
+	old, _ := filepath.Glob(a.Path(filepath.Join(UnitDir, "*.d", "50-custos-event-"+cfg.Name+"_*.conf")))
 	for _, path := range old {
 		if _, keep := want[path]; keep {
 			continue
@@ -75,12 +76,12 @@ func (a *Admin) syncEvents(cfg *config.Config) error {
 // removeEvents removes an agent's event drop-ins, their directories
 // when nothing else is in them, and the events' state (delete).
 func (a *Admin) removeEvents(name string) {
-	drops, _ := filepath.Glob(a.p(filepath.Join(UnitDir, "*.d", "50-custos-event-"+name+"_*.conf")))
+	drops, _ := filepath.Glob(a.Path(filepath.Join(UnitDir, "*.d", "50-custos-event-"+name+"_*.conf")))
 	for _, p := range drops {
 		os.Remove(p)
 		os.Remove(filepath.Dir(p)) // only when empty
 	}
-	state, _ := filepath.Glob(a.p(filepath.Join(EventStateDir, name+"_*")))
+	state, _ := filepath.Glob(a.Path(filepath.Join(EventStateDir, name+"_*")))
 	for _, p := range state {
 		os.Remove(p)
 	}
@@ -94,7 +95,7 @@ func (a *Admin) removeEvents(name string) {
 func (a *Admin) Event(instance string) error {
 	name, rest, _ := strings.Cut(instance, "_")
 	event, unit, ok := strings.Cut(rest, "_")
-	if !ok || checkName(name) != nil || event == "" || unit == "" {
+	if !ok || host.CheckName(name) != nil || event == "" || unit == "" {
 		return fmt.Errorf("%q: want AGENT_EVENT_UNIT", instance)
 	}
 	cfg, err := config.Load(a.agentDir(name))
@@ -113,12 +114,12 @@ func (a *Admin) Event(instance string) error {
 	}
 	by := "unit-failure:" + unit
 	skip := func(reason string) error {
-		a.record(journal.EventSkipped, name, fmt.Sprintf("Event %s of agent %s for %s skipped: %s", event, name, unit, reason),
+		a.Record(journal.EventSkipped, name, fmt.Sprintf("Event %s of agent %s for %s skipped: %s", event, name, unit, reason),
 			journal.Fields{"ORIGIN_EVENT": event, "ORIGIN_BY": by, "REASON": reason})
 		fmt.Fprintf(a.Out, "event %s of agent %s for %s skipped: %s\n", event, name, unit, reason)
 		return nil
 	}
-	state := a.p(filepath.Join(EventStateDir, instance))
+	state := a.Path(filepath.Join(EventStateDir, instance))
 	now := a.Now()
 	if b, err := os.ReadFile(state); err == nil {
 		if last, err := time.Parse(time.RFC3339, strings.TrimSpace(string(b))); err == nil && now.Sub(last) < ev.MinInterval() {
@@ -155,11 +156,11 @@ func (a *Admin) Event(instance string) error {
 		body["playbook"], body["unit"] = ev.Playbook, unit
 	}
 	if err := a.Start(sock, body); err != nil {
-		a.record(journal.EventSkipped, name, fmt.Sprintf("Event %s of agent %s for %s: the agent did not start it: %v", event, name, unit, err),
+		a.Record(journal.EventSkipped, name, fmt.Sprintf("Event %s of agent %s for %s: the agent did not start it: %v", event, name, unit, err),
 			journal.Fields{"ORIGIN_EVENT": event, "ORIGIN_BY": by, "REASON": "the agent did not start it: " + err.Error()})
 		return err
 	}
-	return writeFile(state, []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o600)
+	return host.WriteFile(state, []byte(now.UTC().Format(time.RFC3339)+"\n"), 0o600)
 }
 
 func (a *Admin) getenv(k string) string {

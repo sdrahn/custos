@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/readiness"
 )
 
@@ -21,7 +22,7 @@ const PromotionConfig = "/etc/custos/promotion.yaml"
 // Thresholds reads PromotionConfig over the defaults.
 func (a *Admin) Thresholds() (readiness.Thresholds, error) {
 	th := readiness.Defaults
-	b, err := os.ReadFile(a.p(PromotionConfig))
+	b, err := os.ReadFile(a.Path(PromotionConfig))
 	if errors.Is(err, os.ErrNotExist) {
 		return th, nil
 	}
@@ -61,7 +62,7 @@ type Report struct {
 // journal and the gateway's approval decisions over the thresholds'
 // window.
 func (a *Admin) Readiness(name string, only ...string) (*Report, error) {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return nil, err
 	}
 	d, err := a.readGateway(name)

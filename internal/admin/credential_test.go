@@ -32,7 +32,7 @@ func TestKeyAsCredentialName(t *testing.T) {
 		t.Fatal("created all the same")
 	}
 	refused("defaults", a.SetDefaults([]byte("model: {provider: openai, name: m, endpoint: \"http://ai/v1\", credential: sk-litellm-local}\n")))
-	if _, err := os.Stat(a.p(DefaultsFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path(DefaultsFile)); !os.IsNotExist(err) {
 		t.Error("defaults written all the same")
 	}
 
@@ -44,8 +44,8 @@ func TestKeyAsCredentialName(t *testing.T) {
 	refused("edit", a.Edit("patch-pilot", f))
 
 	// Stored under that name, it is a name after all (odd, but it works).
-	os.MkdirAll(a.p(CredstoreDir), 0o700)
-	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.sk-litellm-local")), []byte("x"), 0o600)
+	os.MkdirAll(a.Path(CredstoreDir), 0o700)
+	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.sk-litellm-local")), []byte("x"), 0o600)
 	if err := a.Edit("patch-pilot", f); err != nil {
 		t.Errorf("edit with the credential stored: %v", err)
 	}
@@ -70,8 +70,8 @@ func TestNoteUnstoredCredential(t *testing.T) {
 		t.Errorf("create says %q", out.String())
 	}
 	out.Reset()
-	os.MkdirAll(a.p(CredstoreDir), 0o700)
-	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key")), []byte("x"), 0o600)
+	os.MkdirAll(a.Path(CredstoreDir), 0o700)
+	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key")), []byte("x"), 0o600)
 	if err := a.Edit("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +115,11 @@ func TestCredentialsList(t *testing.T) {
 		t.Errorf("OpenShell agent: %+v", sb)
 	}
 
-	os.MkdirAll(a.p(CredstoreDir), 0o700)
-	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key")), []byte("secret-value"), 0o600)
-	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key")), []byte("secret-value"), 0o600)
+	os.MkdirAll(a.Path(CredstoreDir), 0o700)
+	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key")), []byte("secret-value"), 0o600)
+	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key")), []byte("secret-value"), 0o600)
 	// Another agent's whose name starts the same is not this one's.
-	os.WriteFile(a.p(filepath.Join(CredstoreDir, "agent-patch-pilot-2.model-key")), []byte("x"), 0o600)
+	os.WriteFile(a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot-2.model-key")), []byte("x"), 0o600)
 	r.gone = func(cmd string) error { return nil } // the relay's socket is enabled
 	c, err = a.Credentials("patch-pilot", "sb")
 	if err != nil {
@@ -151,9 +151,9 @@ func TestRemoveCredential(t *testing.T) {
 	if err := a.Create("patch-pilot", f); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(a.p(CredstoreDir), 0o700)
-	key := a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key"))
-	old := a.p(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key"))
+	os.MkdirAll(a.Path(CredstoreDir), 0o700)
+	key := a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.model-key"))
+	old := a.Path(filepath.Join(CredstoreDir, "agent-patch-pilot.old-key"))
 	os.WriteFile(key, []byte("x"), 0o600)
 	os.WriteFile(old, []byte("x"), 0o600)
 	if err := a.RemoveCredential("patch-pilot", "old-key", false); err != nil {

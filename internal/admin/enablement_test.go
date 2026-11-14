@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -42,7 +43,7 @@ func TestDiagnosticsOnly(t *testing.T) {
 	if err != nil || e == nil || e.State != DiagnosticsOnly || len(e.Enabled) != 1 || e.Enabled[0] != Diagnostics || e.Record == "" {
 		t.Fatalf("state %+v, %v", e, err)
 	}
-	b, _ := os.ReadFile(a.p(GatewayEnablement))
+	b, _ := os.ReadFile(a.Path(GatewayEnablement))
 	if !strings.Contains(string(b), "_enablement:\n  state: diagnostics-only") {
 		t.Errorf("gateway data:\n%s", b)
 	}
@@ -64,7 +65,7 @@ func TestDiagnosticsOnlyNeedsAFreshHost(t *testing.T) {
 	if err := a.InitDiagnosticsOnly("setup"); err == nil || !strings.Contains(err.Error(), "outside diagnostics") {
 		t.Errorf("%v", err)
 	}
-	if _, err := os.Stat(a.p(GatewayEnablement)); !os.IsNotExist(err) {
+	if _, err := os.Stat(a.Path(GatewayEnablement)); !os.IsNotExist(err) {
 		t.Error("written all the same")
 	}
 }
@@ -200,7 +201,7 @@ func TestShowEnablementTampered(t *testing.T) {
 		t.Errorf("show: %+v", p.Enablement)
 	}
 	// Edited by hand: every category "enabled" without agent-admin.
-	f := a.p(GatewayEnablement)
+	f := a.Path(GatewayEnablement)
 	b, _ := os.ReadFile(f)
 	os.WriteFile(f, []byte(strings.Replace(strings.Replace(string(b), "state: diagnostics-only", "state: categories", 1),
 		"- diagnostics", "- diagnostics\n    - patch-errata", 1)), 0o644)
@@ -231,12 +232,12 @@ func TestShowEnablementTampered(t *testing.T) {
 // category.
 func TestTemplateOfDisabledCategoryRefused(t *testing.T) {
 	a, mem := diagnosticsHost(t)
-	dir := a.p(filepath.Join(TemplatesSite, "patcher"))
-	writeFile(filepath.Join(dir, "template.yaml"), []byte("title: Patcher\ndescription: x\nsystem: any\nmode: supervised\n"), 0o644)
-	writeFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(yml, "patch-pilot", "patcher", 1)), 0o644)
+	dir := a.Path(filepath.Join(TemplatesSite, "patcher"))
+	host.WriteFile(filepath.Join(dir, "template.yaml"), []byte("title: Patcher\ndescription: x\nsystem: any\nmode: supervised\n"), 0o644)
+	host.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(strings.Replace(yml, "patch-pilot", "patcher", 1)), 0o644)
 	// As the shipped patch-pilot: read-only permissions without a category
 	// first, then two disabled categories.
-	writeFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: check_updates, read_only: true}\n"+
+	host.WriteFile(filepath.Join(dir, "permissions.yaml"), []byte("- {server: zypp, tool: check_updates, read_only: true}\n"+
 		"- {server: zypp, tool: patch, category: patch-errata}\n- {server: systemd, tool: restart_unit, category: config-lifecycle}\n"+
 		"- {server: zypp, tool: install, category: patch-errata}\n"), 0o644)
 	err := a.CreateFromTemplate("patcher", "patcher", "")
@@ -401,7 +402,7 @@ func rootJournal(mem *journal.Memory) func(...string) ([]byte, error) {
 func TestShowReplayAndRemovedSeal(t *testing.T) {
 	a, mem := diagnosticsHost(t)
 	a.JournalJSON = rootJournal(mem)
-	f := a.p(GatewayEnablement)
+	f := a.Path(GatewayEnablement)
 	earlier, _ := os.ReadFile(f)                           // diagnostics-only, signed
 	a.Secret = func() string { return "fedcba9876543210" } // the next record's id
 	if err := a.Enable("alice", []string{"patch-errata"}, false); err != nil {
@@ -418,7 +419,7 @@ func TestShowReplayAndRemovedSeal(t *testing.T) {
 		t.Errorf("replayed: %+v", p.Enablement)
 	}
 	// The seal removed: the gateway counts the state as it is.
-	os.Remove(a.p(GatewaySeal))
+	os.Remove(a.Path(GatewaySeal))
 	p, _ = a.Show()
 	if p.Enablement == nil || !strings.Contains(p.Enablement.Tampered, "was removed, though agent-admin sealed this host") {
 		t.Errorf("seal removed: %+v", p.Enablement)

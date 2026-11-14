@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -35,7 +36,7 @@ func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
 	}
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
-		writeFile(a.p(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
+		host.WriteFile(a.Path(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
 	}
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
@@ -76,8 +77,8 @@ func TestShippedCatalog(t *testing.T) {
 
 func TestSiteCatalogReplacesAndDisables(t *testing.T) {
 	a, _ := withCategories(t)
-	writeFile(a.p(filepath.Join(CategoriesSite, "patch-errata.yaml")), []byte("patch-errata: {title: Patches (site)}\nbackups: {title: Backups}\n"), 0o644)
-	writeFile(a.p(filepath.Join(CategoriesSite, "security-response.yaml")), nil, 0o644)
+	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "patch-errata.yaml")), []byte("patch-errata: {title: Patches (site)}\nbackups: {title: Backups}\n"), 0o644)
+	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "security-response.yaml")), nil, 0o644)
 	c, err := a.Categories()
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +89,7 @@ func TestSiteCatalogReplacesAndDisables(t *testing.T) {
 	if _, ok := c["security-response"]; ok {
 		t.Error("an empty site file did not disable security-response")
 	}
-	writeFile(a.p(filepath.Join(CategoriesSite, "bad.yaml")), []byte("uncategorized: {title: x}\n"), 0o644)
+	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "bad.yaml")), []byte("uncategorized: {title: x}\n"), 0o644)
 	if _, err := a.Categories(); err == nil {
 		t.Error("uncategorized accepted as a category")
 	}
@@ -234,7 +235,7 @@ func TestPromoteWithRate(t *testing.T) {
 	if r := d.Categories["patch-errata"].Envelope.Rate; r == nil || r.Calls != 20 || r.Per != "1h" {
 		t.Errorf("rate: %+v", r)
 	}
-	b, _ := os.ReadFile(a.p(GatewayAgents + "/patch-pilot.yaml"))
+	b, _ := os.ReadFile(a.Path(GatewayAgents + "/patch-pilot.yaml"))
 	if !strings.Contains(string(b), "rate:\n") || !strings.Contains(string(b), "calls: 20") || !strings.Contains(string(b), "per: 1h") {
 		t.Errorf("agent data:\n%s", b)
 	}
@@ -349,7 +350,7 @@ func TestReadinessReport(t *testing.T) {
 		t.Errorf("thresholds %+v", r.Thresholds)
 	}
 	// The site's thresholds: 4 of 60 overrides is within 10 %.
-	writeFile(a.p(PromotionConfig), []byte("override_rate: 0.1\nproposals: 40\n"), 0o644)
+	host.WriteFile(a.Path(PromotionConfig), []byte("override_rate: 0.1\nproposals: 40\n"), 0o644)
 	r, _ = a.Readiness("patch-pilot", "patch-errata")
 	if pe := r.Categories["patch-errata"]; !pe.Ready || r.Thresholds.Proposals != 40 || len(r.Categories) != 1 {
 		t.Errorf("with the site's thresholds: %+v %+v", r.Thresholds, pe)
@@ -363,7 +364,7 @@ func TestThresholdsFile(t *testing.T) {
 		"window_days: 0\n":    "window_days 1 or more",
 		"overide_rate: 0.1\n": "overide_rate",
 	} {
-		writeFile(a.p(PromotionConfig), []byte(body), 0o644)
+		host.WriteFile(a.Path(PromotionConfig), []byte(body), 0o644)
 		if _, err := a.Thresholds(); err == nil || !strings.Contains(err.Error(), says) {
 			t.Errorf("%q: %v, want %q", body, err, says)
 		}
@@ -426,7 +427,7 @@ func TestReadinessCountsDiagnostics(t *testing.T) {
 		t.Fatalf("without an enablement state: %+v", r)
 	}
 
-	writeFile(a.p(GatewayEnablement), []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata, config-lifecycle]\n"), 0o644)
+	host.WriteFile(a.Path(GatewayEnablement), []byte("_enablement:\n  state: categories\n  enabled: [diagnostics, patch-errata, config-lifecycle]\n"), 0o644)
 	r, _ = a.Readiness("patch-pilot", "patch-errata")
 	pe := r.Categories["patch-errata"]
 	if pe.Ready || !r.DiagnosticsApply || strings.Join(pe.Unmet, "; ") != "diagnosis reports with feedback 0 of 10; no hypothesis confirmed or rejected yet" {
@@ -447,12 +448,12 @@ func TestReadinessCountsDiagnostics(t *testing.T) {
 		t.Errorf("promote: %v", err)
 	}
 	// The site turns them off.
-	writeFile(a.p(PromotionConfig), []byte("diagnostics_feedback: 0\ndiagnostics_confirmed_rate: 0\n"), 0o644)
+	host.WriteFile(a.Path(PromotionConfig), []byte("diagnostics_feedback: 0\ndiagnostics_confirmed_rate: 0\n"), 0o644)
 	if r, _ = a.Readiness("patch-pilot", "patch-errata"); !r.Categories["patch-errata"].Ready {
 		t.Errorf("turned off: %+v", r.Categories["patch-errata"])
 	}
 	for _, bad := range []string{"diagnostics_feedback: -1\n", "diagnostics_confirmed_rate: 1.5\n"} {
-		writeFile(a.p(PromotionConfig), []byte(bad), 0o644)
+		host.WriteFile(a.Path(PromotionConfig), []byte(bad), 0o644)
 		if _, err := a.Readiness("patch-pilot"); err == nil {
 			t.Errorf("%q accepted", bad)
 		}

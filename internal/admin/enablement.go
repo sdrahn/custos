@@ -17,6 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -91,7 +92,7 @@ func (e *Enablement) summary() string {
 
 // GetEnablement reads the enablement state; nil when there is none.
 func (a *Admin) GetEnablement() (*Enablement, error) {
-	b, err := os.ReadFile(a.p(GatewayEnablement))
+	b, err := os.ReadFile(a.Path(GatewayEnablement))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -143,7 +144,7 @@ func (a *Admin) writeEnablement(from, to *Enablement, by, msg string, event ...s
 	if from != nil {
 		fromJSON = from.summary()
 	}
-	a.record(ev, "", msg, journal.Fields{
+	a.Record(ev, "", msg, journal.Fields{
 		"BY": by, "ENABLEMENT": id, "ENABLEMENT_FROM": fromJSON, "ENABLEMENT_TO": to.summary(),
 		"ENABLEMENT_SHA256": to.Digest(),
 		// The host is sealed from here on: a later show that finds no
@@ -165,7 +166,7 @@ func (a *Admin) writeEnablementFile(to *Enablement) error {
 	if err := enc.Encode(map[string]*Enablement{"_enablement": to}); err != nil {
 		return err
 	}
-	return writeFile(a.p(GatewayEnablement), buf.Bytes(), 0o644)
+	return host.WriteFile(a.Path(GatewayEnablement), buf.Bytes(), 0o644)
 }
 
 // enablementKey is the key a change of the state is signed with: the
@@ -377,7 +378,7 @@ func (a *Admin) Disable(by string, cats []string, all bool) error {
 			what = "disable --all"
 		}
 		for c := range off {
-			a.record(journal.CategoryRefused, "", fmt.Sprintf("%s: category %s is still in use", what, c),
+			a.Record(journal.CategoryRefused, "", fmt.Sprintf("%s: category %s is still in use", what, c),
 				journal.Fields{"CATEGORY": c, "REASON": what, "BY": by})
 		}
 		return fmt.Errorf("%s: still in use: %s", what, strings.Join(blockers, "; "))
@@ -431,7 +432,7 @@ func (a *Admin) checkEnabled(name, what string, perms []map[string]any) error {
 		} else {
 			cats = append(cats, c)
 		}
-		a.record(journal.CategoryRefused, name, fmt.Sprintf("%s: category %s is not enabled on this host (%s)", what, shown, e.State),
+		a.Record(journal.CategoryRefused, name, fmt.Sprintf("%s: category %s is not enabled on this host (%s)", what, shown, e.State),
 			journal.Fields{"CATEGORY": shown, "REASON": what, "BY": a.By})
 	}
 	if len(seen) == 0 {
@@ -460,7 +461,7 @@ func (a *Admin) checkCategoryEnabled(name, cat string) error {
 	if err != nil || e.Usable(cat) {
 		return err
 	}
-	a.record(journal.CategoryRefused, name, fmt.Sprintf("promote: category %s is not enabled on this host (%s)", cat, e.State),
+	a.Record(journal.CategoryRefused, name, fmt.Sprintf("promote: category %s is not enabled on this host (%s)", cat, e.State),
 		journal.Fields{"CATEGORY": cat, "REASON": "promote", "BY": a.By})
 	return fmt.Errorf("task category %s is not enabled on this host (%s): agent-admin enable %s", cat, e.State, cat)
 }

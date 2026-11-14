@@ -25,7 +25,7 @@ func TestCompareAndApplyTemplate(t *testing.T) {
 
 	// The administrator changes the instruction, the model and a limit,
 	// changes its schedule, drops a permission and adds one, and sets the mode.
-	path := a.p("/etc/custos/agents/web-doctor/agent.yaml")
+	path := a.Path("/etc/custos/agents/web-doctor/agent.yaml")
 	b, _ := os.ReadFile(path)
 	s := strings.Replace(string(b), "instruction: |\n", "instruction: |\n  Only look at nginx.\n", 1)
 	s = strings.Replace(s, "qwen3-32b", "granite-4", 1)
@@ -99,7 +99,7 @@ func TestCompareUnrecorded(t *testing.T) {
 	if err := a.CreateFromTemplate("look", "triage", ""); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(a.p("/etc/custos/agents/look/template"))
+	os.Remove(a.Path("/etc/custos/agents/look/template"))
 	c := compareOne(t, a, "look", "")
 	if c.Template != "" || !strings.Contains(c.Error, "no template recorded") {
 		t.Errorf("%+v", c)

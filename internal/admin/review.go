@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
 )
@@ -35,7 +36,7 @@ type CategoryQueue struct {
 // reviewData reads what a review needs for an agent: its gateway data,
 // its records and the gateway's audit of it.
 func (a *Admin) reviewData(name string) (*GatewayData, []readiness.Record, readiness.Audit, time.Time, error) {
-	if err := checkName(name); err != nil {
+	if err := host.CheckName(name); err != nil {
 		return nil, nil, readiness.Audit{}, time.Time{}, err
 	}
 	d, err := a.readGateway(name)
@@ -122,7 +123,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 			"one listed without an activity is reviewed on the gateway: Cockpit's Approvals tab, mcp-gateway-admin reviews)",
 			name, call, activity, cat, name, cat)
 	}
-	a.record(journal.CategoryReview, name, fmt.Sprintf("%s reviewed %s of agent %s (%s in %s): %s", by, cat, name, act.Tool, activity, verdict), journal.Fields{
+	a.Record(journal.CategoryReview, name, fmt.Sprintf("%s reviewed %s of agent %s (%s in %s): %s", by, cat, name, act.Tool, activity, verdict), journal.Fields{
 		"CATEGORY": cat, "PROMOTION": st.Promotion, "INVOCATION": activity, "CALL_ID": call, "TOOL": act.Tool,
 		"VERDICT": verdict, "BY": by, "REASON": reason, "DECISION_ID": act.Decision,
 	})

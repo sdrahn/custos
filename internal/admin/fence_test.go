@@ -16,8 +16,8 @@ import (
 // host adds nothing, an address is taken as it is, a name as it resolves.
 func TestFenceAddresses(t *testing.T) {
 	a, _ := newAdmin(t)
-	os.MkdirAll(a.p("/etc"), 0o755)
-	os.WriteFile(a.p(ResolvConf), []byte("# resolv\nnameserver 10.0.2.3\nnameserver 127.0.0.53\nsearch example.com\n"), 0o644)
+	os.MkdirAll(a.Path("/etc"), 0o755)
+	os.WriteFile(a.Path(ResolvConf), []byte("# resolv\nnameserver 10.0.2.3\nnameserver 127.0.0.53\nsearch example.com\n"), 0o644)
 	a.LookupHost = func(h string) ([]string, error) {
 		switch h {
 		case "ai.example.com":

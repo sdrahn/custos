@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 )
 
@@ -14,13 +15,13 @@ func setupHost(t *testing.T) (*Admin, *rec) {
 	a, r := withTemplates(t)
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
-	os.MkdirAll(a.p(ExecDir), 0o755)
-	os.MkdirAll(a.p(GatewayServersDir), 0o755)
+	os.MkdirAll(a.Path(ExecDir), 0o755)
+	os.MkdirAll(a.Path(GatewayServersDir), 0o755)
 	b, err := os.ReadFile("../../gateway/servers.d/custos-net.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(a.p(NetServerVendor), b, 0o644)
+	host.WriteFile(a.Path(NetServerVendor), b, 0o644)
 	a.StopInstances = func(server string) (int, error) {
 		r.cmds = append(r.cmds, "stop instances of "+server)
 		return 1, nil
@@ -75,11 +76,11 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Errorf("credential not stored: %v", r.cmds)
 	}
 	for _, f := range []string{"exec.d-diagnostics.yaml", "exec.d-disk-usage.yaml"} {
-		if _, err := os.Stat(a.p(filepath.Join(ExecDir, f))); err != nil {
+		if _, err := os.Stat(a.Path(filepath.Join(ExecDir, f))); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
 	}
-	if b, err := os.ReadFile(a.p(filepath.Join(GatewayServersDir, "custos-net.yaml"))); err != nil || !strings.Contains(string(b), "network_view: host") {
+	if b, err := os.ReadFile(a.Path(filepath.Join(GatewayServersDir, "custos-net.yaml"))); err != nil || !strings.Contains(string(b), "network_view: host") {
 		t.Errorf("server custos-net: %v\n%s", err, b)
 	}
 
@@ -96,7 +97,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 
 	// Commands added for an agent that is there already: it is restarted,
 	// for a session with them.
-	os.Remove(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")))
+	os.Remove(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")))
 	r.cmds = nil
 	if _, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "qwen3-8b"}); err != nil {
 		t.Fatal(err)
@@ -196,7 +197,7 @@ func TestSetupBackends(t *testing.T) {
 // An exec command file the administrator changed stays.
 func TestSetupKeepsChangedExecCommands(t *testing.T) {
 	a, _ := setupHost(t)
-	writeFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), []byte("version: 1\ncommands: {}\n"), 0o644)
+	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), []byte("version: 1\ncommands: {}\n"), 0o644)
 	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +205,7 @@ func TestSetupKeepsChangedExecCommands(t *testing.T) {
 	if got := results(steps); !strings.Contains(got, "exec commands exec.d-diagnostics.yaml=skipped") || strings.Contains(got, "credential") {
 		t.Errorf("%s", got)
 	}
-	if b, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(b) != "version: 1\ncommands: {}\n" {
+	if b, _ := os.ReadFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(b) != "version: 1\ncommands: {}\n" {
 		t.Error("overwritten")
 	}
 }
@@ -216,8 +217,8 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	old := []byte("version: 1\ncommands: {}\n")
 	defer func(s map[string][]string) { shippedBefore = s }(shippedBefore)
 	shippedBefore = map[string][]string{"exec.d-diagnostics.yaml": {sha256Hex(old)}}
-	writeFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), old, 0o644)
-	writeFile(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")), []byte("# mine\n"), 0o644)
+	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml")), old, 0o644)
+	host.WriteFile(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml")), []byte("# mine\n"), 0o644)
 	steps, err := a.Setup(SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
@@ -226,11 +227,11 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	if !strings.Contains(got, "exec commands exec.d-diagnostics.yaml=done") || !strings.Contains(got, "exec commands exec.d-disk-usage.yaml=skipped") {
 		t.Errorf("steps: %s", got)
 	}
-	want, _ := os.ReadFile(a.p(filepath.Join(TemplatesVendor, "exec.d-diagnostics.yaml")))
-	if have, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(have) != string(want) {
+	want, _ := os.ReadFile(a.Path(filepath.Join(TemplatesVendor, "exec.d-diagnostics.yaml")))
+	if have, _ := os.ReadFile(a.Path(filepath.Join(ExecDir, "exec.d-diagnostics.yaml"))); string(have) != string(want) {
 		t.Error("the earlier release's copy was not replaced")
 	}
-	if have, _ := os.ReadFile(a.p(filepath.Join(ExecDir, "exec.d-disk-usage.yaml"))); string(have) != "# mine\n" {
+	if have, _ := os.ReadFile(a.Path(filepath.Join(ExecDir, "exec.d-disk-usage.yaml"))); string(have) != "# mine\n" {
 		t.Error("the administrator's copy was replaced")
 	}
 }
@@ -241,8 +242,8 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 func TestSetupRestartsServer(t *testing.T) {
 	a, _ := setupHost(t)
 	o := SetupOptions{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
-	writeFile(a.p(RestartsProfile), []byte("name: restarts\n"), 0o644)
-	dst := a.p(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	host.WriteFile(a.Path(RestartsProfile), []byte("name: restarts\n"), 0o644)
+	dst := a.Path(filepath.Join(GatewayServersDir, "restarts.yaml"))
 	// Installed but not asked for (security review 0.6, P1): not linked,
 	// and the step says how.
 	steps, err := a.Setup(o)
@@ -300,7 +301,7 @@ func TestSetupRestartsServer(t *testing.T) {
 	}
 	o.Restarts = true
 	// The administrator's own definition stays.
-	writeFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
+	host.WriteFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
 	steps, _ = a.Setup(o)
 	if !strings.Contains(results(steps), "server restarts=skipped") {
 		t.Errorf("own file: %s", results(steps))

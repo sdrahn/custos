@@ -21,7 +21,7 @@ func TestSeal(t *testing.T) {
 	if err := a.InitDiagnosticsOnly("setup"); err != nil {
 		t.Fatal(err)
 	}
-	cred := a.p(filepath.Join(CredstoreDir, SealCredential))
+	cred := a.Path(filepath.Join(CredstoreDir, SealCredential))
 	if fi, err := os.Stat(cred); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("the key's credential: %v %v", fi, err)
 	}
@@ -73,7 +73,7 @@ func TestSeal(t *testing.T) {
 	}
 
 	// Edited on file: show reports diagnostics-only, as the gateway does.
-	f := a.p(GatewayEnablement)
+	f := a.Path(GatewayEnablement)
 	b, _ := os.ReadFile(f)
 	os.WriteFile(f, []byte(strings.Replace(string(b), "- patch-errata", "- patch-errata\n    - config-lifecycle", 1)), 0o644)
 	p, _ = a.Show()
