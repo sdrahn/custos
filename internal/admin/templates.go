@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/playbook"
@@ -169,7 +170,7 @@ func (a *Admin) loadTemplate(name, dir string) (*Template, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := ParseEnvelope(eb); err != nil {
+		if _, err := category.ParseEnvelope(eb); err != nil {
 			return nil, bad("envelopes/"+filepath.Base(f), err)
 		}
 		t.Envelopes = append(t.Envelopes, c)

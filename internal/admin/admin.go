@@ -24,6 +24,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/delegate"
 	"github.com/sdrahn/custos/internal/gatewayctl"
@@ -736,7 +737,7 @@ type GatewayData struct {
 	PausedBy    string           `yaml:"paused_by,omitempty" json:"paused_by,omitempty"`
 	Permissions []map[string]any `yaml:"permissions" json:"permissions"`
 	// Categories are the task categories promoted or demoted (§6a).
-	Categories map[string]*CategoryState `yaml:"categories,omitempty" json:"categories,omitempty"`
+	Categories map[string]*category.State `yaml:"categories,omitempty" json:"categories,omitempty"`
 	// Owners may approve the agent's calls (§7, O1): rules of the
 	// gateway's approver forms (owners.rego).
 	Owners []string `yaml:"owners,omitempty" json:"owners,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
@@ -136,7 +137,7 @@ func (a *Admin) Review(name, cat, activity, call, verdict, by, reason string) er
 
 // reviewIncident is a review since the promotion that found an action
 // should not have run, for the evaluator; "" if none.
-func reviewIncident(cat string, st *CategoryState, perms readiness.History, recs []readiness.Record, gateway []readiness.Review) string {
+func reviewIncident(cat string, st *category.State, perms readiness.History, recs []readiness.Record, gateway []readiness.Review) string {
 	var found []readiness.Review
 	for _, rv := range readiness.AllReviews(cat, perms, recs, gateway) {
 		if rv.Verdict == readiness.VerdictIncident && !rv.At.Before(promotedAt(st)) {

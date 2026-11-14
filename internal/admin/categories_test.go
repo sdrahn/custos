@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sdrahn/custos/internal/category"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/readiness"
@@ -36,7 +37,7 @@ func withCategoriesRec(t *testing.T) (*Admin, *journal.Memory, *rec) {
 	}
 	for _, f := range m {
 		b, _ := os.ReadFile(f)
-		host.WriteFile(a.Path(filepath.Join(CategoriesVendor, filepath.Base(f))), b, 0o644)
+		host.WriteFile(a.Path(filepath.Join(category.Vendor, filepath.Base(f))), b, 0o644)
 	}
 	mem := &journal.Memory{}
 	a.Journal = func(string) journal.Logger { return mem }
@@ -60,39 +61,6 @@ const sat = "windows:\n  - {days: [sat], from: '02:00', to: '04:00', tz: Europe/
 
 func promote(a *Admin, cat, env string) error {
 	return a.Promote("patch-pilot", cat, "alice", Promotion{Envelope: []byte(env), Reason: "patching window", DespiteReadiness: true})
-}
-
-func TestShippedCatalog(t *testing.T) {
-	a, _ := withCategories(t)
-	c, err := a.Categories()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, n := range []string{"patch-errata", "security-response", "config-lifecycle", "diagnostics", "compliance-audit"} {
-		if c[n].Title == "" {
-			t.Errorf("%s: missing or without a title: %v", n, c)
-		}
-	}
-}
-
-func TestSiteCatalogReplacesAndDisables(t *testing.T) {
-	a, _ := withCategories(t)
-	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "patch-errata.yaml")), []byte("patch-errata: {title: Patches (site)}\nbackups: {title: Backups}\n"), 0o644)
-	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "security-response.yaml")), nil, 0o644)
-	c, err := a.Categories()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c["patch-errata"].Title != "Patches (site)" || c["backups"].Title != "Backups" {
-		t.Errorf("site entries: %v", c)
-	}
-	if _, ok := c["security-response"]; ok {
-		t.Error("an empty site file did not disable security-response")
-	}
-	host.WriteFile(a.Path(filepath.Join(CategoriesSite, "bad.yaml")), []byte("uncategorized: {title: x}\n"), 0o644)
-	if _, err := a.Categories(); err == nil {
-		t.Error("uncategorized accepted as a category")
-	}
 }
 
 func TestPermissionsCategory(t *testing.T) {
