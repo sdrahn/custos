@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	udiff "github.com/aymanbagabas/go-udiff"
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/host"
 	"gopkg.in/yaml.v3"
@@ -292,23 +293,24 @@ func setKey(m *yaml.Node, k string, v *yaml.Node) {
 }
 
 // canonical is a YAML document without its comments, keys sorted.
-func canonical(b []byte) ([]string, error) {
+func canonical(b []byte) (string, error) {
 	var v any
 	if err := yaml.Unmarshal(b, &v); err != nil {
-		return nil, err
+		return "", err
 	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(v); err != nil {
-		return nil, err
+		return "", err
 	}
-	return strings.Split(strings.TrimRight(buf.String(), "\n"), "\n"), nil
+	return strings.TrimRight(buf.String(), "\n") + "\n", nil
 }
 
 // lineDiff is the agent's against the template's configuration, both
-// canonical: "-" lines only the agent's has, "+" only the template's,
-// " " both; "" when they are the same.
+// canonical: "- " lines only the agent's has, "+ " only the template's,
+// "  " both, diffContext of them around each change and "…" between the
+// parts; "" when they are the same.
 func lineDiff(cur, want []byte) (string, error) {
 	x, err := canonical(cur)
 	if err != nil {
@@ -318,58 +320,19 @@ func lineDiff(cur, want []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if slices.Equal(x, y) {
-		return "", nil
+	u, err := udiff.ToUnifiedDiff("", "", x, udiff.Lines(x, y), diffContext)
+	if err != nil {
+		return "", err
 	}
-	// The longest common subsequence; configurations are short.
-	n, m := len(x), len(y)
-	l := make([][]int, n+1)
-	for i := range l {
-		l[i] = make([]int, m+1)
-	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if x[i] == y[j] {
-				l[i][j] = l[i+1][j+1] + 1
-			} else {
-				l[i][j] = max(l[i+1][j], l[i][j+1])
-			}
-		}
-	}
-	var lines []string
-	i, j := 0, 0
-	for i < n || j < m {
-		switch {
-		case i < n && j < m && x[i] == y[j]:
-			lines = append(lines, "  "+x[i])
-			i, j = i+1, j+1
-		case j < m && (i == n || l[i][j+1] >= l[i+1][j]):
-			lines = append(lines, "+ "+y[j])
-			j++
-		default:
-			lines = append(lines, "- "+x[i])
-			i++
-		}
-	}
-	// The changed lines with diffContext lines around them; "…" between
-	// the parts.
-	show := make([]bool, len(lines))
-	for k, ln := range lines {
-		if ln[0] != ' ' {
-			for c := max(0, k-diffContext); c <= min(len(lines)-1, k+diffContext); c++ {
-				show[c] = true
-			}
-		}
-	}
+	prefix := map[udiff.OpKind]string{udiff.Delete: "- ", udiff.Insert: "+ ", udiff.Equal: "  "}
 	var b strings.Builder
-	for k, ln := range lines {
-		if !show[k] {
-			continue
-		}
-		if k > 0 && !show[k-1] {
+	for i, h := range u.Hunks {
+		if i > 0 {
 			b.WriteString("…\n")
 		}
-		b.WriteString(ln + "\n")
+		for _, l := range h.Lines {
+			b.WriteString(prefix[l.Kind] + strings.TrimRight(l.Content, "\n") + "\n")
+		}
 	}
 	return b.String(), nil
 }
