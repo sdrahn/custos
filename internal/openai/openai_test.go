@@ -233,7 +233,7 @@ func TestMaxOutputTokens(t *testing.T) {
 	if err != nil || got.MaxTokens != 0 || resp.FinishReason != "" {
 		t.Errorf("no limit: max_tokens %d, %+v %v", got.MaxTokens, resp, err)
 	}
-	params, _ := m.request(&model.LLMRequest{Config: &genai.GenerateContentConfig{}})
+	params, _, _ := m.request(&model.LLMRequest{Config: &genai.GenerateContentConfig{}})
 	b, _ := json.Marshal(params)
 	if strings.Contains(string(b), "max_tokens") {
 		t.Errorf("max_tokens sent without a limit: %s", b)
@@ -284,5 +284,52 @@ func TestReasoning(t *testing.T) {
 	if got.ReasoningEffort != "none" || len(resp.Content.Parts) != 2 || !resp.Content.Parts[0].Thought || resp.Content.Parts[1].Thought ||
 		resp.Content.Parts[1].Text != "The unit failed." {
 		t.Errorf("reasoning_content and the answer: sent %q, %+v", got.ReasoningEffort, resp.Content.Parts)
+	}
+}
+
+// A tool's schema is sent as its author wrote it: a model writes its
+// arguments along the order of the properties (the report's summary
+// before its hypotheses and plan), so the client must not sort them.
+func TestSchemaOrder(t *testing.T) {
+	const report = `{"type":"object","properties":{"summary":{"type":"string"},"hypotheses":{"type":"array","items":{"type":"object","properties":{"text":{"type":"string"},"confidence":{"type":"string"}}}},"plan":{"type":"array"}},"required":["summary","hypotheses"],"additionalProperties":false}`
+	const lines = `{"type":"object","properties":{"unit":{"type":"string"},"lines":{"type":"integer"}}}`
+	var sent []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+	m := &Model{Endpoint: srv.URL + "/v1"}
+	req := &model.LLMRequest{Config: &genai.GenerateContentConfig{Tools: []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{
+		{Name: "report_diagnosis", Description: "The report.", ParametersJsonSchema: json.RawMessage(report)},
+		{Name: "exec__time_status"},
+		{Name: "systemd__list_log", ParametersJsonSchema: json.RawMessage(lines)},
+	}}}}}
+	for _, err := range m.GenerateContent(context.Background(), req, false) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got struct {
+		Tools []struct {
+			Type     string `json:"type"`
+			Function struct {
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				Parameters  json.RawMessage `json:"parameters"`
+			} `json:"function"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(sent, &got); err != nil || len(got.Tools) != 3 {
+		t.Fatalf("%v: %s", err, sent)
+	}
+	for i, want := range []string{report, `{"properties":{},"type":"object"}`, lines} {
+		if f := got.Tools[i].Function; string(f.Parameters) != want || got.Tools[i].Type != "function" {
+			t.Errorf("tool %d (%s): %s %s, want %s", i, f.Name, got.Tools[i].Type, f.Parameters, want)
+		}
+	}
+	if f := got.Tools[0].Function; f.Name != "report_diagnosis" || f.Description != "The report." {
+		t.Errorf("%+v", f)
 	}
 }

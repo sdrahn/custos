@@ -141,7 +141,9 @@ set per command; no command-line framework.
 into the build; to be looked at again when Custos moves to Go 1.26.
 `internal/openai` switches off what an on-premises agent must not do
 by default: the SDK's retries, its `X-Stainless-*` headers, and reading
-`OPENAI_API_KEY` and `OPENAI_BASE_URL` from the environment.
+`OPENAI_API_KEY` and `OPENAI_BASE_URL` from the environment. The
+tools' schemas are put into the request as they are written, not
+through the SDK's map, which would sort a tool's properties.
 
 Considered and not used:
 

@@ -114,14 +114,14 @@ func (m *Model) service(got *answer) oai.ChatCompletionService {
 }
 
 func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
-	params, err := m.request(req)
+	params, schemas, err := m.request(req)
 	if err != nil {
 		return nil, err
 	}
 	var got answer
 	start := time.Now()
 	svc := m.service(&got)
-	r, err := svc.New(ctx, params)
+	r, err := svc.New(ctx, params, schemas...)
 	if got.status == 0 && err != nil {
 		// No answer at all.
 		var ne net.Error
@@ -203,9 +203,14 @@ func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLM
 	}, nil
 }
 
-// request is the chat completion request for an ADK request.
-func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, error) {
+// request is the chat completion request for an ADK request, and the
+// options that put the tools' schemas into it. A schema is sent as it is
+// written, not through the SDK's map (which would sort its keys): the
+// order of a tool's properties is the order its author gave them, and a
+// model writes its arguments along it.
+func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, []option.RequestOption, error) {
 	out := oai.ChatCompletionNewParams{Model: m.Name}
+	var schemas []option.RequestOption
 	if m.Temperature != nil {
 		// The shortest decimal of the float32, not its float64 expansion
 		// (0.2, not 0.20000000298).
@@ -240,11 +245,12 @@ func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, err
 				default:
 					schema = noArgs()
 				}
-				params, err := object(schema)
+				raw, err := json.Marshal(schema)
 				if err != nil {
-					return out, fmt.Errorf("the schema of tool %s: %w", d.Name, err)
+					return out, nil, fmt.Errorf("the schema of tool %s: %w", d.Name, err)
 				}
-				f := shared.FunctionDefinitionParam{Name: d.Name, Parameters: params}
+				schemas = append(schemas, option.WithJSONSet(fmt.Sprintf("tools.%d.function.parameters", len(out.Tools)), json.RawMessage(raw)))
+				f := shared.FunctionDefinitionParam{Name: d.Name}
 				if d.Description != "" {
 					f.Description = param.NewOpt(d.Description)
 				}
@@ -285,20 +291,7 @@ func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, err
 		}
 		out.Messages = append(out.Messages, oai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
 	}
-	return out, nil
-}
-
-// object is a JSON Schema as the SDK takes one: a JSON object.
-func object(schema any) (map[string]any, error) {
-	b, err := json.Marshal(schema)
-	if err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, errors.New("not a JSON object")
-	}
-	return m, nil
+	return out, schemas, nil
 }
 
 func text(c *genai.Content) string {
