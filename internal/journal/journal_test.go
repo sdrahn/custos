@@ -2,54 +2,53 @@ package journal
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
-	"net"
+	"errors"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	sdjournal "github.com/coreos/go-systemd/v22/journal"
 )
 
-func TestNativeFormat(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "j.sock")
-	srv, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: p, Net: "unixgram"})
-	if err != nil {
-		t.Fatal(err)
+// sent is what a native logger handed to journald.
+type sent struct {
+	message  string
+	priority sdjournal.Priority
+	vars     map[string]string
+}
+
+func capture(got *[]sent, err error) func(string, sdjournal.Priority, map[string]string) error {
+	return func(m string, p sdjournal.Priority, v map[string]string) error {
+		*got = append(*got, sent{m, p, v})
+		return err
 	}
-	defer srv.Close()
-	c, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: p, Net: "unixgram"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	l := &native{ident: "agent-pp", name: "pp", conn: c, fallback: &JSON{Name: "pp"}}
+}
+
+func TestNativeRecord(t *testing.T) {
+	var got []sent
+	l := &native{ident: "agent-pp", name: "pp", send: capture(&got, nil), fallback: &JSON{Name: "pp"}}
 	l.Log(ToolCall, "two\nlines", Fields{"TOOL": "zypp__install", "EMPTY": ""})
-	buf := make([]byte, 4096)
-	n, _ := srv.Read(buf)
-	got := buf[:n]
-	var want bytes.Buffer
-	want.WriteString("MESSAGE\n")
-	binary.Write(&want, binary.LittleEndian, uint64(9))
-	want.WriteString("two\nlines\n")
-	if !bytes.HasPrefix(got, want.Bytes()) {
-		t.Errorf("multi-line MESSAGE not length-prefixed: %q", got)
+	r := got[0]
+	if r.message != "two\nlines" || r.priority != sdjournal.PriInfo {
+		t.Errorf("message %q, priority %d", r.message, r.priority)
 	}
-	for _, s := range []string{"MESSAGE_ID=" + MessageIDs[ToolCall] + "\n", "SYSLOG_IDENTIFIER=agent-pp\n", "AGENT_EVENT=tool.call\n", "AGENT_TOOL=zypp__install\n"} {
-		if !bytes.Contains(got, []byte(s)) {
-			t.Errorf("missing %q", s)
+	for k, want := range map[string]string{"MESSAGE_ID": MessageIDs[ToolCall], "SYSLOG_IDENTIFIER": "agent-pp", "AGENT_CONTRACT": "1",
+		"AGENT_NAME": "pp", "AGENT_EVENT": "tool.call", "AGENT_TOOL": "zypp__install"} {
+		if r.vars[k] != want {
+			t.Errorf("%s = %q, want %q", k, r.vars[k], want)
 		}
 	}
-	if bytes.Contains(got, []byte("AGENT_EMPTY")) {
+	if _, ok := r.vars["AGENT_EMPTY"]; ok {
 		t.Error("empty field written")
 	}
 	// A field name journald would read otherwise is never written: a
 	// newline in it would add a field of the caller's choosing.
-	l.Log(ToolCall, "m", Fields{"X=1\nSYSLOG_IDENTIFIER": "custos-promotion", "A\nOBJECT_SYSTEMD_UNIT": "mcp-gateway.service", "TOOL": "t"})
-	n, _ = srv.Read(buf)
-	got = buf[:n]
-	if bytes.Contains(got, []byte("custos-promotion")) || bytes.Contains(got, []byte("OBJECT_SYSTEMD_UNIT")) || !bytes.Contains(got, []byte("AGENT_TOOL=t\n")) {
-		t.Errorf("field names not checked: %q", got)
+	l.Log(LimitExceeded, "m", Fields{"X=1\nSYSLOG_IDENTIFIER": "custos-promotion", "A\nOBJECT_SYSTEMD_UNIT": "mcp-gateway.service", "TOOL": "t"})
+	r = got[1]
+	if len(r.vars) != 6 || r.vars["SYSLOG_IDENTIFIER"] != "agent-pp" || r.vars["AGENT_TOOL"] != "t" || r.priority != sdjournal.PriNotice {
+		t.Errorf("field names not checked: %v", r.vars)
 	}
 	for k, want := range map[string]bool{"TOOL": true, "APPROVAL_ID": true, "A1": true, "": false, "_X": false, "x": false, "A B": false, "A\nB": false, "A=B": false} {
 		if ValidField(k) != want {
@@ -81,24 +80,25 @@ func TestEveryEventHasID(t *testing.T) {
 }
 
 func TestNewAsIdentifier(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "j")
-	srv, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: p, Net: "unixgram"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.Close()
-	c, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: p, Net: "unixgram"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	l := &native{ident: "custos-promotion", name: "pp", conn: c, fallback: &JSON{Name: "pp"}}
+	var got []sent
+	l := &native{ident: "custos-promotion", name: "pp", send: capture(&got, nil), fallback: &JSON{Name: "pp"}}
 	l.Log(CategoryPromoted, "promoted", Fields{"CATEGORY": "patch-errata"})
-	buf := make([]byte, 4096)
-	n, _ := srv.Read(buf)
-	for _, s := range []string{"SYSLOG_IDENTIFIER=custos-promotion\n", "AGENT_NAME=pp\n", "AGENT_EVENT=category.promoted\n", "MESSAGE_ID=6f3c0e1a9b2d4c58a7e1f2d3c4b5a660\n", "AGENT_CATEGORY=patch-errata\n"} {
-		if !bytes.Contains(buf[:n], []byte(s)) {
-			t.Errorf("missing %q in %q", s, buf[:n])
+	for k, want := range map[string]string{"SYSLOG_IDENTIFIER": "custos-promotion", "AGENT_NAME": "pp", "AGENT_EVENT": "category.promoted",
+		"MESSAGE_ID": "6f3c0e1a9b2d4c58a7e1f2d3c4b5a660", "AGENT_CATEGORY": "patch-errata"} {
+		if got[0].vars[k] != want {
+			t.Errorf("%s = %q, want %q", k, got[0].vars[k], want)
 		}
+	}
+}
+
+// A record journald does not take is kept as a JSON line.
+func TestNativeFallsBack(t *testing.T) {
+	var got []sent
+	var b bytes.Buffer
+	l := &native{ident: "agent-pp", name: "pp", send: capture(&got, errors.New("no journal")), fallback: &JSON{Name: "pp", W: &b}}
+	l.Log(ToolCall, "m", Fields{"TOOL": "t"})
+	if !strings.Contains(b.String(), `"tool":"t"`) {
+		t.Errorf("fallback wrote %q", b.String())
 	}
 }
 
