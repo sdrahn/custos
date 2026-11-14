@@ -269,6 +269,8 @@ done
 %dir %{_libexecdir}/custos
 %dir %{_libexecdir}/custos/tests
 %{_libexecdir}/custos/tests/run-tests.sh
+%{_libexecdir}/custos/tests/lib.sh
+%{_libexecdir}/custos/tests/sections
 %{_libexecdir}/custos/tests/model-eval.sh
 %{_libexecdir}/custos/tests/fakemodel
 %{_libexecdir}/custos/tests/testsrv

@@ -9,7 +9,7 @@ the packages from its repositories. They follow mcp-gateway's
 
 | Path | What |
 |---|---|
-| `/usr/libexec/custos/tests/run-tests.sh` | the tests (`test/vm/run-tests.sh` in the source) |
+| `/usr/libexec/custos/tests/run-tests.sh` | the tests (`test/vm/run-tests.sh` in the source), with `lib.sh` and the checks by topic in `sections/` next to it |
 | `/usr/libexec/custos/tests/fakemodel` | a scripted OpenAI-compatible model server on `127.0.0.1:8008`, so no model is needed and every run gives the same answers |
 | `/usr/libexec/custos/tests/testsrv` | the MCP server `custos-test`: `probe` (declared read-only by the tests) and `change` (declared as changing the system) |
 

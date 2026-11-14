@@ -22,7 +22,8 @@ Guidance for Claude Code (and other agents) working in this repository.
   covered by the functional tests in `test/vm/run-tests.sh`. They are
   shipped as the subpackage `custos-tests` and run by openQA
   (`test/openqa/`). A new feature that shows on an installed system
-  gets a check there, too: `check <description> <command…>` in a
+  gets a check there, too, in the file of its topic in
+  `test/vm/sections/`: `check <description> <command…>` in a
   `section`, printing PASS, FAIL or SKIP, written as TAP and JUnit with
   `--results DIR`.
 - The functional tests change the system they run on and refuse to

@@ -91,7 +91,7 @@ open items.
 | `cockpit/` | the Cockpit page (`custos/`, packaged as `custos-cockpit`) and its smoke test against a stub of Cockpit (`test/`, `make cockpit-test`) |
 | `packaging/` | OBS packaging for SLES 16.0/16.1 and Leap 16.0/16.1 (`suse/`), sysusers.d, tmpfiles.d |
 | `examples/patch-pilot` | an example agent and its gateway permissions |
-| `test/vm` | the functional tests on an installed system (`run-tests.sh`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
+| `test/vm` | the functional tests on an installed system (`run-tests.sh`, with the checks by topic in `sections/`) and their helpers (`fakemodel`, `testsrv`), packaged as `custos-tests` |
 | `test/openqa` | the openQA test module and how to run the functional tests |
 | `docs/` | the [user guide](docs/user-guide/README.md) (packaged as `custos-docs`, with its mcp-docs collection file `packaging/mcp-docs/custos.yaml`; checked by `test/docs`), the [logo](docs/logo/README.md), the [user flow](docs/user-flow.md) (who logs in to Cockpit, roles, approving and intervening), [screenshots](docs/screenshots/README.md) of the Cockpit page, the [architecture](docs/architecture.md) (which package owns what, what it may import, where a change goes; checked by `test/boundaries`) |
 
