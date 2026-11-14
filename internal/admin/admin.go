@@ -27,6 +27,7 @@ import (
 
 	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/delegate"
+	"github.com/sdrahn/custos/internal/gatewayctl"
 	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/openshell"
 )
@@ -95,11 +96,11 @@ type Admin struct {
 	// By is the person, for the records of refusals (category.refused).
 	By string
 	// StopInstances stops a server's running instances through the
-	// gateway's control API and says how many; nil: stopInstances.
+	// gateway's control API and says how many; nil: gatewayctl.StopInstances.
 	StopInstances func(server string) (int, error)
 	// Notify posts a notice to the approvers through the gateway (R3) and
 	// gives its id; nil: no notices.
-	Notify func(Notice) (string, error)
+	Notify func(gatewayctl.Notice) (string, error)
 }
 
 // New is agent-admin on a host. Its standard output is its own messages
@@ -132,7 +133,7 @@ func New() *Admin {
 			return hex.EncodeToString(b)
 		},
 		OPAData:    opaData,
-		Notify:     postNotice,
+		Notify:     gatewayctl.PostNotice,
 		PolicyWait: 20 * time.Second,
 		Probe: func(name string, args ...string) error {
 			return exec.Command(name, args...).Run()

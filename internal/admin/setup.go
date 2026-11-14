@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/gatewayctl"
 )
 
 // The bundled diagnostics install (CONTRACT.md §17a, §20b): what
@@ -205,10 +206,10 @@ func (a *Admin) Setup(o SetupOptions) ([]Step, error) {
 	if execAdded {
 		stop := a.StopInstances
 		if stop == nil {
-			stop = stopInstances
+			stop = gatewayctl.StopInstances
 		}
 		switch n, err := stop("exec"); {
-		case errors.Is(err, errNoControl):
+		case errors.Is(err, gatewayctl.ErrNoControl):
 			add("exec instances", "skipped", "the gateway does not run: its exec instances start with the commands")
 		case err != nil:
 			add("exec instances", "skipped", "not stopped ("+err.Error()+"): stop them in Cockpit's Servers tab, or the new commands are offered once they end when idle")
