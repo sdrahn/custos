@@ -124,6 +124,7 @@ replacing one is a change of one package.
 | --- | --- | --- |
 | `google.golang.org/adk`, `google.golang.org/genai` | the agent host | the agent's packages (above) |
 | `github.com/modelcontextprotocol/go-sdk` | MCP, to the gateway and as the delegation server | `internal/gateway`, `internal/governance`, `internal/launcher`, `internal/delegate` |
+| `github.com/openai/openai-go/v3` | the requests and answers of OpenAI-compatible chat completions | `internal/openai` |
 | `github.com/coreos/go-systemd/v22` | journald's protocol | `internal/journal` |
 | `golang.org/x/oauth2`, `github.com/golang-jwt/jwt/v5` | the client credentials grant; reading a token's claims | `internal/admin/idp` |
 | `github.com/aymanbagabas/go-udiff` | the differences `agent-admin compare` shows | `internal/admin/templates` |
@@ -134,6 +135,15 @@ replacing one is a change of one package.
 
 `agent-admin`'s commands use the standard library's `flag`, one flag
 set per command; no command-line framework.
+
+`openai-go` is pinned to v3.50.0, the last version that builds with Go
+1.25. Later versions need Go 1.26 and bring the Azure and AWS SDKs
+into the build; to be looked at again when Custos moves to Go 1.26.
+`internal/openai` switches off what an on-premises agent must not do
+by default: the SDK's retries, its `X-Stainless-*` headers, and reading
+`OPENAI_API_KEY` and `OPENAI_BASE_URL` from the environment. The
+tools' schemas are put into the request as they are written, not
+through the SDK's map, which would sort a tool's properties.
 
 Considered and not used:
 

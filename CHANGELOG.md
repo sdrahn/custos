@@ -22,6 +22,18 @@ removed.
   `/usr/libexec/custos/tests/sections/`, with the framework in `lib.sh`
   next to `run-tests.sh`. The command, its options, the checks and their
   order are unchanged.
+- The client for OpenAI-compatible model servers builds its requests and
+  reads the answers with the OpenAI Go SDK
+  (`github.com/openai/openai-go/v3`, pinned to v3.50.0, the last that
+  builds with Go 1.25). What the server receives differs in details that
+  do not change a request's meaning: `"stream": false` is no longer sent,
+  an assistant message with tool calls only has no `content` key instead
+  of `"content": null`, and the request names the SDK (`User-Agent:
+  OpenAI/Go 3.50.0`, `Accept: application/json`). The tools' schemas are
+  sent as before, their properties in the order they were written. The
+  SDK's retries and its `X-Stainless-*` headers are switched off, and
+  its environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) are
+  not read. `agent-launcher` grows by about 11 MB.
 
 ## v0.6.2 — 2026-11-10
 
