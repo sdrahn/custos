@@ -161,7 +161,8 @@ func flags(cmd string) *flag.FlagSet {
 // parse reads args with fs and returns the positional arguments, of
 // which the command needs at least need. Options and arguments may come
 // in any order (create NAME --template T, as well as create --template T
-// NAME); "-" is an argument (standard input).
+// NAME); "-" is an argument (standard input), and everything after "--"
+// is one, whatever it looks like.
 func parse(fs *flag.FlagSet, args []string, need int) ([]string, error) {
 	var pos []string
 	for {
@@ -171,7 +172,12 @@ func parse(fs *flag.FlagSet, args []string, need int) ([]string, error) {
 			}
 			return nil, fmt.Errorf("%s: %v\n%s", fs.Name(), err, usage)
 		}
-		args = fs.Args()
+		rest := fs.Args()
+		if n := len(args) - len(rest); n > 0 && args[n-1] == "--" && !(n > 1 && takesValue(fs, args[n-2])) {
+			pos = append(pos, rest...)
+			break
+		}
+		args = rest
 		if len(args) == 0 {
 			break
 		}
@@ -182,6 +188,21 @@ func parse(fs *flag.FlagSet, args []string, need int) ([]string, error) {
 		return nil, fmt.Errorf("%s: missing arguments\n%s", fs.Name(), usage)
 	}
 	return pos, nil
+}
+
+// takesValue says whether arg is an option of fs whose value is the next
+// argument (--from FILE, not --from=FILE and not a switch).
+func takesValue(fs *flag.FlagSet, arg string) bool {
+	name := strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-")
+	if name == arg || strings.Contains(name, "=") {
+		return false
+	}
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return !ok || !b.IsBoolFlag()
 }
 
 // list is an option that may be given more than once.
