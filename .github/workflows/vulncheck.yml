@@ -29,13 +29,15 @@ jobs:
   govulncheck:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25.x", "stable"]
+    name: govulncheck (Go ${{ matrix.go }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          # The newest patch release of go.mod's Go, as a distribution
-          # builds the packages with: the standard library's fixed
-          # vulnerabilities are not Custos's to report.
-          go-version: "1.25.x"
+          go-version: ${{ matrix.go }}
       - name: govulncheck
         run: go run "$GOVULNCHECK" ./...
