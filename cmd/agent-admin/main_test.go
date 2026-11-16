@@ -37,6 +37,12 @@ func TestParse(t *testing.T) {
 		{args: "--from=f -force", want: got{from: "f", force: true}},
 		{args: "--accept x a --accept y", want: got{pos: []string{"a"}, accept: []string{"x", "y"}}},
 		{args: "", want: got{}},
+		// "--" ends the options (security review 0.7, R3).
+		{args: "a -- --force b", need: 2, want: got{pos: []string{"a", "--force", "b"}}},
+		{args: "--force -- --from", need: 1, want: got{pos: []string{"--from"}, force: true}},
+		{args: "a --", need: 1, want: got{pos: []string{"a"}}},
+		{args: "-- -", need: 1, want: got{pos: []string{"-"}}},
+		{args: "a --from -- --force", need: 1, want: got{pos: []string{"a"}, from: "--", force: true}},
 		{args: "a", need: 2, err: "cmd: missing arguments\nusage: agent-admin"},
 		{args: "--force", need: 1, err: "cmd: missing arguments\n"},
 		{args: "a --no-such", need: 1, err: "cmd: flag provided but not defined: -no-such\nusage: agent-admin"},
