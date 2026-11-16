@@ -1,4 +1,5 @@
-// Package tools checks tools/check-release and tools/check-tree, which
+// Package tools checks tools/changelog (changelog_test.go), and
+// tools/check-release and tools/check-tree, which
 // the Release workflow runs before it publishes a tag, against throwaway
 // git repositories.
 package tools
@@ -47,7 +48,7 @@ func repo(t *testing.T, files map[string][]byte) string {
 		t.Skip("no git")
 	}
 	d := t.TempDir()
-	for _, tool := range []string{"check-release", "check-tree"} {
+	for _, tool := range []string{"check-release", "check-tree", "changelog"} {
 		b, err := os.ReadFile(filepath.Join("../../tools", tool))
 		if err != nil {
 			t.Fatal(err)

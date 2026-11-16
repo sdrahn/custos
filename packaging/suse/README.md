@@ -100,11 +100,15 @@ To release X.Y.0:
 
 1. From the latest main, branch `release-X.Y`. Its first commit makes
    `_service` build from `release-X.Y` with `@PARENT_TAG@`.
-2. The release commit turns `## Unreleased` in `CHANGELOG.md` into
-   `## vX.Y.Z — <date>`, with what to know when upgrading. The spec
-   already says `Version: X.Y.Z`.
+2. The release commit writes the section `## vX.Y.Z — <date>` into
+   `CHANGELOG.md` from the fragments in `changes.d/`
+   (`tools/changelog release vX.Y.Z`, which removes them), with
+   `changes.d/intro.md` as its introduction: what the release is about
+   and what to know when upgrading. The spec already says
+   `Version: X.Y.Z`.
 3. `tools/check-release vX.Y.Z` checks that the spec, the first
-   `CHANGELOG.md` section and `_service` name the release, and that the
+   `CHANGELOG.md` section and `_service` name the release, that no
+   fragment is left in `changes.d/`, and that the
    tree holds sources only (`tools/check-tree`, which CI runs on every
    change). Push the branch; CI runs on it, including the air-gapped
    gate (job `airgap`: the packages and a local model from an offline
@@ -116,10 +120,12 @@ To release X.Y.0:
    the release's demonstration videos (the CI run's artifact
    `demo-videos`).
 4. On main, the next change sets the spec to the next version
-   (`X.(Y+1).0`) and starts a new `## Unreleased`.
+   (`X.(Y+1).0`). New changes go into `changes.d/` again.
 
-A fix release X.Y.Z+1 goes on the branch: the fix (from main), then a
-release commit with its `CHANGELOG.md` section. An OBS project that
+A fix release X.Y.Z+1 goes on the branch: the fix (from main, with its
+fragment), then a release commit with its `CHANGELOG.md` section
+(`tools/changelog release` on the branch, and the same on main
+afterwards, where the fragment still is). An OBS project that
 follows a release takes the spec, `_service` and `custos-rpmlintrc` of
 the release's tag, runs `osc service manualrun`, then
 `osc vc -m "Update to X.Y.Z"` with the release's section, and commits:

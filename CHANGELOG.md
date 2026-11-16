@@ -5,7 +5,11 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+The changes since the last release are not in this file: each is a
+file in `changes.d/` ([changes.d/README.md](changes.d/README.md)),
+added by the pull request that makes the change. `tools/changelog show`
+prints them as the next release's section; a release writes them here.
+The sections below are released and stay as they are.
 
 ## v0.7.0 — 2026-11-16
 

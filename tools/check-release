@@ -8,7 +8,9 @@
 # It checks the files as they are in <commit> (default: the tag if it
 # exists, else HEAD):
 #   - packaging/suse/custos.spec has Version: X.Y.Z;
-#   - the first "## " heading of CHANGELOG.md is "## vX.Y.Z — <date>";
+#   - the first "## " heading of CHANGELOG.md is "## vX.Y.Z — <date>",
+#     and changes.d holds no fragment that is not in it yet
+#     (tools/changelog release);
 #   - packaging/suse/_service builds from release-X.Y with the version
 #     of its latest tag (a release branch, not main);
 #   - the tree holds sources only (tools/check-tree).
@@ -48,6 +50,10 @@ case "$heading" in
 "## $tag "*) ;;
 *) fail "the first section of CHANGELOG.md is \"$heading\", not \"## $tag — <date>\"" ;;
 esac
+
+left=$(git ls-tree -r --name-only "$rev" -- changes.d | grep -v '^changes\.d/README\.md$' || true)
+[ -z "$left" ] ||
+	fail "changes.d still has $(echo "$left" | tr '\n' ' ')- not in CHANGELOG.md yet (tools/changelog release $tag)"
 
 service=$(git show "$rev:packaging/suse/_service")
 echo "$service" | grep -q "<param name=\"revision\">release-$series</param>" ||
