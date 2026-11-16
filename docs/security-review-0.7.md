@@ -23,13 +23,15 @@ changes; the review went through the difference between the two
 versions, not through the pull requests' descriptions, and read the
 modules' code where a finding or a "sound" below depends on it.
 
-**Where it stands.** No finding is high, medium or low. Two of the
-three are fixed with this review; R2 needs the maintainer's decision:
+**Where it stands.** No finding is high, medium or low. R1 and R3 are
+fixed with this review. For R2 the maintainer decided (2026-11-16): a
+`govulncheck` job in CI, and 0.7.0 is released on Go 1.25 with what
+the job found recorded here:
 
 | Finding | Severity | Status |
 |---|---|---|
 | R1 | info | fixed: the claim corrected (changelog, code comment) |
-| R2 | info | open: the modules were not checked against a vulnerability database |
+| R2 | info | checked now, in CI; five known findings in `golang.org/x/net` are accepted until Custos moves to Go 1.26 |
 | R3 | info | fixed: `--` ends `agent-admin`'s options |
 
 ## R1 — info — a large record does not reach the journal as a record from an agent under SELinux
@@ -81,19 +83,56 @@ The build gains seven modules, and two become direct:
 `go mod verify` passes: the modules are the ones `go.sum` names. None
 of the SDK's Azure or AWS packages is compiled (`go list -deps`).
 
-Not done: a check of these versions against the Go vulnerability
-database. The review's environment could reach neither `vuln.go.dev`
-nor `osv.dev`, `govulncheck` is not part of CI, and Dependabot alerts
-are switched off for the repository. The reviewer knows of no open
-advisory for these versions, which is a recollection and not a check.
+When the review was written, these versions had not been checked
+against the Go vulnerability database: the review's environment could
+reach neither `vuln.go.dev` nor `osv.dev`, `govulncheck` was not part
+of CI, and Dependabot alerts are switched off for the repository.
 
-*Proposed:* one of
-- a CI job that runs `govulncheck ./...` (a pinned version), which
-  also reports only the vulnerable functions the code reaches; or
-- Dependabot alerts for the repository (a setting, no code).
+*Fix:* the workflow `Vulnerabilities` (`.github/workflows/vulncheck.yml`)
+runs `govulncheck ./...` on pushes, on pull requests and every week.
+It fails on a vulnerability whose function Custos's code can reach,
+unless `.github/vulncheck-known` lists it with its reason.
 
-Until one of them has run, 0.7.0's modules are unchecked in this
-respect, as 0.6's were.
+*What its first runs found (2026-11-16):*
+
+- **None in the modules 0.7.0 adds** (the table above).
+- **Five in `golang.org/x/net` v0.58.0**, in its HTTP/2, which the
+  agent's dependencies link. They are fixed in v0.60.0, which needs Go
+  1.26 in `go.mod`:
+
+  | ID | What | Side |
+  |---|---|---|
+  | GO-2026-6617 | crash due to an HPACK encoder race | HTTP/2 server |
+  | GO-2026-6612 | double flow control refund on streams | HTTP/2 server |
+  | GO-2026-6611 | CPU consumption from repeated initial window changes | HTTP/2 |
+  | GO-2026-6603 | memory exhaustion due to Trailer headers | HTTP/2 server |
+  | GO-2026-6610 | malformed framing-related headers accepted | HTTP/2 client |
+
+- **Thirteen in the standard library of upstream Go 1.25.14**, the
+  newest 1.25 (`net/http` 8, `html/template` 2, `crypto/x509`,
+  `crypto/tls` and `net/textproto` 1 each; four of them reached by test
+  tools only). Upstream fixed them in Go 1.26.9 to 1.26.11 and in no
+  1.25 release. With Go 1.27.4 the standard library is clean.
+
+None of this is new in 0.7.0: 0.6.2 has the same `golang.org/x/net`
+and the same Go.
+
+*Decided:*
+
+- Custos is built with the Go its distribution ships, which Custos
+  cannot choose, and SUSE's Go gets security fixes on its older
+  releases. The standard library's vulnerabilities are therefore the
+  distribution's to fix, and the job checks with the current Go, so
+  that it reports what is Custos's: its modules.
+- The five in `golang.org/x/net` are accepted for 0.7.0 and listed in
+  `.github/vulncheck-known`. They go when Custos moves to Go 1.26.
+
+*Not assessed:* whether each of the five can be used against Custos.
+The agent serves HTTP/1 on a Unix socket and no HTTP/2, which speaks
+against the four on the server's side; GO-2026-6610 is about what an
+HTTP/2 server the agent talks to (a model endpoint, the gateway over
+HTTPS) may send. The advisories' texts were not read: they could not
+be reached from the review's environment.
 
 ## R3 — info — `--` did not end `agent-admin`'s options
 

@@ -1,0 +1,13 @@
+# Vulnerabilities govulncheck reports for Custos that are known and
+# accepted for now, one ID per line; the workflow "Vulnerabilities"
+# fails on any other. Each entry says why it is here and when it goes.
+# docs/security-review-0.7.md, R2.
+
+# golang.org/x/net v0.58.0, HTTP/2; fixed in v0.60.0, which needs Go 1.26
+# in go.mod. Custos builds with the Go the distribution ships (1.25), so
+# these go when Custos moves to Go 1.26. The agent serves no HTTP/2.
+GO-2026-6617
+GO-2026-6612
+GO-2026-6611
+GO-2026-6610
+GO-2026-6603

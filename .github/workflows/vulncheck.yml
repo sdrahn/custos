@@ -1,9 +1,9 @@
 name: Vulnerabilities
 
-# govulncheck: the Go modules in the build, and Go's standard library,
-# against the Go vulnerability database (vuln.go.dev). It reports a
-# vulnerability only when Custos's code can reach the affected function,
-# and fails then (security review 0.7, R2).
+# govulncheck: the Go modules in the build against the Go vulnerability
+# database (vuln.go.dev). It reports a vulnerability only when Custos's
+# code can reach the affected function. The job fails on one that is not
+# listed in .github/vulncheck-known (security review 0.7, R2).
 #
 # Every week as well, on main: a vulnerability is published when it is
 # found, not when the code changes.
@@ -29,15 +29,31 @@ jobs:
   govulncheck:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ["1.25.x", "stable"]
-    name: govulncheck (Go ${{ matrix.go }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          # The current Go, not go.mod's 1.25: the packages are built
+          # with the distribution's Go, which gets its security fixes
+          # there. What the standard library has fixed upstream is the
+          # distribution's to carry, not a finding against Custos.
+          go-version: stable
       - name: govulncheck
-        run: go run "$GOVULNCHECK" ./...
+        # As JSON (which always exits 0); a finding with a function in
+        # its first frame is one the code reaches.
+        run: |
+          go run "$GOVULNCHECK" -format json ./... >vuln.json
+          jq -r 'select(.finding != null) | select(.finding.trace[0].function != null) | .finding.osv' vuln.json | sort -u >found
+          grep -o '^GO-[0-9]*-[0-9]*' .github/vulncheck-known | sort -u >known
+          echo "Reachable: $(tr '\n' ' ' <found)"
+          comm -12 found known | sed 's/^/known, accepted: /'
+          comm -13 found known | sed 's/^/::warning::listed in .github\/vulncheck-known but no longer found: /'
+          new=$(comm -23 found known)
+          [ -z "$new" ] && exit 0
+          for id in $new; do
+            echo "::error::$id: https://pkg.go.dev/vuln/$id"
+            jq -r --arg id "$id" 'select(.osv.id == $id) | .osv.summary' vuln.json
+            jq -r --arg id "$id" 'select(.finding.osv == $id) | select(.finding.trace[0].function != null)
+              | .finding | "  \(.trace[0].module)@\(.trace[0].version), fixed in \(.fixed_version // "no release"): \(.trace[-1].position.filename // "?"):\(.trace[-1].position.line // 0) reaches \(.trace[0].package).\(.trace[0].receiver // "")\(if .trace[0].receiver then "." else "" end)\(.trace[0].function)"' vuln.json | sort -u | head -5
+          done
+          exit 1
