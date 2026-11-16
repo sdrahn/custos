@@ -83,7 +83,7 @@ registered, with the repositories that hold the `mcp-gateway` and
 ## Adding tests
 
 A feature that shows on an installed system gets checks here, in the
-pull request that adds it (CLAUDE.md):
+pull request that adds it (AGENTS.md):
 
 ```bash
 section "My feature"
