@@ -5,6 +5,8 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
+## Unreleased
+
 ## v0.7.0 — 2026-11-16
 
 The code reworked so that several people can work on it, with nothing
