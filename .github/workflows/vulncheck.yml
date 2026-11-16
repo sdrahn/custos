@@ -1,0 +1,41 @@
+name: Vulnerabilities
+
+# govulncheck: the Go modules in the build, and Go's standard library,
+# against the Go vulnerability database (vuln.go.dev). It reports a
+# vulnerability only when Custos's code can reach the affected function,
+# and fails then (security review 0.7, R2).
+#
+# Every week as well, on main: a vulnerability is published when it is
+# found, not when the code changes.
+
+on:
+  push:
+    branches: [main, "release-*"]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The last govulncheck that builds with Go 1.25 (1.8 needs Go 1.26); to
+  # be moved with go.mod's Go version. The database it reads is always
+  # the current one.
+  GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # The newest patch release of go.mod's Go, as a distribution
+          # builds the packages with: the standard library's fixed
+          # vulnerabilities are not Custos's to report.
+          go-version: "1.25.x"
+      - name: govulncheck
+        run: go run "$GOVULNCHECK" ./...
