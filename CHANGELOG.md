@@ -5,7 +5,38 @@ All notable changes to Custos. Versions follow
 (CONTRACT.md), names, paths and fields are added, never renamed or
 removed.
 
-## Unreleased
+## v0.7.0 — 2026-11-16
+
+The code reworked so that several people can work on it, with nothing
+new for an administrator to learn. `internal/admin` is split into
+packages by topic (the identity provider, the templates, promotion and
+readiness, the setup), `agent-admin`'s commands are a table with a file
+per group, and the largest files of the agent's side are split by
+topic. `docs/architecture.md` says which package owns what and what it
+may import, and a test (`test/boundaries`) holds the code to it. Where
+a maintained Go module does what Custos had written itself, the module
+is used: go-systemd for journald's protocol, `x/oauth2` and golang-jwt
+for `agent-admin check-token`, go-udiff for `agent-admin compare`, and
+the OpenAI Go SDK for the model client. The security review before
+0.7 (`docs/security-review-0.7.md`) went through what moved and what
+the modules replaced, and found nothing above a note in them. CI now
+checks the build's modules against the Go vulnerability database.
+
+Upgrading from 0.6.x needs no change to configurations or gateway
+data, and adds nothing to the contract; mcp-gateway 1.16 stays the
+minimum. To know:
+
+- A script that passes `agent-admin` an option the command does not
+  have fails now, where the option was ignored before.
+- The model evaluation gives the picture of 0.6.0 (chapter 5) with the
+  OpenAI Go SDK: Qwen3 8B wrote 3 of 4 reports, and 2 of 4 on the same
+  day without the SDK, which four runs do not show to be a difference.
+  No tested model followed a prompt injection.
+- Known and accepted for this release: five vulnerabilities in the
+  HTTP/2 of `golang.org/x/net` v0.58.0 (GO-2026-6603, -6610, -6611,
+  -6612, -6617), which 0.6 has as well. Their fix needs Go 1.26;
+  Custos builds with the Go the distribution ships. The agent serves
+  no HTTP/2 (security review 0.7, R2).
 
 ### Changed
 
@@ -37,6 +68,13 @@ removed.
   SDK's retries and its `X-Stainless-*` headers are switched off, and
   its environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) are
   not read. `agent-launcher` grows by about 11 MB.
+- `agent-admin check-token` requests its token with
+  `golang.org/x/oauth2` and reads the claims with
+  `github.com/golang-jwt/jwt/v5`. An issuer that answers the token
+  request with JSON labelled `text/plain` is refused now; RFC 6749 asks
+  for `application/json`, which Keycloak sends.
+- `agent-admin compare` computes its differences with
+  `github.com/aymanbagabas/go-udiff`; what it prints is unchanged.
 
 ## v0.6.2 — 2026-11-10
 
