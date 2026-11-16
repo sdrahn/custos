@@ -142,8 +142,11 @@ func NewAs(ident, name string, w io.Writer) Logger {
 }
 
 // native writes to journald with go-systemd, which speaks its native
-// protocol (multi-line values, and a memfd for a record too large for a
-// datagram).
+// protocol: multi-line values, and for a record too large for a datagram
+// a file in /dev/shm, unlinked at once, whose descriptor it passes.
+// Where the process may not create that file (an agent under SELinux:
+// agent_t has no rule for it, on purpose), Send fails and the record is
+// kept as a JSON line, as before go-systemd.
 type native struct {
 	ident    string
 	name     string
@@ -167,7 +170,8 @@ func (n *native) Log(event, message string, f Fields) {
 		}
 	}
 	if err := n.send(message, priority(event), vars); err != nil {
-		// journald gone: keep the record.
+		// journald gone, or too large and no file to pass: keep the
+		// record.
 		n.fallback.Log(event, message, f)
 	}
 }
