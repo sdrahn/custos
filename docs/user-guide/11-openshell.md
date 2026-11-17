@@ -43,7 +43,7 @@ ones.
 
 ## Step 1: OpenShell on the host {#install-openshell}
 
-OpenShell 0.1.7 or later, with rootless Podman (OpenShell's RPM default)
+OpenShell 0.1.8 or later, with rootless Podman (OpenShell's RPM default)
 or Docker. With rootless Podman, OpenShell's gateway is a
 `systemctl --user` service of an ordinary user, here `osh`, whose Podman
 holds the sandboxes. As root:

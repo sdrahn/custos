@@ -20,7 +20,7 @@ the parts found each other. Creating the first agent is
 | systemd | the system's; agents use `systemd-creds` for secrets |
 | a model | an OpenAI-compatible server (for example a local vLLM or llama.cpp server), Google Gemini, or Vertex AI ([chapter 5](05-configuration.md#models)) |
 | Cockpit | for the web page: `cockpit` (Cockpit 137 or later) |
-| NVIDIA OpenShell | only for agents in OpenShell sandboxes: 0.1.7 or later ([chapter 11](11-openshell.md)) |
+| NVIDIA OpenShell | only for agents in OpenShell sandboxes: 0.1.8 or later ([chapter 11](11-openshell.md)) |
 
 With a model server on the host or the local network, an agent needs
 nothing from the internet: Custos works air-gapped.
