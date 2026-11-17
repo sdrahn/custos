@@ -392,7 +392,16 @@ if [ "$runtime" = systemd ]; then
 	echo "    | workload: pid ${wl:-none}, user $(stat -c %U "/proc/$wl" 2>&1), $(tr -d '\0' <"/proc/$wl/attr/current" 2>&1)"
 	check "the workload runs as a user of the sandbox's own" bash -c "u=\$(stat -c %u /proc/$wl) && [ \"\$u\" -ge 70000 ] && [ \"\$u\" -le 79999 ]"
 	check "the agent-launcher in the sandbox is the host's" eventually 60 bash -c \
-		"pgrep -f -u \"\$(stat -c %u /proc/$wl)\" '^/usr/libexec/custos/agent-launcher serve' >/dev/null"
+		"pgrep -f -u \"\$(stat -c %u /proc/$wl)\" '^/usr/libexec/custos/agent-launcher serve' >/dev/null" || {
+		# What the workload printed: openshell-sandbox's lines and the
+		# agent's, before it ended.
+		echo "    | the workload unit's journal:"
+		journalctl --no-pager -o cat --since "@$t0" -u "openshell-sandbox-workload@$sid.service" 2>&1 |
+			grep -v 'network notification denied' | tail -n 40 | cut -c1-300 | sed 's/^/    | /'
+		echo "    | its state: $(systemctl show -p ActiveState,SubState,Result,ExecMainStatus --value "openshell-sandbox-workload@$sid.service" | tr '\n' ' ')"
+		echo "    | SELinux denials so far (audit.log):"
+		cat /var/log/audit/audit.log* 2>/dev/null | grep 'avc:  denied' | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | tail -n 15 | cut -c1-300 | sed 's/^/    | /'
+	}
 fi
 
 section "Supervising through the relay"
@@ -601,6 +610,9 @@ if [ -n "$system" ]; then
 	# that ausearch does not take would make the check blind.
 	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
 	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
+	# On the Leap 16 VM ausearch -ts boot has given nothing where the
+	# audit log had denials: the log itself, too.
+	[ -n "$avc" ] || avc=$(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied')
 	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
 	if [ "$runtime" = systemd ]; then
 		# Not a check yet: what the driver's domains were refused while a
