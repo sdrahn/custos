@@ -570,7 +570,16 @@ if [ -n "$relay_ok" ]; then
 		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null" ||
 		sandbox_state
 	a=$(run_activity PROBE)
-	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok"
+	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok" || {
+		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null | head -c 600 || head -c 400 <<<"$a")"
+		journalctl -u "$gw_unit" -o cat --no-pager --since "-180s" | grep -v '"audit":true' | tail -n 8 | cut -c1-240 | sed 's/^/    | gateway: /'
+		if [ "$runtime" = systemd ]; then
+			sid2=$(openshell -g openshell sandbox get agent-sb 2>/dev/null | awk '$1 == "Id:" {print $2}')
+			echo "    | the new sandbox: ${sid2:-none}, user $(cat "/var/lib/openshell/systemd/$sid2/uid" 2>&1)"
+			journalctl --no-pager -o cat --since "-180s" -u "openshell-sandbox-supervisor@$sid2.service" 2>&1 |
+				grep -iE 'error|warn|denied|tls|certificate|credential|provider' | tail -n 10 | cut -c1-240 | sed 's/^/    | supervisor: /'
+		fi
+	}
 	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml" ||
 		sandbox_state
 	check "and the agent answers again" eventually 180 bash -c \
