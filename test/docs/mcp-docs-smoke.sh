@@ -28,8 +28,12 @@ done
 {
 	echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
 	echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-	call 2 find_sections '{"query":"connect the gateway to Keycloak for an OpenShell agent"}'
-	call 3 find_sections '{"query":"stop all agents at once"}'
+	# In the collection custos: mcp-gateway's guide is installed next to
+	# it, and for the gateway and Keycloak mcp-docs may rank it first,
+	# which is right for an agent that asks about the gateway. The test is
+	# that Custos's guide answers its own questions.
+	call 2 find_sections '{"query":"connect the gateway to Keycloak for an OpenShell agent","collection":"custos"}'
+	call 3 find_sections '{"query":"stop all agents at once","collection":"custos"}'
 	call 4 search '{"query":"did not load the change within","collection":"custos"}'
 	call 5 read_section '{"doc":"custos/user-guide/06-permissions-and-modes.md#modes"}'
 	echo '{"jsonrpc":"2.0","id":6,"method":"resources/read","params":{"uri":"docs://custos/user-guide/README.md"}}'
