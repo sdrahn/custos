@@ -11,7 +11,9 @@
 #   SUITE      functional (default): test/vm/run-tests.sh; openshell: the
 #              OpenShell backend with rootless Podman and SELinux
 #              enforcing (test/openshell/vm-setup.sh, then
-#              test/openshell/run-spike.sh --system); cockpit: the
+#              test/openshell/run-spike.sh --system); openshell-systemd:
+#              the same on the OpenShell systemd compute driver, whose
+#              packages are in DRIVER_RPMS (#215); cockpit: the
 #              Cockpit page in a real Cockpit (test/cockpit/vm-setup.sh in
 #              the VM, then test/cockpit/vm-test.js here, with node and
 #              playwright-core; Cockpit's port 9090 is forwarded to
@@ -35,6 +37,7 @@
 #              offline mirror MIRROR (test/airgap/mirror.sh), then runs
 #              the functional tests with --model against it
 #   MIRROR     airgap: the offline mirror's directory
+#   DRIVER_RPMS openshell-systemd: the driver's packages
 #   IMAGE_URL  cloud image (default: openSUSE Tumbleweed Minimal-VM, Cloud)
 #   WORK       working directory (default: a new temporary directory); the
 #              serial console log, test output and results (TAP, JUnit;
@@ -231,17 +234,26 @@ vm 'bash /root/custos-vm/prepare.sh /root/custos-vm' 2>&1 | tee "$work/prepare.l
 [ "${PIPESTATUS[0]}" = 0 ] || exit 1
 log "running the tests"
 set +e
-if [ "${SUITE:-functional}" = openshell ]; then
+if [ "${SUITE:-functional}" = openshell ] || [ "${SUITE:-functional}" = openshell-systemd ]; then
+	setup_args= spike_args=
 	vm 'mkdir -p /root/custos-vm/src/test/openshell'
 	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 		"$here/../openshell/run-spike.sh" "$here/../openshell/vm-setup.sh" "$here/../openshell/openshell-version" \
-		root@127.0.0.1:/root/custos-vm/src/test/openshell/
-	vm 'bash /root/custos-vm/src/test/openshell/vm-setup.sh' 2>&1 | tee "$work/openshell-setup.log"
+		"$here/../openshell/systemd-driver" root@127.0.0.1:/root/custos-vm/src/test/openshell/
+	if [ "$SUITE" = openshell-systemd ]; then
+		[ -n "${DRIVER_RPMS:-}" ] && ls "$DRIVER_RPMS"/*.rpm >/dev/null 2>&1 ||
+			{ echo "SUITE=openshell-systemd needs DRIVER_RPMS with the driver's packages" >&2; exit 1; }
+		vm 'mkdir -p /root/custos-vm/driver-rpms'
+		scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+			"$DRIVER_RPMS"/*.rpm root@127.0.0.1:/root/custos-vm/driver-rpms/
+		setup_args="--driver systemd /root/custos-vm/driver-rpms" spike_args="--driver systemd"
+	fi
+	vm "bash /root/custos-vm/src/test/openshell/vm-setup.sh $setup_args" 2>&1 | tee "$work/openshell-setup.log"
 	if [ "${PIPESTATUS[0]}" != 0 ]; then
 		log "setting up OpenShell failed"
 		exit 1
 	fi
-	vm "OPENSHELL_GATEWAY_USER=osh bash /root/custos-vm/src/test/openshell/run-spike.sh --system $args" 2>&1 | tee "$work/test.log"
+	vm "OPENSHELL_GATEWAY_USER=osh bash /root/custos-vm/src/test/openshell/run-spike.sh --system $spike_args $args" 2>&1 | tee "$work/test.log"
 elif [ "${SUITE:-functional}" = cockpit ]; then
 	password=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
 	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
@@ -339,6 +351,12 @@ scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFi
 	root@127.0.0.1:/root/custos-vm/results/avc.txt root@127.0.0.1:/root/custos-vm/results/journal.txt "$work/"
 scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 	'root@127.0.0.1:/root/custos-vm/results/injection-*.json' "$work/" || true
+# The OpenShell spike's logs: the relay, the sandbox, and with the
+# systemd driver its units.
+case ${SUITE:-functional} in openshell | openshell-systemd)
+	scp -q -i "$work/key" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		'root@127.0.0.1:/root/custos-vm/results/*.log' "$work/" || true ;;
+esac
 set -e
 log "tests exited with $status"
 exit "$status"
