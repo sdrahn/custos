@@ -276,12 +276,13 @@ osh_systemctl() {
 			env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" systemctl --user "$@"
 }
 if [ "$runtime" = systemd ]; then
-	# With the systemd driver the supervisor runs on the host and reads
-	# the host's CA bundle (OpenShell 0.1.8: /etc/ssl/ca-bundle.pem on
-	# openSUSE), with the additional bundle of a container driver's
-	# settings folded in; this driver has no such setting. So the
-	# gateway's CA goes into the host's trust store, which the agent's
-	# supervisor reads when its sandbox starts.
+	# OpenShell 0.1.8 refuses gateway.toml's
+	# [openshell.supervisor.network] additional_ca_bundle with an external
+	# compute driver ("cannot propagate network trust"), and the gateway
+	# then does not start. With the systemd driver the supervisor runs on
+	# the host and reads the host's CA bundle (/etc/ssl/ca-bundle.pem on
+	# openSUSE), so the gateway's CA goes into the host's trust store,
+	# which the agent's supervisor reads when its sandbox starts.
 	install -m 0644 "$work/tls/ca.pem" /etc/pki/trust/anchors/custos-spike-ca.pem
 	check "the host's trust store takes the gateway's CA" update-ca-certificates
 	check "the host's CA bundle has it" bash -c "grep -qF \"\$(sed -n 2p '$work/tls/ca.pem')\" /etc/ssl/ca-bundle.pem"
