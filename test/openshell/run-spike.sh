@@ -610,15 +610,15 @@ if [ -n "$system" ]; then
 	# that ausearch does not take would make the check blind.
 	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
 	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
-	# On the Leap 16 VM ausearch -ts boot has given nothing where the
-	# audit log had denials: the log itself, too.
-	[ -n "$avc" ] || avc=$(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied')
 	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
 	if [ "$runtime" = systemd ]; then
 		# Not a check yet: what the driver's domains were refused while a
-		# Custos agent ran in them.
-		echo "    | denials for the driver's domains (openshell_*): $(grep -cE 'scontext=[^ ]*:openshell_[a-z_]*_t:' <<<"$avc")"
-		grep -E 'scontext=[^ ]*:openshell_[a-z_]*_t:' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 20 | sed 's/^/    | /'
+		# Custos agent ran in them. From the audit log itself: on the Leap 16
+		# VM ausearch -ts boot gives nothing where the log has denials
+		# (the check below has the same blind spot, #221).
+		drv=$(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied' | grep -E 'scontext=[^ ]*:openshell_[a-z_]*_t:')
+		echo "    | denials for the driver's domains (openshell_*, audit.log): $(grep -c . <<<"$drv")"
+		printf '%s\n' "$drv" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 20 | sed 's/^/    | /'
 	fi
 	check "no SELinux denial for custos's domains" not grep -qE 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" ||
 		grep -E 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/' | sort -u | head -n 20 | sed 's/^/    | /'
