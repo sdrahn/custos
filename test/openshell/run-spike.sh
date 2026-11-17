@@ -399,6 +399,16 @@ if [ "$runtime" = systemd ]; then
 		journalctl --no-pager -o cat --since "@$t0" -u "openshell-sandbox-workload@$sid.service" 2>&1 |
 			grep -v 'network notification denied' | tail -n 40 | cut -c1-300 | sed 's/^/    | /'
 		echo "    | its state: $(systemctl show -p ActiveState,SubState,Result,ExecMainStatus --value "openshell-sandbox-workload@$sid.service" | tr '\n' ' ')"
+		# The sandbox's own variables (--env, --env-from) as systemd gave
+		# them to the supervisor, in OPENSHELL_USER_ENVIRONMENT: names,
+		# lengths and whether the configuration decodes. No values: one of
+		# them is the relay secret.
+		sup=$(systemctl show -p MainPID --value "openshell-sandbox-supervisor@$sid.service")
+		ue=$(tr '\0' '\n' <"/proc/$sup/environ" 2>/dev/null | sed -n 's/^OPENSHELL_USER_ENVIRONMENT=//p')
+		echo "    | the supervisor's OPENSHELL_USER_ENVIRONMENT: ${#ue} bytes, $(jq -r 'to_entries | map("\(.key) (\(.value | length))") | join(", ")' <<<"$ue" 2>&1 | head -c 300)"
+		echo "    | CUSTOS_CONFIG there decodes: $(jq -r '.CUSTOS_CONFIG // empty' <<<"$ue" 2>/dev/null | base64 -d 2>/dev/null | head -c 40 | tr -c '[:print:]' '.')"
+		f=/var/lib/openshell/systemd/$sid/supervisor.env
+		echo "    | supervisor.env: $(wc -c <"$f" 2>&1) bytes; its line: $(grep -c '^OPENSHELL_USER_ENVIRONMENT=' "$f" 2>&1), $(grep '^OPENSHELL_USER_ENVIRONMENT=' "$f" 2>/dev/null | wc -c) bytes"
 		echo "    | SELinux denials so far (audit.log):"
 		cat /var/log/audit/audit.log* 2>/dev/null | grep 'avc:  denied' | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | tail -n 15 | cut -c1-300 | sed 's/^/    | /'
 	}
