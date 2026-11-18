@@ -30,14 +30,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The current Go, not go.mod's 1.25: the packages are built
           # with the distribution's Go, which gets its security fixes
           # there. What the standard library has fixed upstream is the
           # distribution's to carry, not a finding against Custos.
           go-version: stable
+          cache-dependency-path: go.sum
       - name: govulncheck
         # As JSON (which always exits 0); a finding with a function in
         # its first frame is one the code reaches.
