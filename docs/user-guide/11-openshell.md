@@ -84,7 +84,9 @@ The steps below apply, with these differences:
   OpenShell's gateway for root as shown, `chown` included: the relay
   reads that registration to find the sandbox, as root but in its own
   SELinux domain, which may not read another user's files. Leave
-  `CUSTOS_OPENSHELL_USER` unset.
+  `CUSTOS_OPENSHELL_USER` unset. After installing the packages,
+  `agent-admin openshell-setup --user osh --driver systemd --ca ca.pem`
+  does the rest of this step and step 4 ([below](#setup)).
 - **Step 2.** No image. `agent-admin` creates the sandbox
   `--from host`, the only image name the driver takes.
 - **Step 4.** OpenShell refuses `additional_ca_bundle` with an external
@@ -97,6 +99,8 @@ The steps below apply, with these differences:
   ```
 
   Sandboxes that run pick it up when they restart.
+  `agent-admin openshell-setup --ca` puts it there as
+  `custos-mcp-gateway-ca.pem`.
 - **Step 7.** `sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: systemd}`.
 - **Step 8.** The same commands, without `CUSTOS_OPENSHELL_USER`.
 - **Step 9.** The sandbox's units and the agent's records:
