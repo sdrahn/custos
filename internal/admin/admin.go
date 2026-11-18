@@ -148,6 +148,7 @@ func (a *Admin) Check(target string) error {
 		return err
 	}
 	a.noteGatewayHost(cfg)
+	a.noteRefresh(cfg)
 	return nil
 }
 
@@ -189,6 +190,7 @@ func (a *Admin) CreateConfig(name string, b []byte) (err error) {
 		if err == nil {
 			a.noteModelCredential(cfg)
 			a.noteGatewayHost(cfg)
+			a.noteRefresh(cfg)
 		}
 	}()
 	user := "agent-" + name
@@ -434,6 +436,7 @@ func (a *Admin) EditConfig(name string, b []byte) (err error) {
 		if err == nil {
 			a.noteModelCredential(cfg)
 			a.noteGatewayHost(cfg)
+			a.noteRefresh(cfg)
 		}
 	}()
 	if old != nil && old.Sandbox.Kind != cfg.Sandbox.Kind {

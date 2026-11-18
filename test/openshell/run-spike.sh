@@ -337,7 +337,7 @@ instruction: You are a test agent.
 gateway:
   url: "$aud"
   servers: [custos-test]
-  oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 30}
+  oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 90}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
 sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: $([ "$runtime" = systemd ] && echo systemd || echo container)}

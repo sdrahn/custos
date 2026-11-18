@@ -345,7 +345,7 @@ gateway:
     token_url: https://idp.example.com/realms/mcp/protocol/openid-connect/token
     client_id: agent-patch-pilot
     scopes: [mcp-agents]
-    refresh_before_seconds: 60
+    refresh_before_seconds: 120
 sandbox: {kind: openshell, openshell_gateway: openshell}
 ```
 
@@ -398,8 +398,13 @@ set it again.
 ## How the token is renewed {#oauth}
 
 OpenShell's gateway renews the token `refresh_before_seconds` before it
-expires (OpenShell's default if unset) and the sandbox's placeholder
-always resolves to the current one, so the agent needs no restart.
+expires (OpenShell's default, 300, if unset) and the sandbox's
+placeholder always resolves to the current one, so the agent needs no
+restart. It looks for tokens to renew once a minute: with less than 90
+seconds, a token can expire before it is renewed, and a sandbox that
+starts then gets no token at all (its calls to the gateway fail with
+`401`, "no bearer token", until it is restarted). `agent-admin check`
+notes such a value.
 While a renewal happens, OpenShell's proxy can answer a request with
 `500`; the agent retries for a few seconds and reconnects. Check the
 renewal:
