@@ -39,6 +39,7 @@ const (
 	DelegateDropIn  = "/etc/systemd/system/user@.service.d/custos-openshell.conf"
 	HelperDropInDir = "/etc/systemd/system/openshell-systemd-helper.service.d"
 	HelperDropIn    = HelperDropInDir + "/custos.conf"
+	HelperSocket    = "/run/openshell-systemd-helper/helper.sock"
 	TrustAnchor     = "/etc/pki/trust/anchors/custos-mcp-gateway-ca.pem"
 	RootConfig      = "/root/.config/openshell"
 	LingerDir       = "/var/lib/systemd/linger"
@@ -401,7 +402,10 @@ func (s *setup) helper() error {
 		if s.o.Check {
 			return nil
 		}
-		return s.a.Run(nil, "systemctl", "enable", "--now", "openshell-systemd-helper.service")
+		if err := s.a.Run(nil, "systemctl", "enable", "--now", "openshell-systemd-helper.service"); err != nil {
+			return err
+		}
+		return s.helperRuns()
 	}
 	s.change("the driver's helper serves " + s.u.name + " (" + HelperDropIn + ")")
 	if s.o.Check {
@@ -412,7 +416,15 @@ func (s *setup) helper() error {
 			return err
 		}
 	}
-	return nil
+	return s.helperRuns()
+}
+
+// helperRuns waits for the helper's socket: systemctl's start succeeds
+// as soon as the helper is started (Type=exec), also when it exits at
+// once, and the driver then fails for want of it. The helper's journal
+// says why (the driver's says only that there is no helper).
+func (s *setup) helperRuns() error {
+	return s.waitFor(HelperSocket, 15, "journalctl -u openshell-systemd-helper.service (the driver's helper does not run)")
 }
 
 func (s *setup) driverSocket() string { return s.runtimeDir() + "/openshell/systemd-driver.sock" }
@@ -444,17 +456,17 @@ func (s *setup) driver() error {
 			return err
 		}
 	}
-	return s.waitFor(s.driverSocket(), 30)
+	return s.waitFor(s.driverSocket(), 30, "journalctl --user -u openshell-driver-systemd as "+s.u.name)
 }
 
-func (s *setup) waitFor(path string, tries int) error {
+func (s *setup) waitFor(path string, tries int, journal string) error {
 	for range tries {
 		if s.has(path) {
 			return nil
 		}
 		s.sleep(time.Second)
 	}
-	return fmt.Errorf("%s did not appear: see journalctl --user -u openshell-driver-systemd as %s", path, s.u.name)
+	return fmt.Errorf("%s did not appear: see %s", path, journal)
 }
 
 func (s *setup) sleep(d time.Duration) {
