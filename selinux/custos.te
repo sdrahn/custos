@@ -243,6 +243,13 @@ gen_require(`
 	class dir watch;
 ')
 allow agent_relay_t var_log_t:dir watch;
+# journalctl has a type of its own: the relay runs it in its domain.
+optional_policy(`
+	gen_require(`
+		type journalctl_exec_t;
+	')
+	can_exec(agent_relay_t, journalctl_exec_t)
+')
 # It asks the OpenShell gateway for the sandbox's id: the openshell CLI
 # reads root's registration of that gateway (/root/.config/openshell,
 # config_home_t; the relay unit's HOME=/root). The Go runtime reads the
