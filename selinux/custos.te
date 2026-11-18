@@ -31,6 +31,11 @@ files_pid_file(agent_runtime_t)
 type agent_sock_t;
 files_type(agent_sock_t)
 
+# Root's registration of OpenShell's gateway (/root/.config/openshell),
+# which the relay reads; not every user's ~/.config (config_home_t).
+type agent_openshell_home_t;
+files_type(agent_openshell_home_t)
+
 ## <desc><p>Allow agents to connect to any TCP port (model servers on unusual ports).</p></desc>
 gen_tunable(agent_connect_any, false)
 
@@ -275,14 +280,17 @@ optional_policy(`
 ')
 # It asks the OpenShell gateway for the sandbox's id: the openshell CLI
 # reads root's registration of that gateway (/root/.config/openshell,
-# config_home_t; the relay unit's HOME=/root). The Go runtime reads the
-# huge page size from sysfs.
+# agent_openshell_home_t; the relay unit's HOME=/root). Of /root/.config
+# (config_home_t, as every user's ~/.config) it may only pass through the
+# directory, not read what is there (security review 0.8, S5). The Go
+# runtime reads the huge page size from sysfs.
+list_dirs_pattern(agent_relay_t, agent_openshell_home_t, agent_openshell_home_t)
+read_files_pattern(agent_relay_t, agent_openshell_home_t, agent_openshell_home_t)
 optional_policy(`
 	gen_require(`
 		type config_home_t;
 	')
-	list_dirs_pattern(agent_relay_t, config_home_t, config_home_t)
-	read_files_pattern(agent_relay_t, config_home_t, config_home_t)
+	search_dirs_pattern(agent_relay_t, config_home_t, config_home_t)
 ')
 dev_read_sysfs(agent_relay_t)
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)

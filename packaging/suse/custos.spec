@@ -203,8 +203,10 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 # What was installed or made before the module was loaded (the programs,
 # the main package's tmpfiles, agents' state) gets the module's labels:
-# a launcher left bin_t would run outside agent_t.
-for d in %{_libexecdir}/custos /run/agents /var/lib/agents /etc/custos; do
+# a launcher left bin_t would run outside agent_t. Root's OpenShell
+# registration, made by hand or by agent-admin openshell-setup, gets the
+# type the relay may read.
+for d in %{_libexecdir}/custos /run/agents /var/lib/agents /etc/custos /root/.config/openshell; do
     [ -e "$d" ] && restorecon -R "$d" || :
 done
 

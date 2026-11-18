@@ -591,7 +591,15 @@ func (s *setup) registration() error {
 	if s.o.Check {
 		return nil
 	}
-	return s.a.Run(nil, "chown", "-R", "root:root", RootConfig)
+	if err := s.a.Run(nil, "chown", "-R", "root:root", RootConfig); err != nil {
+		return err
+	}
+	// The label the relay may read (agent_openshell_home_t, custos.fc), on
+	// what was copied and what the openshell CLI wrote there before.
+	if s.program("restorecon") {
+		return s.a.Run(nil, "restorecon", "-R", RootConfig)
+	}
+	return nil
 }
 
 // verify: root's openshell reaches the gateway, which names the driver.
