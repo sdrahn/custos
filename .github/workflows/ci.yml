@@ -432,13 +432,13 @@ jobs:
           zypper -n --gpg-auto-import-keys in --no-recommends
           tar gzip zstd curl findutils rpm-build sysuser-tools
           systemd-rpm-macros selinux-policy-devel
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: The release
         id: release
         run: |
           . test/openshell/systemd-driver
           echo "version=$DRIVER_VERSION" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: cache
         with:
           path: driver-rpms
@@ -465,7 +465,7 @@ jobs:
           mkdir driver-rpms
           cp rpmbuild/RPMS/*/*.rpm driver-rpms/
       - run: ls -l driver-rpms
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: systemd-driver-rpms
           path: driver-rpms/*.rpm
@@ -481,16 +481,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: systemd-driver-rpms
           path: driver-rpms
@@ -504,7 +504,7 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
@@ -515,7 +515,7 @@ jobs:
           DRIVER_RPMS: ${{ github.workspace }}/driver-rpms
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openshell-systemd-logs-leap16
           path: |
