@@ -452,13 +452,10 @@ The script
    `client-secret.txt` is the secret for [step 8](#credential); keep it
 root's (`chmod 600`) and delete it once it is set.
 
-`--apply` above needs none of the following: it reaches Keycloak from
-the host, at its published address. For the script, a Keycloak in a
-container has its `kcadm.sh` in the container
-(`/opt/keycloak/bin/kcadm.sh` in Keycloak's image). Log it in there, and
-let the script call it through `podman exec` (or `docker exec`); the
-script runs on the host, as the user whose container it is (root for a
-container of root's):
+For the script, a Keycloak in a container (`--apply` needs none of
+this) has its `kcadm.sh` there, `/opt/keycloak/bin/kcadm.sh`. Log it in
+there and let the script, on the host, call it with `podman exec`, as
+the container's user:
 
 ```bash
 podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
@@ -469,16 +466,11 @@ KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-clie
 `-i` without `-t`: the script hands the client's definition to
 `kcadm.sh` on its standard input, which a terminal would break.
 
-`--server` names Keycloak as its certificate does (`KC_HOSTNAME`), with
-the port Keycloak listens on in the container: 8443 for HTTPS, which
-`podman port keycloak` shows published as the host's port. Inside the
-container that name may resolve to the container itself (Podman's
-`/etc/hosts`), where the published port is not open. mcp-gateway's
-`http.issuer` keeps the published port, the one Keycloak puts in its
-tokens (`KC_HOSTNAME_PORT`). `http://localhost:8080` works only where
-Keycloak serves plain HTTP (`KC_HTTP_ENABLED`, `start-dev`). A Keycloak
-certificate from a CA of your own needs that CA in a truststore for
-`kcadm.sh`, in the container:
+`--server` is the certificate's name (`KC_HOSTNAME`) with the port in
+the container (8443; `podman port keycloak`): inside it, that name may
+resolve to the container itself. `http.issuer` keeps the published port,
+which Keycloak puts in its tokens. A CA of your own goes into a
+truststore for `kcadm.sh`:
 
 ```bash
 podman cp ca.pem keycloak:/tmp/ca.pem
