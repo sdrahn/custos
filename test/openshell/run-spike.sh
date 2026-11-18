@@ -358,8 +358,17 @@ check "its configuration names this driver and the gateway's audience" bash -c \
 	"grep -Eq 'openshell_driver: \"?$tpl_driver\"?[,}]' /etc/custos/agents/tpl/agent.yaml && grep -qF '$aud' /etc/custos/agents/tpl/agent.yaml"
 check "openshell.env names the driver" grep -qx "OPENSHELL_DRIVER=$tpl_driver" /etc/custos/agents/tpl/openshell.env
 check "it is the same as its template to compare" bash -c "agent-admin compare tpl | jq -e '.[0].configuration.same' >/dev/null"
-check "a template for systemd only refuses OpenShell" not agent-admin create tpl2 --template disk-watch --sandbox openshell --token-url "$issuer/token" "${gwcfg[@]}"
 check "agent-admin delete tpl" agent-admin delete tpl
+# A template for transactional systems as well (#241), on this driver.
+agent-admin delete tpt >/dev/null 2>&1
+check "agent-admin create tpt --template patch-pilot-transactional --sandbox openshell" bash -c \
+	"agent-admin create tpt --template patch-pilot-transactional --sandbox openshell --openshell-driver $tpl_driver --token-url '$issuer/token' ${gwcfg[*]} >'$work/tpt.out' 2>&1" ||
+	sed 's/^/    | /' "$work/tpt.out"
+check "its configuration names this driver and the template's servers" bash -c \
+	"grep -Eq 'openshell_driver: \"?$tpl_driver\"?[,}]' /etc/custos/agents/tpt/agent.yaml && grep -q 'servers: \[tukit' /etc/custos/agents/tpt/agent.yaml"
+check "agent-admin delete tpt" agent-admin delete tpt
+# A template's name longer than OpenShell takes, as the agent's name: refused (#244).
+check "an OpenShell agent named like a long template is refused" not agent-admin create patch-pilot-transactional --template patch-pilot-transactional --sandbox openshell --token-url "$issuer/token" "${gwcfg[@]}"
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF

@@ -2,6 +2,8 @@ package templates
 
 import (
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -20,6 +22,22 @@ func withGatewayHTTP(t *testing.T, a *admin.Admin, conf string) {
 	t.Helper()
 	os.MkdirAll(a.Path("/etc/mcp-gateway"), 0o755)
 	if err := host.WriteFile(a.Path("/etc/mcp-gateway/gateway.yaml"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// systemdOnly makes the test's copy of the shipped disk-watch a template
+// for systemd only (no backends), as a template of a site may be: every
+// shipped one allows OpenShell (#241).
+func systemdOnly(t *testing.T, a *admin.Admin) {
+	t.Helper()
+	p := a.Path(filepath.Join(TemplatesVendor, "disk-watch", "template.yaml"))
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep := regexp.MustCompile(`(?ms)^backends:.*\z`).ReplaceAll(b, nil)
+	if err := host.WriteFile(p, keep, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -74,6 +92,7 @@ func TestDraftOnOpenShell(t *testing.T) {
 // What a draft for OpenShell refuses.
 func TestDraftOnRefusals(t *testing.T) {
 	a, _ := withTemplates(t)
+	systemdOnly(t, a)
 	withGatewayHTTP(t, a, gatewayHTTP)
 	for _, c := range []struct {
 		tmpl string
@@ -112,6 +131,7 @@ func TestDraftOnRefusals(t *testing.T) {
 // allow that.
 func TestCreateOnOpenShell(t *testing.T) {
 	a, _ := withTemplates(t)
+	systemdOnly(t, a)
 	withGatewayHTTP(t, a, gatewayHTTP)
 	var out strings.Builder
 	a.Out = &out
@@ -144,6 +164,7 @@ func TestCreateOnOpenShell(t *testing.T) {
 // templates lists where each may run, and what OpenShell needs.
 func TestTemplatesListBackends(t *testing.T) {
 	a, _ := withTemplates(t)
+	systemdOnly(t, a)
 	l, err := List(a)
 	if err != nil {
 		t.Fatal(err)
@@ -166,5 +187,28 @@ func TestDraftOnQuotesValues(t *testing.T) {
 	c := parseDraft(t, b, err)
 	if c.Sandbox.OpenShellGateway != "gw, openshell_driver: container" || c.Sandbox.OpenShellDriver != "systemd" {
 		t.Errorf("sandbox %+v", c.Sandbox)
+	}
+}
+
+// Every shipped template allows OpenShell (#241), and gives a valid
+// configuration for it, with either driver, for an agent name OpenShell
+// takes.
+func TestShippedTemplatesOnOpenShell(t *testing.T) {
+	a, _ := withTemplates(t)
+	withGatewayHTTP(t, a, gatewayHTTP)
+	l, err := List(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tm := range l.Templates {
+		if !strings.Contains(strings.Join(tm.Backends, ","), "openshell") || len(tm.NeedsOpenShell) == 0 {
+			t.Errorf("%s: backends %v, needs_openshell %v", name, tm.Backends, tm.NeedsOpenShell)
+		}
+		for _, driver := range []string{"container", "systemd"} {
+			b, err := DraftOn(a, "osh-agent", name, Backend{Kind: "openshell", Driver: driver})
+			if c := parseDraft(t, b, err); c.Sandbox.Kind != "openshell" || c.Sandbox.OpenShellDriver != driver || c.Gateway.URL == "" {
+				t.Errorf("%s, %s: %+v %+v", name, driver, c.Sandbox, c.Gateway)
+			}
+		}
 	}
 }

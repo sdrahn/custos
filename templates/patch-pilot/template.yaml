@@ -12,3 +12,4 @@ needs_openshell:
   - OpenShell set up for agents (agent-admin openshell-setup), with the container or the systemd compute driver
   - mcp-gateway's HTTPS listener, its issuer trusted for agents (agent-admin issuers)
   - the agent's OAuth client at that issuer (agent-admin idp-client NAME), or a static token
+  - an agent name of at most 13 characters (its sandbox is agent-NAME)
