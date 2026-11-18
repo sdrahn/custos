@@ -86,8 +86,7 @@ func bridge(ctx context.Context, name, command string) {
 	// so that a restart neither repeats records nor loses the gap.
 	since := time.Now()
 	for ctx.Err() == nil {
-		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-		cmd.Env = append(os.Environ(), "AGENT_LOGS_SINCE="+since.UTC().Format(time.RFC3339Nano))
+		cmd := logCommand(ctx, command, since)
 		// Its complaints (no container, a runtime error) go to the unit's journal.
 		cmd.Stderr = os.Stderr
 		out, err := cmd.StdoutPipe()
@@ -101,4 +100,18 @@ func bridge(ctx context.Context, name, command string) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// logCommand is the log command, told where the last stream ended
+// (AGENT_LOGS_SINCE). The relay does not signal it when it stops: the
+// unit's stop ends it with the rest of the unit's processes (systemd
+// signals the unit's whole control group). The relay may not: as rootless
+// Podman, the command runs as the OpenShell user in that user's user
+// namespace, and signalling it would need CAP_KILL there, which SELinux
+// refuses the relay's domain (cap_userns kill, #221).
+func logCommand(ctx context.Context, command string, since time.Time) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Env = append(os.Environ(), "AGENT_LOGS_SINCE="+since.UTC().Format(time.RFC3339Nano))
+	cmd.Cancel = func() error { return nil }
+	return cmd
 }
