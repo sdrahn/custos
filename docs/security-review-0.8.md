@@ -29,7 +29,10 @@ two high ones with tests that fail on `642eb69`.
 
 **Where it stands.** The two high findings and the medium one were in
 `openshell-setup`, which no release has had; they are fixed before
-0.8.0. What is open is low or info:
+0.8.0. What is open is low or info. For S5 the maintainer decided
+(2026-11-18): 0.8.0 is released with it open, and it is fixed in 0.9.
+
+
 
 | Finding | Severity | Status |
 |---|---|---|
@@ -37,7 +40,7 @@ two high ones with tests that fail on `642eb69`.
 | S2 | high | fixed (#235) |
 | S3 | medium | fixed (#235) |
 | S4 | low | fixed (#235) |
-| S5 | low | open: a type of its own for root's OpenShell registration |
+| S5 | low | open, for 0.9 (maintainer's decision): a type of its own for root's OpenShell registration |
 | S6 | info | accepted: the relay reads the whole journal |
 | S7 | low | fixed with this review |
 | S8 | info | template values quoted with this review; the gateway name's syntax open |
@@ -119,7 +122,7 @@ domain may read any of them. The relay runs as root without
 DAC lets it read are the world-readable files there. Any local user can
 read those already, but they are outside what the relay needs.
 
-*Open:* a type of its own for `/root/.config/openshell(/.*)?` in
+*Open, to be fixed in 0.9:* a type of its own for `/root/.config/openshell(/.*)?` in
 `custos.fc`, restored by `openshell-setup` and the guide's steps, and
 allowed instead of `config_home_t`.
 
