@@ -87,6 +87,7 @@ func oshHost(t *testing.T, driver string) (*admin.Admin, *hosttest.Rec, string) 
 		}
 		// The driver's socket, once its service runs.
 		put(t, a, "/run/user/1001/openshell/systemd-driver.sock", "")
+		put(t, a, HelperSocket, "")
 	case "container":
 		put(t, a, "/usr/bin/podman", "")
 	}
@@ -378,5 +379,22 @@ func TestTOML(t *testing.T) {
 	}
 	if got := setTOML("", "a", "b", "1"); got != "[a]\nb = 1\n" {
 		t.Errorf("empty: %q", got)
+	}
+}
+
+// A helper that exits at once (systemctl's start succeeds all the same):
+// the setup stops there and names the helper's journal, before it starts
+// the driver, which would fail only for want of the helper.
+func TestSetupHelperDoesNotRun(t *testing.T) {
+	a, r, _ := oshHost(t, "systemd")
+	os.Remove(a.Path(HelperSocket))
+	slept := 0
+	a.Sleep = func(time.Duration) { slept++ }
+	err := Setup(a, Options{User: "osh", Driver: "systemd"})
+	if err == nil || !strings.Contains(err.Error(), "journalctl -u openshell-systemd-helper.service") {
+		t.Fatalf("err %v", err)
+	}
+	if slept == 0 || ran(r, "openshell-driver-systemd.service") {
+		t.Errorf("slept %d, ran:\n%s", slept, strings.Join(r.Cmds, "\n"))
 	}
 }
