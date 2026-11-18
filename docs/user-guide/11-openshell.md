@@ -430,6 +430,21 @@ The script
    `client-secret.txt` is the secret for [step 8](#credential); keep it
 root's (`chmod 600`) and delete it once it is set.
 
+A Keycloak in a container has its `kcadm.sh` in the container
+(`/opt/keycloak/bin/kcadm.sh` in Keycloak's image). Log it in there, and
+let the script call it through `podman exec` (or `docker exec`); the
+script runs on the host, as the user whose container it is (root for a
+container of root's):
+
+```bash
+podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master --user admin   # Keycloak's own address, in the container
+KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-client.sh >client-secret.txt
+```
+
+`-i` without `-t`: the script hands the client's definition to
+`kcadm.sh` on its standard input, which a terminal would break.
+
 It stops at the first error; if the client exists already, `kcadm.sh`
 refuses to create it again: delete it (`kcadm.sh delete clients/ID -r
 REALM`) or change it in the admin console. The same settings by hand in

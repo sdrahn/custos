@@ -6,3 +6,7 @@
   `agent-admin openshell-setup --driver systemd`. It says which
   certificate `--ca` takes and when it is not needed, and that with the
   systemd driver that CA is trusted host-wide.
+- The guide's chapter 11 says how to run the Keycloak client script
+  against a Keycloak in a container:
+  `KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh"`, with
+  `kcadm.sh` logged in inside the container.
