@@ -7,10 +7,34 @@
 # AGENT_LOGS_SINCE (set by the relay): where the last stream ended.
 # OPENSHELL_USER (openshell.env): the user whose rootless Podman runs the
 # sandboxes (OpenShell's RPM default); its containers are not root's.
+# OPENSHELL_DRIVER=systemd (openshell.env, sandbox.openshell_driver): the
+# OpenShell systemd compute driver runs the sandbox as systemd units, and
+# the agent's output is in the journal of its workload unit,
+# openshell-sandbox-workload@<sandbox id>.service; OPENSHELL_GATEWAY
+# names the OpenShell gateway that knows the sandbox's id.
 set -u
 sandbox=${1:?usage: agent-openshell-logs SANDBOX}
 since=${AGENT_LOGS_SINCE:-0}
 user=${OPENSHELL_USER:-}
+
+if [ "${OPENSHELL_DRIVER:-}" = systemd ]; then
+	id=$(openshell -g "${OPENSHELL_GATEWAY:-openshell}" sandbox get "$sandbox" 2>/dev/null | awk '$1 == "Id:" {print $2}')
+	# The id names a unit: nothing but a UUID gets there.
+	echo "$id" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || {
+		echo "agent-openshell-logs: no sandbox id for $sandbox from OpenShell gateway ${OPENSHELL_GATEWAY:-openshell}" >&2
+		exit 1
+	}
+	# From where the last stream ended (the relay's time, to the second:
+	# a record of that second may come twice, none is lost), or the
+	# unit's whole journal.
+	from=-n
+	arg=all
+	if [ "$since" != 0 ] && s=$(date -u -d "$since" +%s 2>/dev/null); then
+		from=--since
+		arg=@$s
+	fi
+	exec journalctl --no-pager -o cat -f -u "openshell-sandbox-workload@$id.service" "$from" "$arg"
+fi
 # As the user, for rootless Podman: its storage and its runtime directory.
 as_user=
 runtimes="docker podman"

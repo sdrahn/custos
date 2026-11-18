@@ -56,7 +56,8 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `limits.…: N: must be positive`, `sessions.retention_days: must be positive` | a positive number, or leave it out for the default |
 | `client_tools: "…": want deny or {allow: [...]}` | `client_tools: deny` |
 | `sandbox.kind: "…": want systemd or openshell` | fix the kind |
-| `sandbox.openshell_gateway: only for kind openshell` | remove it for a systemd agent |
+| `sandbox.openshell_gateway: only for kind openshell`, `sandbox.openshell_driver: only for kind openshell` | remove it for a systemd agent |
+| `sandbox.openshell_driver: "…": want container or systemd` | `container` (Docker or Podman) or `systemd` (the OpenShell systemd compute driver) |
 | an unknown key (`field … not found`) | remove or correct the key: unknown keys are errors |
 
 ## An agent does not start or answer {#agent-start}
@@ -319,6 +320,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `"…" is not a valid credential name` | lower-case letters, digits, `-` and `_`, such as `model-key` ([chapter 5](05-configuration.md#model-credentials)) |
 | `…: empty` (`set-credential`) | nothing on stdin: pipe the secret in |
 | `sandbox.openshell_gateway: agent …'s sandbox is on OpenShell gateway "…"; delete and create it to move it` | the OpenShell gateway is fixed at `create` |
+| `sandbox.openshell_driver: agent …'s sandbox is on OpenShell's … driver; delete and create it to change the driver` | the driver is fixed at `create` |
 | `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
 | `agent …: category … is not promoted` (demote) | it is supervised already |
 | `agent … exists` | the agent exists: `edit`, or `delete` first |

@@ -21,6 +21,11 @@ import (
 	"github.com/sdrahn/custos/internal/config"
 )
 
+// HostImage is the image name of a sandbox on the OpenShell systemd
+// compute driver, which has no image: the host's file system and its
+// agent-launcher, at the same paths as in the image.
+const HostImage = "host"
+
 // Paths inside the sandbox image (packaging/openshell/Containerfile).
 const (
 	Launcher  = "/usr/libexec/custos/agent-launcher"

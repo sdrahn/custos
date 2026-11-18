@@ -233,6 +233,16 @@ optional_policy(`
 	allow container_runtime_t agent_relay_t:fifo_file rw_fifo_file_perms;
 	allow container_runtime_t agent_relay_t:process sigchld;
 ')
+# With OpenShell's systemd compute driver (sandbox.openshell_driver:
+# systemd) agent-openshell-logs follows the journal of the sandbox's
+# workload unit: journalctl reads and watches the journal files
+# (/var/log/journal, /run/log/journal; var_log_t) under the relay's domain.
+logging_read_generic_logs(agent_relay_t)
+gen_require(`
+	type var_log_t;
+	class dir watch;
+')
+allow agent_relay_t var_log_t:dir watch;
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
 # and tmpfiles /run/agents: with the right labels even before a relabel
 # (the package's tmpfiles run before this module is loaded).

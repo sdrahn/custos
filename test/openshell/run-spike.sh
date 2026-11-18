@@ -29,8 +29,8 @@
 # systemd compute driver (test/openshell/vm-setup.sh --driver systemd):
 # no container runtime and no image. The sandbox is created --from host,
 # the one image name that driver takes, and runs the host's
-# agent-launcher. The checks are the same; where the agent's records come
-# from differs, and the spike reports what it finds there.
+# agent-launcher. The agent has sandbox.openshell_driver: systemd, and the
+# relay reads its records from the journal of the sandbox's workload unit.
 #
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
 # exec supervisor) with its own policy, custos's agents module
@@ -340,13 +340,19 @@ gateway:
   oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 30}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
-sandbox: {kind: openshell, openshell_gateway: openshell}
+sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: $([ "$runtime" = systemd ] && echo systemd || echo container)}
 EOF
 agent-admin delete sb >/dev/null 2>&1
-export CUSTOS_OPENSHELL_IMAGE=$img
+# The systemd driver: agent-admin takes no image (sandbox.openshell_driver).
+[ "$runtime" = systemd ] || export CUSTOS_OPENSHELL_IMAGE=$img
 # Rootless Podman: the relay's log source reads the user's containers.
 [ "$runtime" = podman ] && export CUSTOS_OPENSHELL_USER=$osh_user
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
+if [ "$runtime" = systemd ]; then
+	check "openshell.env names the systemd driver" grep -qx OPENSHELL_DRIVER=systemd /etc/custos/agents/sb/openshell.env
+	check "openshell.env: the sandbox has no image (host)" grep -qx AGENT_IMAGE=host /etc/custos/agents/sb/openshell.env
+	check "no rootless Podman user for the systemd driver" not grep -q '^OPENSHELL_USER=' /etc/custos/agents/sb/openshell.env
+fi
 # #131: no note by the host's name (it resolves to a network address and
 # is the gateway's audience); the alias's note says what an official
 # certificate needs.
@@ -519,11 +525,14 @@ if [ -n "$relay_ok" ]; then
 			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
 		echo "    | the relay's drop-ins: $(systemctl show -p DropInPaths --value agent-openshell@sb.service)"
 		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
+		# What the relay's domain was refused (from the audit log: #221).
+		echo "    | agent_relay_t denials: $(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied' | grep 'scontext=[^ ]*:agent_relay_t:' |
+			sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 10 | tr '\n' '|')"
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
 	if [ "$runtime" = systemd ]; then
 		# The agent's own output, as journald has it from the workload's
-		# unit: what a log source for this driver would read. In the
+		# unit: what the relay's log source reads. In the
 		# sandbox there is no journal socket, so the agent writes JSON
 		# lines (internal/journal).
 		unit_log() { journalctl --no-pager -o cat --since "@$t0" -u "openshell-sandbox-workload@$sid.service" 2>/dev/null; }

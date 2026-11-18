@@ -357,6 +357,15 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
   ([above](#other-idp)).
 - `sandbox.openshell_gateway` names OpenShell's gateway as registered for
   root (default `openshell`).
+- `sandbox.openshell_driver` says which compute driver that gateway
+  uses: `container` (the default, Docker or Podman, as in this chapter)
+  or `systemd` (the OpenShell systemd compute driver: the sandbox runs
+  as systemd units on the host, without an image, and the agent's
+  records come from the journal of the sandbox's workload unit).
+  Custos does not detect it: it must match the gateway's configuration.
+  With the systemd driver, a private CA goes into the host's trust store
+  (`/etc/pki/trust/anchors`, then `update-ca-certificates`), not into
+  `gateway.toml`, which OpenShell refuses for that driver.
 - The sandbox's policy allows the model endpoint, for `agent-launcher`
   only.
 
@@ -431,7 +440,7 @@ rm /root/agent.jwt
 | nothing the sandbox gets | restarts the relay (`try-restart agent-openshell@NAME.service`) |
 | the configuration, the model endpoint, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
 | `gateway.oauth` added or removed, or its `client_id` | stops the agent, deletes the sandbox and provider, and asks for `set-credential` again |
-| `sandbox.kind` or `sandbox.openshell_gateway` | refused: delete and create the agent |
+| `sandbox.kind`, `sandbox.openshell_gateway` or `sandbox.openshell_driver` | refused: delete and create the agent |
 
 `systemctl stop agent-openshell@NAME.service` stops the relay and the
 sandbox. `agent-admin stop-all` stops every relay and sandbox, and the
