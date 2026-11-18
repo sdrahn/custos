@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -197,7 +198,7 @@ func (s *setup) check() error {
 // switches a gateway from one runtime to the other.
 func (s *setup) containerRuntime() string {
 	if s.u.home != "" {
-		if b, err := os.ReadFile(s.a.Path(s.userConfig("gateway.toml"))); err == nil {
+		if b, err := s.readHome(s.userConfig("gateway.toml")); err == nil {
 			cur, _ := getTOML(string(b), "openshell.gateway", "compute_driver")
 			for _, r := range []string{"docker", "podman"} {
 				if cur == tomlString(r) && s.program(r) {
@@ -270,8 +271,9 @@ func (s *setup) userctl(args ...string) error {
 	return s.a.Run(nil, "runuser", cmd...)
 }
 
-// write makes a file have content; it says whether it changed.
-func (s *setup) write(path string, content []byte, mode os.FileMode, owner string) (bool, error) {
+// write makes a file of root's (under /etc) have content; it says whether
+// it changed. A file in the gateway user's home goes through writeHome.
+func (s *setup) write(path string, content []byte, mode os.FileMode) (bool, error) {
 	old, err := os.ReadFile(s.a.Path(path))
 	if err == nil && bytes.Equal(old, content) {
 		return false, nil
@@ -285,15 +287,8 @@ func (s *setup) write(path string, content []byte, mode os.FileMode, owner strin
 	if err := host.WriteFile(s.a.Path(path), content, mode); err != nil {
 		return false, err
 	}
-	if owner != "" {
-		if err := s.a.Run(nil, "chown", owner, path); err != nil {
-			return false, fmt.Errorf("chown %s: %w", path, err)
-		}
-	}
 	return true, nil
 }
-
-func (s *setup) owner() string { return s.u.name + ":" }
 
 func (s *setup) linger() error {
 	if s.has(filepath.Join(LingerDir, s.u.name)) {
@@ -312,7 +307,7 @@ func (s *setup) podmanUser() error {
 	if s.runtime != "podman" || s.u.uid == 0 {
 		return nil
 	}
-	changed, err := s.write(DelegateDropIn, []byte("# agent-admin openshell-setup: rootless Podman sets the sandboxes' limits.\n[Service]\nDelegate=cpu cpuset io memory pids\n"), 0o644, "")
+	changed, err := s.write(DelegateDropIn, []byte("# agent-admin openshell-setup: rootless Podman sets the sandboxes' limits.\n[Service]\nDelegate=cpu cpuset io memory pids\n"), 0o644)
 	if err != nil {
 		return err
 	}
@@ -393,7 +388,7 @@ func (s *setup) helper() error {
 			}
 		}
 	}
-	changed, err := s.write(HelperDropIn, []byte("# agent-admin openshell-setup: the user OpenShell's gateway runs as.\n[Service]\nEnvironment=OPENSHELL_SYSTEMD_HELPER_ALLOW_USER="+s.u.name+"\n"), 0o644, "")
+	changed, err := s.write(HelperDropIn, []byte("# agent-admin openshell-setup: the user OpenShell's gateway runs as.\n[Service]\nEnvironment=OPENSHELL_SYSTEMD_HELPER_ALLOW_USER="+s.u.name+"\n"), 0o644)
 	if err != nil {
 		return err
 	}
@@ -431,15 +426,9 @@ func (s *setup) driver() error {
 	}
 	dropIn := filepath.Join(s.u.home, ".config/systemd/user/openshell-driver-systemd.service.d/custos.conf")
 	content := fmt.Sprintf("# agent-admin openshell-setup\n[Service]\nEnvironment=OPENSHELL_SYSTEMD_TLS_CA=%s\nEnvironment=OPENSHELL_GATEWAY_NAME=%s\n", ca, s.o.Gateway)
-	changed, err := s.write(dropIn, []byte(content), 0o644, s.owner())
+	changed, err := s.writeHome(dropIn, []byte(content), 0o644)
 	if err != nil {
 		return err
-	}
-	if !s.o.Check && changed {
-		// The drop-in's directories below the user's home are the user's.
-		if err := s.a.Run(nil, "chown", s.owner(), filepath.Dir(dropIn)); err != nil {
-			return err
-		}
 	}
 	active := !changed && s.a.Probe("runuser", "-u", s.u.name, "--", "env", "XDG_RUNTIME_DIR="+s.runtimeDir(), "systemctl", "--user", "is-active", "--quiet", "openshell-driver-systemd.service") == nil
 	if active {
@@ -491,7 +480,7 @@ func (s *setup) ca() error {
 		return err
 	}
 	if s.o.Driver == "container" {
-		changed, err := s.write(s.userCA(), b, 0o644, s.owner())
+		changed, err := s.writeHome(s.userCA(), b, 0o644)
 		if err != nil {
 			return err
 		}
@@ -502,7 +491,7 @@ func (s *setup) ca() error {
 		}
 		return nil
 	}
-	changed, err := s.write(TrustAnchor, b, 0o644, "")
+	changed, err := s.write(TrustAnchor, b, 0o644)
 	if err != nil {
 		return err
 	}
@@ -521,7 +510,7 @@ func (s *setup) ca() error {
 // the container driver); the gateway restarts when it changed.
 func (s *setup) gatewayConfig() error {
 	path := s.userConfig("gateway.toml")
-	b, err := os.ReadFile(s.a.Path(path))
+	b, err := s.readHome(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -545,7 +534,7 @@ func (s *setup) gatewayConfig() error {
 			text = setTOML(text, "openshell.supervisor.network", "additional_ca_bundle", tomlString(s.userCA()))
 		}
 	}
-	changed, err := s.write(path, []byte(text), 0o600, s.owner())
+	changed, err := s.writeHome(path, []byte(text), 0o600)
 	if err != nil {
 		return err
 	}
@@ -568,23 +557,18 @@ func (s *setup) gatewayConfig() error {
 // relay reads it in its SELinux domain, which may not read another user's
 // files (no dac_override).
 func (s *setup) registration() error {
-	src := s.a.Path(s.userConfig())
+	files, err := s.homeFiles(s.userConfig())
+	if err != nil {
+		return err
+	}
 	var differs []string
-	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(src, p)
-		a, _ := os.ReadFile(p)
+	for rel, a := range files {
 		b, err := os.ReadFile(filepath.Join(s.a.Path(RootConfig), rel))
 		if err != nil || !bytes.Equal(a, b) {
 			differs = append(differs, rel)
 		}
-		return nil
-	})
-	if err != nil {
-		return err
 	}
+	sort.Strings(differs)
 	if len(differs) == 0 {
 		s.say("ok", "OpenShell's gateway registered for root ("+RootConfig+")")
 	} else {
@@ -592,20 +576,14 @@ func (s *setup) registration() error {
 		if s.o.Check {
 			return nil
 		}
+		// Root's own files, readable by root only, whatever their mode in
+		// the user's home.
 		for _, rel := range differs {
-			fi, err := os.Stat(filepath.Join(src, rel))
-			if err != nil {
-				return err
-			}
-			b, err := os.ReadFile(filepath.Join(src, rel))
-			if err != nil {
-				return err
-			}
 			dst := filepath.Join(s.a.Path(RootConfig), rel)
 			if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 				return err
 			}
-			if err := host.WriteFile(dst, b, fi.Mode().Perm()); err != nil {
+			if err := host.WriteFile(dst, files[rel], 0o600); err != nil {
 				return err
 			}
 		}
