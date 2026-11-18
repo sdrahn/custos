@@ -64,6 +64,26 @@ async function loadTemplates() {
     return templates;
 }
 
+/* backendArgs are agent-admin draft's arguments for where the new agent
+ * runs (create and draft --sandbox, §14a): the configuration then says
+ * so, and create --from - checks that the template allows it. */
+function backendArgs(value) {
+    if (value === "openshell-container") return ["--sandbox", "openshell", "--openshell-driver", "container"];
+    if (value === "openshell-systemd") return ["--sandbox", "openshell", "--openshell-driver", "systemd"];
+    return [];
+}
+
+/* showBackends offers where the agent may run: OpenShell only where the
+ * template allows it (a blank configuration may run anywhere). */
+function showBackends(name) {
+    const t = name && templates && templates.templates[name];
+    const openshell = !t || (t.backends || ["systemd"]).includes("openshell");
+    const select = document.getElementById("create-backend");
+    for (const o of select.options) o.disabled = o.value !== "systemd" && !openshell;
+    if (!openshell) select.value = "systemd";
+    document.getElementById("create-backend-row").hidden = !templates;
+}
+
 /* describeTemplate shows what the chosen template does and needs. */
 function describeTemplate(name) {
     const box = document.getElementById("create-template");
@@ -79,6 +99,8 @@ function describeTemplate(name) {
                " an approval until you promote " + (cats.length === 1 ? "it" : "them") +
                ((t.envelopes || []).length ? " (suggested envelopes: " + t.dir + "/envelopes/)." : ".") : ""),
         (t.needs || []).length ? el("div", null, "It needs at the gateway:", el("ul", null, ...t.needs.map(n => el("li", null, n)))) : "",
+        document.getElementById("create-backend").value !== "systemd" && (t.needs_openshell || []).length
+            ? el("div", null, "In an OpenShell sandbox, also:", el("ul", null, ...t.needs_openshell.map(n => el("li", null, n)))) : "",
         el("p", { class: "muted" }, "Its tools: servers " + (t.servers || []).join(", ") + "; permissions in " + t.dir + "/permissions.yaml."));
 }
 
@@ -111,15 +133,21 @@ async function checkConfig(yaml) {
 async function draft(tmpl, n) {
     const args = ["agent-admin", "draft", NAME_RE.test(n) ? n : (tmpl || "new-agent")];
     if (tmpl) args.push("--template", tmpl);
+    const backend = backendArgs(document.getElementById("create-backend").value);
+    args.push(...backend);
     try {
         return await cockpit.spawn(args, { err: "message" });
     } catch (ex) {
+        // For OpenShell the draft is agent-admin's alone (the gateway's
+        // HTTPS settings): its reason is shown.
+        if (backend.length) throw ex;
         if (!tmpl) return TEMPLATE;
         return cockpit.file(templates.templates[tmpl].dir + "/agent.yaml").read();
     }
 }
 
 async function useTemplate(name, yaml, nameInput) {
+    showBackends(name);
     describeTemplate(name);
     if (name && !nameInput.value.trim()) nameInput.value = name;
     try {
@@ -248,6 +276,7 @@ function initCreate() {
         if (!yaml.value) useTemplate(form.elements.from.value, yaml, name);
     });
     form.elements.from.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
+    form.elements.backend.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
     name.addEventListener("input", () => { yaml.value = withName(yaml.value, name.value.trim()) });
     form.elements.cancel.addEventListener("click", () => { form.hidden = true; setCreateNote("") });
     form.elements.check.addEventListener("click", async () => {
@@ -277,6 +306,8 @@ function initCreate() {
             yaml.value = "";
             name.value = "";
             form.elements.from.value = "";
+            const openshell = form.elements.backend.value !== "systemd";
+            form.elements.backend.value = "systemd";
             describeTemplate("");
             setCreateNote("");
             showError(null);
@@ -286,7 +317,10 @@ function initCreate() {
                   ((t.categories || []).length ? "; its task categories need an approval until you promote them." : ".") +
                   " Check that the gateway has what it needs: " + ((t.needs || []).join("; ") || "nothing more") + "."
                 : "Created " + n + ": supervised, with no permissions. " +
-                  "It can do nothing until its tool boundaries list what it may do."),
+                  "It can do nothing until its tool boundaries list what it may do.",
+                openshell ? " It runs in an OpenShell sandbox: the sandbox is made when its gateway credential is set " +
+                    "(agent-admin idp-client " + n + " says what OAuth client it needs; then agent-admin set-credential " + n +
+                    " gateway-client-secret)." : ""),
                 cred ? credentialForm(n, cred) : "");
             cockpit.location.go(["agents", n]);
         } catch (ex) {

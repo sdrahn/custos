@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,6 +44,14 @@ type Template struct {
 	// supervised; never bounded).
 	Mode  string   `yaml:"mode" json:"mode"`
 	Needs []string `yaml:"needs,omitempty" json:"needs,omitempty"`
+	// Backends: where an agent made from it may run (systemd,
+	// openshell); none named: systemd only.
+	Backends []string `yaml:"backends,omitempty" json:"backends"`
+	// NeedsOpenShell: what an agent in an OpenShell sandbox needs on top
+	// of Needs.
+	NeedsOpenShell []string `yaml:"needs_openshell,omitempty" json:"needs_openshell,omitempty"`
+
+	name string
 
 	// From the template's files:
 	Dir        string   `yaml:"-" json:"dir"`
@@ -137,7 +146,18 @@ func loadTemplate(a *admin.Admin, name, dir string) (*Template, error) {
 	default:
 		return nil, bad("template.yaml", fmt.Errorf("mode %q: want advisory or supervised (an agent is never created bounded)", t.Mode))
 	}
-	t.Dir = dir
+	if len(t.Backends) == 0 {
+		t.Backends = []string{"systemd"}
+	}
+	for _, k := range t.Backends {
+		if !slices.Contains(Backends, k) {
+			return nil, bad("template.yaml", fmt.Errorf("backends: %q: want %s", k, strings.Join(Backends, " or ")))
+		}
+	}
+	if len(t.NeedsOpenShell) > 0 && !slices.Contains(t.Backends, "openshell") {
+		return nil, bad("template.yaml", errors.New("needs_openshell without openshell in backends"))
+	}
+	t.Dir, t.name = dir, name
 	cb, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
 	if err != nil {
 		return nil, bad("agent.yaml", err)
@@ -229,7 +249,17 @@ func WithName(cfg []byte, name string) []byte {
 // mode. Categories stay supervised: promoting one is a separate,
 // deliberate step (§6a).
 func Create(a *admin.Admin, name, tmpl, from string) error {
+	return CreateOn(a, name, tmpl, from, Backend{})
+}
+
+// CreateOn is Create on backend b (create --sandbox, CONTRACT.md §14a):
+// the template must allow it. With FILE, the configuration says where the
+// agent runs, and b is not given.
+func CreateOn(a *admin.Admin, name, tmpl, from string, b Backend) error {
 	if err := host.CheckName(name); err != nil {
+		return err
+	}
+	if err := b.check(); err != nil {
 		return err
 	}
 	t, err := getTemplate(a, tmpl)
@@ -238,10 +268,21 @@ func Create(a *admin.Admin, name, tmpl, from string) error {
 	}
 	var cfg []byte
 	if from != "" {
+		if b.Kind != "" {
+			return fmt.Errorf("--sandbox is for a configuration made from the template, not with --from: FILE says where the agent runs")
+		}
 		if cfg, err = a.ReadFrom(from); err != nil {
 			return err
 		}
-	} else if cfg, err = Draft(a, name, tmpl); err != nil {
+		c, err := config.Parse(cfg)
+		if err != nil {
+			return err
+		}
+		b.Kind = c.Sandbox.Kind
+		if err := t.allows(b.kind()); err != nil {
+			return err
+		}
+	} else if cfg, err = DraftOn(a, name, tmpl, b); err != nil {
 		return err
 	}
 	perms, err := templatePermissions(a, t.Dir)
@@ -267,5 +308,8 @@ func Create(a *admin.Admin, name, tmpl, from string) error {
 			name, name, filepath.Join(t.Dir, "permissions.yaml"), err)
 	}
 	fmt.Fprintf(a.Out, "agent %s created from template %s: %s, %d permissions\n", name, tmpl, t.Mode, len(perms))
+	if b.IsOpenShell() && from == "" {
+		fmt.Fprintln(a.Out, openShellNext(name, b))
+	}
 	return nil
 }

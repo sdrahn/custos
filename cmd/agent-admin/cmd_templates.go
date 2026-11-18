@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 
 	"github.com/sdrahn/custos/internal/admin"
@@ -26,11 +27,13 @@ var templateCommands = []command{
 	{"draft", func(a *admin.Admin, args []string) error {
 		fs := flags("draft")
 		tmpl := fs.String("template", "", "")
+		be := backendFlags(fs)
+		gatewayConfigFlag(a, fs)
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
 		}
-		b, err := templates.Draft(a, pos[0], *tmpl)
+		b, err := templates.DraftOn(a, pos[0], *tmpl, *be)
 		if err != nil {
 			return err
 		}
@@ -74,4 +77,22 @@ var templateCommands = []command{
 		}
 		return templates.Apply(a, pos[0], *tmpl, *cfg, *perms)
 	}},
+}
+
+// backendFlags are where an agent made from a template runs (create and
+// draft --template, CONTRACT.md §14a).
+func backendFlags(fs *flag.FlagSet) *templates.Backend {
+	b := &templates.Backend{}
+	fs.StringVar(&b.Kind, "sandbox", "", "")
+	fs.StringVar(&b.Driver, "openshell-driver", "", "")
+	fs.StringVar(&b.Gateway, "openshell-gateway", "", "")
+	fs.StringVar(&b.TokenURL, "token-url", "", "")
+	fs.BoolVar(&b.StaticToken, "static-token", false, "")
+	return b
+}
+
+// gatewayConfigFlag is --gateway-config FILE: the gateway configuration
+// read instead of the installed one (OpenShell's parts of a draft).
+func gatewayConfigFlag(a *admin.Admin, fs *flag.FlagSet) {
+	fs.StringVar(&a.GatewayConfig, "gateway-config", "", "")
 }
