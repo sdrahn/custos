@@ -66,6 +66,7 @@ installer, or its package). Then register its gateway for root too:
 
 ```bash
 mkdir -p /root/.config && cp -a /home/osh/.config/openshell /root/.config/
+chown -R root:root /root/.config/openshell   # root's copy, root's files
 openshell gateway list           # the gateway's name, by default "openshell"
 openshell status
 ```

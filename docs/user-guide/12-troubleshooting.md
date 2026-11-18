@@ -243,6 +243,7 @@ anyway. Check in this order:
 | You see | Cause | Fix |
 |---|---|---|
 | `importing the provider profile: …`, or `Unknown gateway` from `openshell` | OpenShell's gateway is not registered for root, or has another name | copy the registration to `/root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)); `sandbox.openshell_gateway` |
+| `agent-openshell-logs: no sandbox id for agent-… from OpenShell gateway …` in the relay's journal (systemd driver), and no agent records in the journal | the relay's `openshell` cannot read root's registration: files of another user there need a capability SELinux does not give it | `chown -R root:root /root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)), then `systemctl restart agent-openshell@<name>.service` |
 | `configuring the token's renewal: …` | OpenShell refused the renewal settings for the provider | the text after the colon is OpenShell's; check `gateway.oauth` and the OpenShell version ([chapter 11](11-openshell.md#oauth)) |
 | `minting the first token (the issuer refused the client?): …` | wrong client id or secret, or the client lacks the client credentials grant | fix the client at the identity provider; `set-credential` again |
 | a certificate error from the agent's calls | OpenShell does not trust the gateway's CA | `additional_ca_bundle` ([chapter 11](11-openshell.md#trust)) |

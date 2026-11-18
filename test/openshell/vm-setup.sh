@@ -66,6 +66,9 @@ log "the gateway registration for root"
 mkdir -p /root/.config
 rm -rf /root/.config/openshell
 cp -a "/home/$user/.config/openshell" /root/.config/
+# Root's own copy: the relay reads it under SELinux without dac_override,
+# which a file of the user's (the mTLS key, 0600) would need.
+chown -R root:root /root/.config/openshell
 openshell gateway list
 openshell status
 
