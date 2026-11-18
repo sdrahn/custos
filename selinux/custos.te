@@ -235,14 +235,28 @@ optional_policy(`
 ')
 # With OpenShell's systemd compute driver (sandbox.openshell_driver:
 # systemd) agent-openshell-logs follows the journal of the sandbox's
-# workload unit: journalctl reads and watches the journal files
-# (/var/log/journal, /run/log/journal; var_log_t) under the relay's domain.
+# workload unit: journalctl reads and watches the journal files under the
+# relay's domain, the persistent ones (/var/log/journal, var_log_t) and
+# the runtime ones (/run/log/journal, syslogd_var_run_t), and looks at
+# the file systems they are on (statfs). Denied, it said nothing, and the
+# test's check that would have shown it was blind (#221).
 logging_read_generic_logs(agent_relay_t)
 gen_require(`
 	type var_log_t;
 	class dir watch;
 ')
 allow agent_relay_t var_log_t:dir watch;
+optional_policy(`
+	gen_require(`
+		type syslogd_var_run_t;
+		class dir watch;
+	')
+	list_dirs_pattern(agent_relay_t, syslogd_var_run_t, syslogd_var_run_t)
+	read_files_pattern(agent_relay_t, syslogd_var_run_t, syslogd_var_run_t)
+	allow agent_relay_t syslogd_var_run_t:dir watch;
+')
+fs_getattr_xattr_fs(agent_relay_t)
+fs_getattr_tmpfs(agent_relay_t)
 # journalctl has a type of its own: the relay runs it in its domain.
 optional_policy(`
 	gen_require(`
