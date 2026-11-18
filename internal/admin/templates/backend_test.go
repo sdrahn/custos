@@ -155,3 +155,16 @@ func TestTemplatesListBackends(t *testing.T) {
 		t.Errorf("disk-watch: %s", got)
 	}
 }
+
+// A value from the command line stays a value in the draft's YAML
+// (security review 0.8, S8). Scopes are quoted as well; config.Parse
+// already refuses one that is not a scope name.
+func TestDraftOnQuotesValues(t *testing.T) {
+	a, _ := withTemplates(t)
+	withGatewayHTTP(t, a, gatewayHTTP)
+	b, err := DraftOn(a, "pp", "patch-pilot", Backend{Kind: "openshell", Driver: "systemd", Gateway: "gw, openshell_driver: container"})
+	c := parseDraft(t, b, err)
+	if c.Sandbox.OpenShellGateway != "gw, openshell_driver: container" || c.Sandbox.OpenShellDriver != "systemd" {
+		t.Errorf("sandbox %+v", c.Sandbox)
+	}
+}
