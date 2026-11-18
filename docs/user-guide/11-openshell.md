@@ -399,7 +399,29 @@ is listed for agents yet ([step 6](#issuers)).
 
 ### Keycloak {#keycloak}
 
-In the realm the gateway's `http.issuer` names (mcp-gateway user guide,
+Once the agent is created ([step 8](#credential)), one command does the
+rest of this step, step 6 and the credential of step 8:
+
+```bash
+agent-admin idp-client patch-pilot --keycloak --apply --admin admin   # asks for admin's password
+```
+
+It logs in to Keycloak's admin API as `admin` (in the realm `master`;
+`--admin-realm` for another), at the address of the gateway's
+`http.issuer`, makes the agent's client as the script below does, lists
+the issuer for agents if it is not, checks a token with the new secret
+as `check-token` does, and sets the secret as the agent's
+`gateway-client-secret`, which creates the sandbox. The secret and the
+password are kept nowhere. The user must be allowed to manage the
+realm's clients (*realm-management*: *manage-clients*). A client of the
+agent's id already there is replaced, with a new secret: run it again to
+set a new one. This host must reach Keycloak at that address over HTTPS
+and trust its certificate (`--keycloak-url` for another address; plain
+HTTP only on this host's loopback). The password can
+also come on standard input, as its first line.
+
+The steps by hand, or for a Keycloak this host cannot reach: in the
+realm the gateway's `http.issuer` names (mcp-gateway user guide,
 chapter 15, sets one up for people), `agent-admin idp-client NAME
 --keycloak` prints a script that creates the agent's client with
 Keycloak's admin CLI, `kcadm.sh`. Run it where `kcadm.sh` is logged in
@@ -430,11 +452,10 @@ The script
    `client-secret.txt` is the secret for [step 8](#credential); keep it
 root's (`chmod 600`) and delete it once it is set.
 
-A Keycloak in a container has its `kcadm.sh` in the container
-(`/opt/keycloak/bin/kcadm.sh` in Keycloak's image). Log it in there, and
-let the script call it through `podman exec` (or `docker exec`); the
-script runs on the host, as the user whose container it is (root for a
-container of root's):
+For the script, a Keycloak in a container (`--apply` needs none of
+this) has its `kcadm.sh` there, `/opt/keycloak/bin/kcadm.sh`. Log it in
+there and let the script, on the host, call it with `podman exec`, as
+the container's user:
 
 ```bash
 podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
@@ -445,16 +466,11 @@ KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-clie
 `-i` without `-t`: the script hands the client's definition to
 `kcadm.sh` on its standard input, which a terminal would break.
 
-`--server` names Keycloak as its certificate does (`KC_HOSTNAME`), with
-the port Keycloak listens on in the container: 8443 for HTTPS, which
-`podman port keycloak` shows published as the host's port. Inside the
-container that name may resolve to the container itself (Podman's
-`/etc/hosts`), where the published port is not open. mcp-gateway's
-`http.issuer` keeps the published port, the one Keycloak puts in its
-tokens (`KC_HOSTNAME_PORT`). `http://localhost:8080` works only where
-Keycloak serves plain HTTP (`KC_HTTP_ENABLED`, `start-dev`). A Keycloak
-certificate from a CA of your own needs that CA in a truststore for
-`kcadm.sh`, in the container:
+`--server` is the certificate's name (`KC_HOSTNAME`) with the port in
+the container (8443; `podman port keycloak`): inside it, that name may
+resolve to the container itself. `http.issuer` keeps the published port,
+which Keycloak puts in its tokens. A CA of your own goes into a
+truststore for `kcadm.sh`:
 
 ```bash
 podman cp ca.pem keycloak:/tmp/ca.pem
