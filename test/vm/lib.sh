@@ -23,12 +23,8 @@ fail_context() {
 	journalctl --since -20s --no-pager -o short-precise 2>/dev/null |
 		grep -E 'agent-|agent@|mcp-gateway' | grep -iE 'error|fail|denied|panic|status=[0-9]' |
 		tail -6 | sed 's/^/    | /'
-	# The SELinux denials behind a "Permission denied", in the log itself.
-	# (ausearch when auditd runs, the kernel log when it does not).
-	{
-		ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent 2>/dev/null | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR)'
-		journalctl -k --since -30s --no-pager -o cat 2>/dev/null | grep -E 'avc: +denied'
-	} | sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //; s/^.*(avc: +denied)/\1/' | sort -u | tail -6 | sed 's/^/    | avc: /'
+	# The SELinux denials behind a "Permission denied", of the last minute.
+	avc_since "$(($(date +%s) - 60))" | sed -E 's/^type=[A-Z_]+ msg=audit\([^)]*\): //; s/^.*(avc: +denied)/\1/' | sort -u | tail -6 | sed 's/^/    | avc: /'
 }
 check() { # check <description> <command...>
 	local desc=$1
@@ -134,6 +130,30 @@ journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
 quiet_evaluator() { systemctl stop custos-demote.timer custos-demote.service >/dev/null 2>&1; }
 gw_audit_has() { journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | grep '"audit":true' | jq -e "select($1)" >/dev/null 2>&1; }
 enforcing() { [ "$(getenforce 2>/dev/null)" = Enforcing ]; }
+
+# avc_since EPOCH: the SELinux denials (AVC, USER_AVC, SELINUX_ERR
+# records) since EPOCH, from auditd's log itself, by the records' own
+# time (msg=audit(EPOCH.ms:serial)). On the Leap 16 VM, ausearch -ts
+# finds nothing where the log has denials (#221, #232), and the kernel's
+# journal has none while auditd takes them: the kernel's journal only
+# where there is no audit log.
+avc_since() {
+	if ls /var/log/audit/audit.log* >/dev/null 2>&1; then
+		cat /var/log/audit/audit.log* | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR) ' | audit_since "$1"
+	else
+		journalctl -k --no-pager -o cat --since "@$1" 2>/dev/null | grep -E 'avc: +denied|SELINUX_ERR'
+	fi
+	return 0
+}
+# audit_since EPOCH: the audit records on stdin at or after EPOCH.
+audit_since() {
+	awk -v t0="$1" '{ s = $0; sub(/^.*msg=audit\(/, "", s); sub(/[.:].*$/, "", s); if (s + 0 >= t0) print }'
+}
+# audit_log_live EPOCH: auditd's log has records since EPOCH (a service
+# start at least), so that avc_since finding nothing means no denial.
+audit_log_live() {
+	cat /var/log/audit/audit.log* 2>/dev/null | grep -E '^type=SERVICE_START ' | audit_since "$1" | grep -q .
+}
 # opa_effect <agent> <tool> [server]: the decision of the gateway's OPA for
 # a call of the server's tool (custos-test's) by the agent (the input the
 # gateway gives it).

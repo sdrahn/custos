@@ -131,6 +131,15 @@ optional_policy(`
 allow mcpsrv_exec_t self:netlink_route_socket r_netlink_socket_perms;
 allow mcpsrv_exec_t self:netlink_tcpdiag_socket r_netlink_socket_perms;
 kernel_read_network_state(mcpsrv_exec_t)
+# Where the kernel has not loaded inet_diag, ss asks for it
+# (net-pf-16-proto-4-type-2) and, refused, reads the sockets from
+# /proc/net. A diagnostic command does not load kernel modules: kept
+# from the log, not allowed (#232).
+gen_require(`
+	type kernel_t;
+	class system module_request;
+')
+dontaudit mcpsrv_exec_t kernel_t:system module_request;
 optional_policy(`
 	gen_require(`
 		type ifconfig_exec_t;

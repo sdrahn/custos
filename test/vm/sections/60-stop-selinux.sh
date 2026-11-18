@@ -39,7 +39,14 @@ if enforcing; then
 	# Every denial that names our domains or types, our programs or our
 	# paths, whatever the other side's type (a directory labelled before
 	# the module was loaded has a generic one).
-	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null |
+	# From auditd's log (avc_since), which must have this run's records;
+	# without auditd, from the kernel's journal.
+	if ls /var/log/audit/audit.log* >/dev/null 2>&1; then
+		check "auditd's log has this run's records" audit_log_live "$t0"
+	else
+		skip "auditd's log has this run's records (no audit log: the kernel's journal)"
+	fi
+	avc=$(avc_since "$t0" |
 		grep -E 'agent_|mcpsrv_agents_t|comm="agent-|name="(agents|api\.sock|t1|t2)"|/run/agents|/var/lib/agents|custos')
 	check "no SELinux denials for the agents" test -z "$avc"
 	[ -n "$avc" ] && sed 's/^/    | /' <<<"$avc" | head -30
