@@ -584,6 +584,9 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
 - `gateway.oauth` is only for OpenShell agents: OpenShell's gateway gets
   the tokens. Without it, the agent uses a static token
   ([above](#other-idp)).
+- The agent's `name` has at most 13 characters: its sandbox is
+  `agent-<name>`, and OpenShell takes a sandbox's name of up to 19.
+  `agent-admin check` and `create` refuse a longer one.
 - `sandbox.openshell_gateway` names OpenShell's gateway as registered for
   root (default `openshell`).
 - `sandbox.openshell_driver` says which compute driver that gateway
