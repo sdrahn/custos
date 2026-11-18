@@ -206,6 +206,14 @@ Selecting an agent shows:
   page keeps no copy). The form offers to store the same key for the
   other agents whose model uses the same name, each its own encrypted
   copy, and restarts the agents that run so that they use it.
+  An OpenShell agent with an OAuth client also gets **Its OAuth client
+  in Keycloak**: a Keycloak user that may manage the realm's clients,
+  its realm, its password and, if this host reaches Keycloak elsewhere
+  than at the gateway's issuer, Keycloak's address. **Make the client and
+  set the credential** runs `agent-admin idp-client NAME --keycloak
+  --apply` ([chapter 11](11-openshell.md#keycloak)), the password on
+  stdin, and shows its account; the page keeps neither the password nor
+  the secret, which never reaches it.
   **Remove…** removes one after a confirmation (`agent-admin
   remove-credential`; the model's needs `--force`, and the confirmation
   says the agent does not start without it). An OpenShell agent's gateway

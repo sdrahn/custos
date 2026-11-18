@@ -796,6 +796,34 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await page.textContent("#config-triage")).includes("stopped until: agent-admin set-credential triage gateway-client-secret"),
           "agent-admin's message after the edit is shown");
 
+    // An OpenShell agent's OAuth client made in Keycloak (#246): the
+    // password on stdin through the root bridge, never on the page
+    // afterwards; a refusal is shown; the credential is then set.
+    await page.goto(url + "?oauth#/agents/triage");
+    await page.waitForSelector("#keycloak-apply");
+    check((await page.textContent("#credentials")).includes("Its OAuth client in Keycloak") &&
+          (await page.$eval("#keycloak-apply input[name=kc-admin]", e => e.value)) === "admin" &&
+          (await page.$eval("#keycloak-apply input[name=kc-realm]", e => e.value)) === "master",
+          "an OpenShell agent with an OAuth client offers to make it in Keycloak");
+    await page.fill("#keycloak-apply input[name=kc-password]", "wrong");
+    await page.click("#keycloak-apply button[type=submit]");
+    await page.waitForFunction(() => document.querySelector("#keycloak-apply").textContent.includes("Invalid user credentials"));
+    check((await page.inputValue("#keycloak-apply input[name=kc-password]")) === "", "a refused password is shown as refused and cleared");
+    await page.fill("#keycloak-apply input[name=kc-url]", "https://kc.example.com:8443");
+    await page.fill("#keycloak-apply input[name=kc-password]", "kc-pass");
+    await page.click("#keycloak-apply button[type=submit]");
+    await page.waitForFunction(() => document.querySelector("#keycloak-apply").textContent.includes("its secret is set"));
+    const kc = await spawned("agent-admin idp-client triage --keycloak --apply --admin admin --admin-realm master --keycloak-url https://kc.example.com:8443");
+    check(kc.length > 0 && kc.every(c => c[4] === "require") && (await page.evaluate(() => window.__keycloakPassword)) === "kc-pass\n",
+          "idp-client --keycloak --apply runs through the root bridge, the password on stdin");
+    check((await page.textContent("#keycloak-apply pre")).includes("token is what the gateway expects") &&
+          !(await page.textContent("body")).includes("kc-pass") &&
+          (await page.inputValue("#keycloak-apply input[name=kc-password]")) === "",
+          "agent-admin's account is shown, the password is not kept");
+    await page.waitForFunction(() => document.querySelector("#credential-gateway-client-secret").textContent.includes("held by OpenShell"));
+    check(true, "the agent's gateway-client-secret shows as set after the page refreshes");
+    if (shots) await (await page.$("#credentials")).screenshot({ path: path.join(shots, "credentials-keycloak.png") });
+
     // Audit tab: each state-changing action's history, and the records.
     await page.goto(url + "?audit#/audit");
     await page.waitForSelector("#action-a-17");
