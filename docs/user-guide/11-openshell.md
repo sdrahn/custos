@@ -1,7 +1,7 @@
 ---
 title: "11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider"
-description: Running an agent in an NVIDIA OpenShell sandbox step by step - OpenShell with rootless Podman, the agent image, mcp-gateway's HTTPS listener, trusting its certificate, the identity provider (Keycloak) and the agent's OAuth client, the issuer list, the agent's configuration, the credential, renewal, editing and checking.
-tags: [openshell, sandbox, podman, https, oauth, idp, keycloak, tokens, client credentials]
+description: Running an agent in an NVIDIA OpenShell sandbox step by step - OpenShell with rootless Podman or the systemd compute driver and which to choose, the agent image, mcp-gateway's HTTPS listener, trusting its certificate, the identity provider (Keycloak) and the agent's OAuth client, the issuer list, the agent's configuration, the credential, renewal, editing and checking.
+tags: [openshell, sandbox, podman, systemd driver, https, oauth, idp, keycloak, tokens, client credentials]
 ---
 
 # 11. Agents in OpenShell sandboxes, the gateway's HTTPS listener and the identity provider
@@ -17,8 +17,10 @@ not yet verified by this project's tests ([below](#idp-status)).
 
 ## How an OpenShell agent is put together {#architecture}
 
-- **The sandbox** `agent-<name>` runs the image `custos-agent` with
-  `agent-launcher` as OpenShell's `sandbox` user. It is created with a
+- **The sandbox** `agent-<name>` runs `agent-launcher`: from the image
+  `custos-agent` as OpenShell's `sandbox` user, or with the systemd
+  compute driver the host's own as a user of the sandbox
+  ([below](#drivers)). It is created with a
   policy (`/etc/custos/agents/<name>/openshell-policy.yaml`) that allows
   the model endpoint and, through the provider, the gateway, and nothing
   else.
@@ -35,11 +37,83 @@ not yet verified by this project's tests ([below](#idp-status)).
 - **The relay** `agent-openshell@<name>.service` owns the agent's socket
   `/run/agents/<name>/api.sock` on the host. It starts the sandbox and a
   port forward, passes callers on with a shared secret, and copies the
-  agent's journal records from the container's output into the host's
-  journal. Cockpit and `agent-admin` work the same as for any agent.
+  agent's journal records from the sandbox's output (the container's, or the
+  workload unit's journal) into the host's journal. Cockpit and `agent-admin` work the same as for any agent.
 
 The steps below are in order. Each names what it needs from the earlier
 ones.
+
+## Two ways to run the sandbox: containers or systemd units {#drivers}
+
+OpenShell's gateway runs its sandboxes with a compute driver. Custos
+works with two, chosen per agent with `sandbox.openshell_driver`
+([step 7](#configuration)); it must match the driver the OpenShell
+gateway is configured with:
+
+| | `container` (the default) | `systemd` |
+|---|---|---|
+| what runs the sandbox | Docker or rootless Podman | the OpenShell systemd compute driver: three systemd units on the host |
+| the sandbox's files | the agent image ([step 2](#image)) | the host's own, read-only; `/sandbox` and `/tmp` are its own |
+| the agent | `agent-launcher` from the image, as the image's `sandbox` user | the host's `agent-launcher`, as a user of this sandbox alone (`osb-<UID>`, 70000–79999), with its own SELinux level |
+| after updating `custos` | rebuild the image, then set the credential again to recreate the sandbox | nothing: the sandbox runs the installed launcher from its next start |
+| the agent's journal records | the relay reads the container's output (`podman logs`, `docker logs`) | the relay reads the journal of the sandbox's workload unit |
+| a private CA for the gateway's certificate | OpenShell's `gateway.toml` ([step 4](#trust)) | the host's trust store ([below](#systemd-driver)) |
+| what the agent can read | the image | what any unprivileged user of the host can read |
+| limits on CPU and memory per sandbox | the container runtime's | none ([the driver's guide](#systemd-driver-docs), chapter 6) |
+
+Choose `systemd` when containers are not wanted on the host or the
+agent's tools should be the host's own. Do not choose it for an agent
+that must learn nothing about the host: it shares the host's kernel and
+reads the host's files, as an unprivileged user does. Its network, its
+token and its policy are OpenShell's supervisor's in both cases, so
+what the agent may reach and call is the same.
+
+The systemd driver is new: it is tested by this project's CI on
+openSUSE Leap 16.0 with SELinux enforcing, from driver 0.1.4 on, and
+not yet on SLES 16 itself.
+
+### What changes in the steps with the systemd driver {#systemd-driver}
+
+The steps below apply, with these differences:
+
+- **Step 1.** Install and connect the driver as its guide's
+  installation chapter says: the packages `openshell-driver-systemd`
+  (and `openshell-driver-systemd-docs`), the helper, the driver as a
+  user service of OpenShell's user, and `gateway.toml`. Podman, the
+  delegation drop-in and the subordinate IDs are not needed. Register
+  OpenShell's gateway for root as shown, `chown` included: the relay
+  reads that registration to find the sandbox, as root but in its own
+  SELinux domain, which may not read another user's files. Leave
+  `CUSTOS_OPENSHELL_USER` unset.
+- **Step 2.** No image. `agent-admin` creates the sandbox
+  `--from host`, the only image name the driver takes.
+- **Step 4.** OpenShell refuses `additional_ca_bundle` with an external
+  driver (its gateway then does not start). The supervisor runs on the
+  host and trusts the host's store, so a private CA goes there:
+
+  ```bash
+  cp ca.pem /etc/pki/trust/anchors/mcp-gateway-ca.pem
+  update-ca-certificates
+  ```
+
+  Sandboxes that run pick it up when they restart.
+- **Step 7.** `sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: systemd}`.
+- **Step 8.** The same commands, without `CUSTOS_OPENSHELL_USER`.
+- **Step 9.** The sandbox's units and the agent's records:
+
+  ```bash
+  id=$(openshell -g openshell sandbox get agent-patch-pilot | awk '$1 == "Id:" {print $2}')
+  systemctl status openshell-sandbox-workload@$id.service
+  journalctl -u openshell-sandbox-workload@$id.service -o cat | grep '"event":' | tail
+  ```
+
+### The driver's guide {#systemd-driver-docs}
+
+`openshell-driver-systemd-docs` installs the driver's guide in
+`/usr/share/openshell-driver-systemd/docs`, with a collection for
+mcp-docs. Its chapters on what a workload can and cannot do, the
+security model and its known limits, and troubleshooting are the
+reference for everything below the OpenShell gateway.
 
 ## Step 1: OpenShell on the host {#install-openshell}
 
@@ -364,9 +438,7 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
   as systemd units on the host, without an image, and the agent's
   records come from the journal of the sandbox's workload unit).
   Custos does not detect it: it must match the gateway's configuration.
-  With the systemd driver, a private CA goes into the host's trust store
-  (`/etc/pki/trust/anchors`, then `update-ca-certificates`), not into
-  `gateway.toml`, which OpenShell refuses for that driver.
+  What else differs with the systemd driver is [above](#systemd-driver).
 - The sandbox's policy allows the model endpoint, for `agent-launcher`
   only.
 
