@@ -348,7 +348,7 @@ check "agent-admin create tpl --template triage --sandbox openshell" bash -c \
 	sed 's/^/    | /' "$work/tpl.out"
 check "it says what is next (idp-client, set-credential)" grep -q "next: agent-admin idp-client tpl" "$work/tpl.out"
 check "its configuration names this driver and the gateway's audience" bash -c \
-	"grep -q 'openshell_driver: $tpl_driver' /etc/custos/agents/tpl/agent.yaml && grep -qF '$aud' /etc/custos/agents/tpl/agent.yaml"
+	"grep -Eq 'openshell_driver: \"?$tpl_driver\"?[,}]' /etc/custos/agents/tpl/agent.yaml && grep -qF '$aud' /etc/custos/agents/tpl/agent.yaml"
 check "openshell.env names the driver" grep -qx "OPENSHELL_DRIVER=$tpl_driver" /etc/custos/agents/tpl/openshell.env
 check "it is the same as its template to compare" bash -c "agent-admin compare tpl | jq -e '.[0].configuration.same' >/dev/null"
 check "a template for systemd only refuses OpenShell" not agent-admin create tpl2 --template disk-watch --sandbox openshell --token-url "$issuer/token" "${gwcfg[@]}"
