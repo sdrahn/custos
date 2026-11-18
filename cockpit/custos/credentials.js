@@ -159,5 +159,74 @@ function credentialsSection(a) {
     }
     ui.renderAlso();
     box.append(el("h3", null, "Store a credential"), ui.form);
+    const oauth = mine.credentials.find(c => c.name === "gateway-client-secret");
+    if (oauth) box.append(...keycloakForm(a, oauth));
     return box;
+}
+
+/* The Keycloak forms, per agent, kept across refreshes like the
+ * credential forms. */
+const keycloakUIs = new Map();
+
+/* keycloakForm makes an OpenShell agent's OAuth client in the Keycloak
+ * realm of the gateway's issuer and sets its secret, in one step (agent-admin
+ * idp-client NAME --keycloak --apply, #246): logged in as a Keycloak user
+ * who may manage the realm's clients, whose password goes on stdin. The
+ * page keeps neither the password nor the secret, which never reaches it. */
+function keycloakForm(a, cred) {
+    if (!keycloakUIs.has(a.name)) {
+        const user = el("input", { name: "kc-admin", value: "admin", autocomplete: "username", "aria-label": "Keycloak user" });
+        const realm = el("input", { name: "kc-realm", value: "master", class: "mono", "aria-label": "Its realm" });
+        const url = el("input", { name: "kc-url", class: "mono", placeholder: "the gateway's issuer", autocomplete: "off",
+                                  "aria-label": "Keycloak's address" });
+        const password = el("input", { name: "kc-password", type: "password", autocomplete: "current-password", "aria-label": "Password" });
+        const note = el("div", { class: "muted" });
+        const out = el("pre", { class: "mono" });
+        out.hidden = true;
+        const go = el("button", { type: "submit" }, "Make the client and set the credential");
+        const form = el("form", { class: "credentials-edit", id: "keycloak-apply" },
+            el("div", { class: "fields" },
+               el("label", null, "Keycloak user ", user),
+               el("label", null, "Its realm ", realm),
+               el("label", null, "Password ", password),
+               el("label", null, "Keycloak's address (optional) ", url)),
+            el("div", { class: "actions" }, go), note, out);
+        const say = (msg, cls) => { note.className = cls || "muted"; note.textContent = msg };
+        form.addEventListener("submit", async ev => {
+            ev.preventDefault();
+            if (!user.value.trim() || !password.value) {
+                say("A Keycloak user that may manage the realm's clients, and its password.", "error-text");
+                return;
+            }
+            const args = ["idp-client", a.name, "--keycloak", "--apply", "--admin", user.value.trim(),
+                          "--admin-realm", realm.value.trim() || "master"];
+            if (url.value.trim()) args.push("--keycloak-url", url.value.trim());
+            go.disabled = true;
+            say("Making the client in Keycloak, checking a token and setting the credential…");
+            try {
+                const res = await admin(args, password.value + "\n");
+                password.value = "";
+                out.textContent = String(res || "").trim();
+                out.hidden = !out.textContent;
+                say("The OAuth client is made and its secret is set: OpenShell makes the sandbox.", "ok-text");
+                // Out of the form, so that the refresh shows the credential
+                // as set (the detail is not redrawn while a form is in use).
+                if (document.activeElement && form.contains(document.activeElement)) document.activeElement.blur();
+                tabs.agents.refresh();
+            } catch (ex) {
+                password.value = "";
+                say(ex.message, "error-text");
+            }
+            go.disabled = false;
+        });
+        keycloakUIs.set(a.name, form);
+    }
+    return [el("h3", null, "Its OAuth client in Keycloak"),
+        el("p", { class: "muted" }, (cred.stored ? "The client's secret is set. Making the client again replaces it, with a new secret. "
+            : "The agent needs an OAuth client at the gateway's identity provider. ") +
+            "With Keycloak, this makes it in the realm of the gateway's issuer, lists the issuer for agents and sets the " +
+            "secret, logged in as a Keycloak user who may manage the realm's clients (manage-clients). The password is used " +
+            "once and kept nowhere; the secret never reaches this page. Another provider: agent-admin idp-client " + a.name +
+            " says what the client must be."),
+        keycloakUIs.get(a.name)];
 }

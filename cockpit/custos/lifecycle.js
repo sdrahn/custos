@@ -318,9 +318,10 @@ function initCreate() {
                   " Check that the gateway has what it needs: " + ((t.needs || []).join("; ") || "nothing more") + "."
                 : "Created " + n + ": supervised, with no permissions. " +
                   "It can do nothing until its tool boundaries list what it may do.",
-                openshell ? " It runs in an OpenShell sandbox: the sandbox is made when its gateway credential is set " +
-                    "(agent-admin idp-client " + n + " says what OAuth client it needs; then agent-admin set-credential " + n +
-                    " gateway-client-secret)." : ""),
+                openshell ? " It runs in an OpenShell sandbox: the sandbox is made when its gateway credential is set. " +
+                    "With Keycloak, its Credentials section makes the OAuth client and sets it in one step; otherwise " +
+                    "agent-admin idp-client " + n + " says what OAuth client it needs, then agent-admin set-credential " + n +
+                    " gateway-client-secret." : ""),
                 cred ? credentialForm(n, cred) : "");
             cockpit.location.go(["agents", n]);
         } catch (ex) {

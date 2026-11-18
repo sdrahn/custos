@@ -419,14 +419,17 @@
                     if (!opts.superuser || query.has("nocreds")) return Promise.reject(new Error("agent-admin: reading the credential store: permission denied"));
                     const out = {};
                     for (const n of Object.keys(posture.agents)) {
-                        const list = Object.keys(credentials).filter(k => k.startsWith(n + ".")).map(k => k.slice(n.length + 1)).map(c => ({
+                        const list = Object.keys(credentials).filter(k => k.startsWith(n + ".") && !k.startsWith(n + ".gateway-")).map(k => k.slice(n.length + 1)).map(c => ({
                             name: c, stored: true, stored_at: "2026-11-05T09:00:00Z", used_by: modelCredentials[n] === c ? ["model"] : [] }));
                         const missing = [];
                         if (modelCredentials[n] && !list.some(c => c.name === modelCredentials[n])) {
                             list.push({ name: modelCredentials[n], stored: false, used_by: ["model"] });
                             missing.push(modelCredentials[n]);
                         }
-                        if (n === "triage") list.push({ name: "gateway-token", stored: true, used_by: ["gateway"], held_by: "openshell" });
+                        // ?oauth: triage has an OAuth client, its secret not yet set (#246).
+                        if (n === "triage" && query.has("oauth"))
+                            list.push({ name: "gateway-client-secret", stored: !!credentials["triage.gateway-client-secret"], used_by: ["gateway"], held_by: "openshell" });
+                        else if (n === "triage") list.push({ name: "gateway-token", stored: true, used_by: ["gateway"], held_by: "openshell" });
                         list.sort((x, y) => x.name.localeCompare(y.name));
                         out[n] = { credentials: list, missing };
                     }
@@ -526,6 +529,15 @@
                                  defaults.model = { provider: v("provider"), name: v("name"), endpoint: v("endpoint"), credential: v("credential"), timeout_seconds: v("timeout_seconds"), max_output_tokens: v("max_output_tokens"), reasoning_effort: v("reasoning_effort") };
                              }
                              if (cmd === "set-credential") credentials[name + "." + arg] = input;
+                             // idp-client --keycloak --apply (#246): the Keycloak password on stdin.
+                             if (cmd === "idp-client" && args.includes("--apply")) {
+                                 window.__keycloakPassword = input;
+                                 if (input !== "kc-pass\n")
+                                     return Promise.reject(new Error("agent-admin: Keycloak refused admin in realm master (401): Invalid user credentials")).then(ok, bad);
+                                 credentials[name + ".gateway-client-secret"] = "made-by-keycloak";
+                                 return Promise.resolve("set  Keycloak client agent-" + name + " in realm mcp (https://idp.example.com)\n" +
+                                     "ok   iss https://idp.example.com/realms/mcp\nagent " + name + "'s token is what the gateway expects\n").then(ok, bad);
+                             }
                              if (cmd === "owners") {
                                  if (args.slice(3).some(o => o === "self" || o.startsWith("user:agent-")))
                                      return Promise.reject(new Error("agent-admin: owner \"" + args[3] + "\" is an agent's account: an agent never approves")).then(ok, bad);

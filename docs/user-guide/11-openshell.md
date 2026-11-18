@@ -620,6 +620,9 @@ gateway-client-secret` then:
 3. gets the first token: a refused client fails here;
 4. creates the sandbox and enables the relay `agent-openshell@patch-pilot.socket`.
 
+With Keycloak, `agent-admin idp-client patch-pilot --keycloak --apply`
+([step 5](#keycloak)) makes the client and sets its secret instead, as
+does Cockpit's form in the agent's Credentials section.
 With a static token: `agent-admin set-credential patch-pilot gateway-token < token.txt`.
 The secret is not kept by `agent-admin`: to recreate the provider later,
 set it again.
