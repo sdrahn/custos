@@ -12,7 +12,10 @@ certificate `--ca` takes and covers a Keycloak in a container. The
 relay's SELinux domain reads root's OpenShell registration only, no
 longer every user's `~/.config` (security review 0.8, S5). The security
 review before 0.9 (`docs/security-review-0.9.md`) went through what
-changed since 0.8.0.
+changed since 0.8.0; it found that `--apply` allowed the Keycloak
+administrator's password over plain HTTP to this host's loopback and
+could replace another client than the agent's, which is fixed before
+this release.
 
 Upgrading from 0.8.x needs no change to configurations or gateway data;
 mcp-gateway 1.16 stays the minimum. To know:
