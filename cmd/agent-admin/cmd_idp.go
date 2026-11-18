@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/admin/idp"
@@ -14,12 +18,30 @@ var idpCommands = []command{
 		fs := flags("idp-client")
 		gw := fs.String("gateway-config", "", "")
 		keycloak := fs.Bool("keycloak", false, "")
+		apply := fs.Bool("apply", false, "")
+		var o idp.Apply
+		fs.StringVar(&o.Admin, "admin", "", "")
+		fs.StringVar(&o.AdminRealm, "admin-realm", "master", "")
+		fs.StringVar(&o.URL, "keycloak-url", "", "")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
 		}
 		a.GatewayConfig = *gw
-		return idp.Client(a, pos[0], *keycloak)
+		if !*apply {
+			return idp.Client(a, pos[0], *keycloak)
+		}
+		if !*keycloak {
+			return errors.New("idp-client: --apply is for --keycloak")
+		}
+		if o.Admin == "" {
+			return errors.New("idp-client --apply: --admin USER, a Keycloak user that may manage the realm's clients")
+		}
+		pw, err := password(o.Admin)
+		if err != nil {
+			return err
+		}
+		return idp.KeycloakApply(a, pos[0], o, pw)
 	}},
 	{"check-token", func(a *admin.Admin, args []string) error {
 		fs := flags("check-token")
@@ -31,4 +53,31 @@ var idpCommands = []command{
 		a.GatewayConfig = *gw
 		return idp.CheckToken(a, pos[0], os.Stdin)
 	}},
+}
+
+// password is the Keycloak administrator's password, from standard input:
+// asked for, without echo, when that is a terminal; else its first line
+// (a pipe, or Cockpit).
+func password(user string) (*bytes.Reader, error) {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, err
+	}
+	tty := fi.Mode()&os.ModeCharDevice != 0
+	if tty {
+		fmt.Fprintf(os.Stderr, "Keycloak password of %s: ", user)
+		stty := func(arg string) { c := exec.Command("stty", arg); c.Stdin = os.Stdin; c.Run() }
+		stty("-echo")
+		defer func() { stty("echo"); fmt.Fprintln(os.Stderr) }()
+	}
+	var line []byte
+	b := make([]byte, 1)
+	for len(line) < 4096 {
+		n, err := os.Stdin.Read(b)
+		if n == 0 || err != nil || b[0] == '\n' {
+			break
+		}
+		line = append(line, b[0])
+	}
+	return bytes.NewReader(line), nil
 }

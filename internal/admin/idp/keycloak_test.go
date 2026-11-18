@@ -78,3 +78,43 @@ func TestKeycloak(t *testing.T) {
 	}
 	t.Logf("check-token against Keycloak:\n%s", out.String())
 }
+
+// --apply against the real Keycloak: the client made through its admin
+// API (logged in as admin/admin, the job's bootstrap administrator) in a
+// new realm, the token checked with the new secret, the credential set
+// (OpenShell's commands recorded, not run).
+func TestKeycloakApplyReal(t *testing.T) {
+	base, kcadm := os.Getenv("KEYCLOAK_URL"), os.Getenv("KCADM")
+	if base == "" || kcadm == "" {
+		t.Fatal("KEYCLOAK_URL and KCADM are not set (the keycloak tag needs a Keycloak)")
+	}
+	realm := fmt.Sprintf("apply%d", time.Now().UnixNano())
+	c := exec.Command("bash", "-c", `$KCADM create realms -s realm=`+realm+` -s enabled=true >/dev/null`)
+	c.Env = append(os.Environ(), "KCADM="+kcadm)
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	a, r := newAdmin(t)
+	a.Now = time.Now
+	issuer := strings.TrimRight(base, "/") + "/realms/" + realm
+	os.MkdirAll(a.Path(filepath.Dir(gatewayconf.Config)), 0o755)
+	os.WriteFile(a.Path(gatewayconf.Config), []byte(strings.Replace(gatewayYml, "https://idp.example.com/realms/mcp", issuer, 1)), 0o644)
+	host.WriteFile(a.Path(admin.GatewayHTTPIssuers), []byte("_http:\n  issuers: [\""+issuer+"\"]\n"), 0o644)
+	dir := a.AgentDir("sb")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "agent.yaml"),
+		[]byte(strings.Replace(oshOAuthYml, "https://idp.example.com/token", issuer+"/protocol/openid-connect/token", 1)), 0o640)
+	os.WriteFile(filepath.Join(dir, "relay.secret"), []byte("relay\n"), 0o600)
+	var out strings.Builder
+	a.Out = &out
+	// Twice: the second replaces the client the first made.
+	for range 2 {
+		if err := KeycloakApply(a, "sb", Apply{Admin: "admin"}, strings.NewReader("admin\n")); err != nil {
+			t.Fatalf("%v\n%s", err, out.String())
+		}
+	}
+	if !strings.Contains(out.String(), "token is what the gateway expects") || !strings.Contains(strings.Join(r.Cmds, "\n"), "provider") {
+		t.Errorf("output:\n%s\nran:\n%s", out.String(), strings.Join(r.Cmds, "\n"))
+	}
+	t.Logf("idp-client --keycloak --apply against Keycloak:\n%s", out.String())
+}

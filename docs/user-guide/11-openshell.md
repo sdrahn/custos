@@ -333,7 +333,29 @@ is listed for agents yet ([step 6](#issuers)).
 
 ### Keycloak {#keycloak}
 
-In the realm the gateway's `http.issuer` names (mcp-gateway user guide,
+Once the agent is created ([step 8](#credential)), one command does the
+rest of this step, step 6 and the credential of step 8:
+
+```bash
+agent-admin idp-client patch-pilot --keycloak --apply --admin admin   # asks for admin's password
+```
+
+It logs in to Keycloak's admin API as `admin` (in the realm `master`;
+`--admin-realm` for another), at the address of the gateway's
+`http.issuer`, makes the agent's client as the script below does, lists
+the issuer for agents if it is not, checks a token with the new secret
+as `check-token` does, and sets the secret as the agent's
+`gateway-client-secret`, which creates the sandbox. The secret and the
+password are kept nowhere. The user must be allowed to manage the
+realm's clients (*realm-management*: *manage-clients*). A client of the
+agent's id already there is replaced, with a new secret: run it again to
+set a new one. This host must reach Keycloak at that address over HTTPS
+and trust its certificate (`--keycloak-url` for another address; plain
+HTTP only on this host's loopback). The password can
+also come on standard input, as its first line.
+
+The steps by hand, or for a Keycloak this host cannot reach: in the
+realm the gateway's `http.issuer` names (mcp-gateway user guide,
 chapter 15, sets one up for people), `agent-admin idp-client NAME
 --keycloak` prints a script that creates the agent's client with
 Keycloak's admin CLI, `kcadm.sh`. Run it where `kcadm.sh` is logged in

@@ -115,7 +115,14 @@ func localUserNote(claim string) string {
 // with its own sub mapper among them, so that the hardcoded sub is the only
 // one.
 func keycloakScript(base, realm, clientID, sub string, h *gatewayconf.HTTP) string {
-	client := map[string]any{
+	cj, _ := json.MarshalIndent(keycloakClient(clientID, sub, h), "", "  ")
+	return keycloakScriptWith(base, realm, clientID, sub, string(cj), h)
+}
+
+// keycloakClient is the agent's client as Keycloak's admin API takes it
+// (the script's kcadm.sh and --apply alike).
+func keycloakClient(clientID, sub string, h *gatewayconf.HTTP) map[string]any {
+	return map[string]any{
 		"clientId": clientID, "enabled": true, "protocol": "openid-connect",
 		"publicClient": false, "clientAuthenticatorType": "client-secret",
 		"serviceAccountsEnabled": true, "standardFlowEnabled": false, "directAccessGrantsEnabled": false,
@@ -131,7 +138,9 @@ func keycloakScript(base, realm, clientID, sub string, h *gatewayconf.HTTP) stri
 					"id.token.claim": "false", "introspection.token.claim": "true"}},
 		},
 	}
-	cj, _ := json.MarshalIndent(client, "", "  ")
+}
+
+func keycloakScriptWith(base, realm, clientID, sub, cj string, h *gatewayconf.HTTP) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `#!/bin/bash
 # The OAuth client of %[1]s in Keycloak realm %[2]s (custos #111; user
