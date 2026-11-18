@@ -73,7 +73,7 @@ systemctl stop custos-fakemodel.service >/dev/null 2>&1
 
 if [ -n "$results" ]; then
 	write_results "$results"
-	ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" >"$results/avc.txt" 2>&1
+	avc_since "$t0" >"$results/avc.txt"
 	journalctl --no-pager --since "@$t0" -o short-precise >"$results/journal.txt" 2>&1
 fi
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)

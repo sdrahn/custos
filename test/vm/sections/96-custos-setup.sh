@@ -114,7 +114,7 @@ if command -v custos-setup >/dev/null; then
 		check "custos-net__network_routes sees the host's routes (one via an interface)" net_has network_routes " dev "
 		check "custos-net__listening_sockets sees the host's listening sockets (the fake model's 8008)" net_has listening_sockets :8008
 		if enforcing; then
-			exec_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$exec_t0" '+%x %T')" 2>/dev/null | grep 'mcpsrv_exec_t' || true)
+			exec_avc=$(avc_since "$exec_t0" | grep 'mcpsrv_exec_t' || true)
 			check "no SELinux denial for the diagnostic commands (mcpsrv_exec_t)" test -z "$exec_avc"
 			[ -n "$exec_avc" ] && sed 's/^/    | /' <<<"$exec_avc" | head -30
 			# A command that failed without an audited denial: once more with
@@ -124,7 +124,7 @@ if command -v custos-setup >/dev/null; then
 				for tool in $exec_failed; do run_activity health-check "CALL exec__$tool" >/dev/null; done
 				semodule -B >/dev/null 2>&1
 				echo "    | every denial, the dontaudit ones included, while running again:$exec_failed"
-				ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$hidden_t0" '+%x %T')" 2>/dev/null |
+				avc_since "$hidden_t0" |
 					grep -o 'avc: .*' | sed 's/ pid=[0-9]*//' | sort | uniq -c | sort -rn | head -40 | sed 's/^/    | /'
 			fi
 			if [ -n "$exec_failed" ]; then

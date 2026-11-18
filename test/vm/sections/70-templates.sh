@@ -105,7 +105,7 @@ check "no ConfigurationDirectory mode warning" not bash -c \
 # SELinux on the credential (the SELinux section above ran before this
 # one). The base policy does not audit every denial here: that t3 starts
 # and answers is the real check.
-t3_avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t3_t0" '+%x %T')" 2>/dev/null | grep -E 'denied|SELINUX_ERR' || true)
+t3_avc=$(avc_since "$t3_t0" | grep -E 'denied|SELINUX_ERR' || true)
 [ -n "$t3_avc" ] && printf '  %s\n' "$t3_avc" | head -20
 check "no SELinux denial while t3 reads its credential" test -z "$t3_avc"
 check "agent-admin delete t3" agent-admin delete t3
