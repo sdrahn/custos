@@ -602,8 +602,11 @@ if [ -n "$relay_ok" ]; then
 			# said of the sandbox's provider environment.
 			journalctl --no-pager -o short-precise --since "-180s" -u "openshell-sandbox-supervisor@$sid2.service" \
 				-u "openshell-sandbox-workload@$sid2.service" 2>&1 | head -n 60 | cut -c1-260 | sed 's/^/    | start: /'
+			# Whole lines, without colours and the request span's fields, so
+			# the message of a warning is not cut off.
 			journalctl --no-pager -o cat --since "-180s" _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 |
-				grep -iE 'provider|environment|credential' | tail -n 15 | cut -c1-260 | sed 's/^/    | gateway: /'
+				grep -iE 'provider|environment|credential|identity' | sed -E 's/\x1b\[[0-9;]*m//g; s/request\{[^}]*\}//' |
+				grep -vE ' INFO +(:|openshell_server::grpc)? *$' | tail -n 25 | cut -c1-600 | sed 's/^/    | gateway: /'
 		fi
 	}
 	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml" ||
