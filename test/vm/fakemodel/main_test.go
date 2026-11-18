@@ -244,3 +244,35 @@ func TestThink(t *testing.T) {
 		}
 	}
 }
+
+// A playbook run (PLAYBOOK REPORT): after the host's step calls, a
+// report naming the gateway tools offered and quoting the first step's
+// output; after the report, the text that ends the run.
+func TestPlaybookReport(t *testing.T) {
+	m := &Model{Prefix: "custos-test"}
+	r := req("Run the playbook.\nPLAYBOOK REPORT", "systemd__list_log", "exec__boot_time", "report_diagnosis")
+	step := message{Role: "assistant", ToolCalls: []toolCall{{ID: "custos-step-1-x", Type: "function"}}}
+	step.ToolCalls[0].Function.Name = "exec__boot_time"
+	out := "stand-in exec__boot_time: nothing wrong found (arguments {})"
+	r.Messages = append(r.Messages, step, message{Role: "tool", ToolCallID: "custos-step-1-x", Content: &out})
+	rep := m.Respond(r)
+	if len(rep.ToolCalls) != 1 || rep.ToolCalls[0].Function.Name != "report_diagnosis" {
+		t.Fatalf("not a report: %+v", rep)
+	}
+	var got struct {
+		Summary  string `json:"summary"`
+		Evidence []struct{ Tool, Quote string }
+	}
+	if err := json.Unmarshal([]byte(rep.ToolCalls[0].Function.Arguments), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Summary != "offered: exec__boot_time, systemd__list_log" || len(got.Evidence) != 1 ||
+		got.Evidence[0].Tool != "exec__boot_time" || !strings.HasPrefix(out, got.Evidence[0].Quote) {
+		t.Errorf("report %+v", got)
+	}
+	ok := `{"recorded":true}`
+	r.Messages = append(r.Messages, rep, message{Role: "tool", ToolCallID: rep.ToolCalls[0].ID, Content: &ok})
+	if end := m.Respond(r); end.Content == nil || *end.Content != "reported: "+ok {
+		t.Errorf("after the report: %+v", end)
+	}
+}

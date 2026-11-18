@@ -113,6 +113,7 @@ install: build
 install-tests: build-tests
 	install -Dm0755 test/vm/run-tests.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/run-tests.sh
 	install -Dm0644 test/vm/lib.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/lib.sh
+	install -Dm0644 test/vm/playbook-runs.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/playbook-runs.sh
 	install -D -m 0644 -t $(DESTDIR)$(LIBEXECDIR)/custos/tests/sections test/vm/sections/*.sh
 	install -Dm0755 test/vm/model-eval.sh $(DESTDIR)$(LIBEXECDIR)/custos/tests/model-eval.sh
 	install -Dm0755 bin/tests/fakemodel $(DESTDIR)$(LIBEXECDIR)/custos/tests/fakemodel

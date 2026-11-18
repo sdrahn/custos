@@ -84,6 +84,9 @@ sandbox_state() {
 	journalctl -u agent-openshell@sb.service --since -5min --no-pager -o cat 2>&1 | tail -n 25 | sed 's/^/    | unit: /'
 }
 run_activity() { api /v1/activities -X POST -d "$(jq -nc --arg p "$1" '{prompt: $p, wait: true}')"; }
+# The shipped playbooks against stand-ins for their servers (#227).
+# shellcheck source=../vm/playbook-runs.sh
+. "$here/test/vm/playbook-runs.sh"
 summary_has() { grep -qF -- "$2" <<<"$(jq -r .summary <<<"$1")"; }
 journal_has() { journalctl -o json --no-pager --since "@$t0" AGENT_NAME=sb "AGENT_EVENT=$1" 2>/dev/null | jq -e "select($2)" >/dev/null 2>&1; }
 osh() { openshell -g openshell "$@"; }
@@ -239,11 +242,13 @@ if [ -n "$system" ]; then
 		>/etc/mcp-gateway/gateway.d/60-custos-openshell.yaml
 	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: principal' \
 		>/etc/mcp-gateway/servers.d/custos-test.yaml
+	standins_register /etc/mcp-gateway/servers.d /usr/libexec/custos/tests/testsrv principal
 	check "the system's mcp-gateway restarts with the HTTPS listener" systemctl restart mcp-gateway.service ||
 		journalctl -u mcp-gateway.service -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 else
 	printf '%s\n' 'version: 1' 'name: custos-test' 'command: ["/usr/libexec/custos/tests/testsrv"]' 'run_as: gateway' \
 		>"$work/gw/servers.d/custos-test.yaml"
+	standins_register "$work/gw/servers.d" /usr/libexec/custos/tests/testsrv gateway
 	printf '%s\n' "socket: $work/gw/mcp.sock" "servers_dir: $work/gw/servers.d" "state_dir: $work/gw/state" \
 		"approvals:" "  control_socket: $work/gw/control.sock" \
 		"policy:" "  opa_socket: /run/mcp-gateway/opa.sock" \
@@ -258,6 +263,8 @@ check "the gateway's HTTPS listener refuses a request without a token (401)" eve
 	"curl -s -o /dev/null -w '%{http_code}' --cacert '$work/tls/ca.pem' --resolve $gw_host:18443:127.0.0.1 -X POST $aud | grep -qx 401" ||
 	journalctl -u "$gw_unit" -o cat --no-pager --since "@$t0" | tail -n 15 | sed 's/^/    | gateway: /'
 check "the gateway takes the test server" eventually 30 bash -c "curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers | grep -q custos-test"
+check "the gateway takes the playbooks' stand-ins (${standin_servers[*]})" eventually 30 bash -c \
+	"s=\$(curl -s --unix-socket '$gw_ctl' http://localhost/v1/servers); for n in ${standin_servers[*]}; do grep -q \"\\\"\$n\\\"\" <<<\"\$s\" || exit 1; done"
 check "the issuer gives agent-sb's client a token" bash -c \
 	"curl -sf -X POST -d grant_type=client_credentials -d client_id=agent-sb --data-urlencode client_secret=\$(cat '$work/client-secret') '$issuer/token' | jq -e '.access_token != null' >/dev/null"
 minted() { curl -s "$issuer/minted" | jq -r '."agent-sb" // 0'; }
@@ -353,7 +360,7 @@ model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
 instruction: You are a test agent.
 gateway:
   url: "$aud"
-  servers: [custos-test]
+  servers: [custos-test, exec, systemd, custos-net, snapper, tukit, zypp, restarts]   # the playbooks' stand-ins, #227
   oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 90}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
@@ -380,6 +387,7 @@ else
 		"agent-admin check sb | grep -q 'note: gateway.url $aud: the sandbox reaches the gateway as host.openshell.internal'"
 fi
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
+standin_permissions /usr/libexec/custos/tests/testsrv >>"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
 check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q custos-gateway-sb'
@@ -566,6 +574,12 @@ if [ -n "$relay_ok" ]; then
 	# not (/proc/<launcher>/fd/1: permission denied), nor can docker or
 	# podman exec reach it, so this is not tried here.
 
+	section "The shipped playbooks in the sandbox (#227)"
+	# Every shipped playbook, as on the systemd backend (the functional
+	# tests' section 85), here through the sandbox's supervisor, OpenShell's
+	# proxy and the gateway's HTTPS listener.
+	playbook_runs sb "$gw_unit" "openshell ($runtime)"
+
 	section "AG-UI through the relay"
 	out=$(api /agui -N -X POST -d '{"threadId":"osh-1","messages":[{"role":"user","content":"PROBE"}]}')
 	check "the stream comes through the relay" grep -q '"type":"RUN_FINISHED"' <<<"$out"
@@ -711,6 +725,7 @@ if [ -n "$results" ]; then
 	[ "$runtime" = systemd ] &&
 		journalctl --no-pager --since "@$t0" -u 'openshell-sandbox-*' -u openshell-systemd-helper.service -o short-precise >"$results/sandbox-units.log" 2>&1
 fi
+[ -n "$system" ] && standins_remove /etc/mcp-gateway/servers.d
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
 printf '\n%d checks, %d failed\n' "${#results_list[@]}" "$n_fail"
 exit "$failed"
