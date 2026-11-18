@@ -76,17 +76,20 @@ not yet on SLES 16 itself.
 
 The steps below apply, with these differences:
 
-- **Step 1.** Install and connect the driver as its guide's
-  installation chapter says: the packages `openshell-driver-systemd`
-  (and `openshell-driver-systemd-docs`), the helper, the driver as a
-  user service of OpenShell's user, and `gateway.toml`. Podman, the
-  delegation drop-in and the subordinate IDs are not needed. Register
-  OpenShell's gateway for root as shown, `chown` included: the relay
-  reads that registration to find the sandbox, as root but in its own
-  SELinux domain, which may not read another user's files. Leave
-  `CUSTOS_OPENSHELL_USER` unset. After installing the packages,
-  `agent-admin openshell-setup --user osh --driver systemd --ca ca.pem`
-  does the rest of this step and step 4 ([below](#setup)).
+- **Step 1.** In this order ([in one command](#setup) shows the
+  commands):
+  1. OpenShell for its user `osh`, with its gateway running and
+     registered for `osh`, as for containers. Podman, the delegation
+     drop-in and the subordinate IDs are not needed.
+  2. The driver's packages: `openshell-driver-systemd`, with
+     `openshell-driver-systemd-selinux` and
+     `openshell-driver-systemd-docs`.
+  3. `agent-admin openshell-setup --user osh --driver systemd`. It
+     connects the driver: its helper, the driver as `osh`'s service and
+     `gateway.toml`, which the driver's guide describes by hand. It also
+     registers the gateway for root and, with `--ca`, does step 4.
+
+  Leave `CUSTOS_OPENSHELL_USER` unset.
 - **Step 2.** No image. `agent-admin` creates the sandbox
   `--from host`, the only image name the driver takes.
 - **Step 4.** OpenShell refuses `additional_ca_bundle` with an external
@@ -100,8 +103,13 @@ The steps below apply, with these differences:
 
   Sandboxes that run pick it up when they restart.
   `agent-admin openshell-setup --ca` puts it there as
-  `custos-mcp-gateway-ca.pem`.
+  `custos-mcp-gateway-ca.pem`. It is then trusted host-wide; which
+  certificate `ca.pem` is, and when it is not needed:
+  [step 4](#ca).
 - **Step 7.** `sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: systemd}`.
+  An agent from a template gets it with
+  `agent-admin create NAME --template T --sandbox openshell --openshell-driver systemd`
+  ([chapter 9](09-administration.md#template-backend)).
 - **Step 8.** The same commands, without `CUSTOS_OPENSHELL_USER`.
 - **Step 9.** The sandbox's units and the agent's records:
 
@@ -138,9 +146,20 @@ loginctl enable-linger osh
 systemctl restart user@$(id -u osh).service      # a user manager started before the drop-in lacks the delegation
 ```
 
-Install OpenShell for `osh` as OpenShell's documentation says (its
-installer, or its package). Then register its gateway for root too:
-`agent-admin` and the relays run the `openshell` command as root:
+Install OpenShell for `osh` as OpenShell's documentation says, with its
+installer or its package. The installer starts the gateway as `osh`'s
+service and registers it for `osh`, and Custos's tests install OpenShell
+this way. With the package, do both yourself, as OpenShell's RPM quick
+start says:
+
+```bash
+systemctl --user --machine=osh@ enable --now openshell-gateway
+runuser -u osh -- openshell gateway add --local https://127.0.0.1:17670
+ls /home/osh/.config/openshell/gateways/openshell/mtls/ca.crt   # the registration, with the gateway's CA
+```
+
+Then register its gateway for root too: `agent-admin` and the relays run
+the `openshell` command as root:
 
 ```bash
 mkdir -p /root/.config && cp -a /home/osh/.config/openshell /root/.config/
@@ -164,13 +183,31 @@ With Docker, OpenShell's gateway runs as root's, and
 ### In one command {#setup}
 
 Once the packages are installed and OpenShell is installed for its
-user, `agent-admin openshell-setup` does the rest of this step, and step 4,
-for either compute driver:
+user, with its gateway running and registered for that user,
+`agent-admin openshell-setup` does the rest of this step, and step 4,
+for either compute driver. Leave out `--ca` when mcp-gateway's
+certificate needs no CA of its own ([step 4](#ca)).
+
+With containers (rootless Podman or Docker):
 
 ```bash
 agent-admin openshell-setup --user osh --driver container --ca ca.pem --check   # what it would do
 agent-admin openshell-setup --user osh --driver container --ca ca.pem
 ```
+
+With the systemd compute driver, after OpenShell for `osh` and the
+driver's packages:
+
+```bash
+zypper install openshell-driver-systemd openshell-driver-systemd-selinux openshell-driver-systemd-docs
+agent-admin openshell-setup --user osh --driver systemd --ca ca.pem --check     # what it would do
+agent-admin openshell-setup --user osh --driver systemd --ca ca.pem
+```
+
+On a transactional system (SLES 16 or Leap 16 in immutable mode),
+`zypper install` goes into a new snapshot (`transactional-update`):
+reboot into it before `openshell-setup`, which otherwise does not find
+the driver's packages.
 
 It installs nothing. It checks what it needs and names what is missing:
 `openshell` and `openshell-gateway`, OpenShell's gateway set up for the
@@ -188,7 +225,10 @@ user, and Podman or Docker, or the systemd compute driver's package with
 It restarts what changed, checks that the gateway answers root, and
 prints the `sandbox` line for `agent.yaml`, with `CUSTOS_OPENSHELL_USER`
 for rootless Podman. Run again, it changes nothing that is already
-right.
+right. Anything missing is a `FAIL` line, and it changes nothing then.
+`OpenShell's gateway "openshell" is not set up for osh` means that
+OpenShell is not installed for `osh` yet, or that its gateway was not
+registered for `osh`.
 
 ## Step 2: the agent image {#image}
 
@@ -307,6 +347,32 @@ sandbox ([chapter 12](12-troubleshooting.md#openshell)).
 `agent-admin openshell-setup --ca ca.pem` ([step 1](#setup)) does this,
 for the systemd compute driver in the host's trust store instead.
 
+### Which certificate ca.pem is {#ca}
+
+`ca.pem` is the certificate of the CA that signed mcp-gateway's
+certificate (`cert_file` in [step 3](#listener)), as a PEM file. It is
+not the gateway's certificate, and not OpenShell's own CA. The gateway's
+certificate names its issuer:
+
+```bash
+openssl x509 -in /etc/mcp-gateway/tls/cert.pem -noout -subject -issuer
+```
+
+`ca.pem` is that issuer's certificate; where an intermediate CA signed
+it, the root at the top of the chain. Whoever issued the gateway's
+certificate has it: a certificate file usually carries the chain without
+its root. `agent-admin openshell-setup` takes only a CA certificate.
+
+Leave `--ca` out when the issuer is a public CA. With the systemd
+driver, also when the host already trusts the issuer (in
+`/etc/pki/trust/anchors`, for example your organization's CA): the
+supervisor runs on the host and uses its trust store.
+
+With the systemd driver, the CA goes into the host's trust store and is
+then trusted host-wide, for every name, not only for the gateway. Where
+that is too much, have the gateway's certificate issued by a CA that
+issues for that name only (a name constraint).
+
 ## Step 5: the identity provider and the agent's OAuth client {#idp}
 
 Each OpenShell agent is an OAuth client of your identity provider, using
@@ -363,6 +429,39 @@ The script
 5. prints the client's secret, the only thing on its standard output:
    `client-secret.txt` is the secret for [step 8](#credential); keep it
 root's (`chmod 600`) and delete it once it is set.
+
+A Keycloak in a container has its `kcadm.sh` in the container
+(`/opt/keycloak/bin/kcadm.sh` in Keycloak's image). Log it in there, and
+let the script call it through `podman exec` (or `docker exec`); the
+script runs on the host, as the user whose container it is (root for a
+container of root's):
+
+```bash
+podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+    --server https://idp.example.com:8443 --realm master --user admin   # its certificate's name, the port in the container
+KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-client.sh >client-secret.txt
+```
+
+`-i` without `-t`: the script hands the client's definition to
+`kcadm.sh` on its standard input, which a terminal would break.
+
+`--server` names Keycloak as its certificate does (`KC_HOSTNAME`), with
+the port Keycloak listens on in the container: 8443 for HTTPS, which
+`podman port keycloak` shows published as the host's port. Inside the
+container that name may resolve to the container itself (Podman's
+`/etc/hosts`), where the published port is not open. mcp-gateway's
+`http.issuer` keeps the published port, the one Keycloak puts in its
+tokens (`KC_HOSTNAME_PORT`). `http://localhost:8080` works only where
+Keycloak serves plain HTTP (`KC_HTTP_ENABLED`, `start-dev`). A Keycloak
+certificate from a CA of your own needs that CA in a truststore for
+`kcadm.sh`, in the container:
+
+```bash
+podman cp ca.pem keycloak:/tmp/ca.pem
+podman exec keycloak keytool -importcert -noprompt -alias custos-ca -file /tmp/ca.pem \
+    -keystore /tmp/kcadm-trust.p12 -storetype PKCS12 -storepass changeit
+podman exec keycloak /opt/keycloak/bin/kcadm.sh config truststore --trustpass changeit /tmp/kcadm-trust.p12
+```
 
 It stops at the first error; if the client exists already, `kcadm.sh`
 refuses to create it again: delete it (`kcadm.sh delete clients/ID -r
