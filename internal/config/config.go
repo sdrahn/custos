@@ -30,6 +30,15 @@ const (
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
+// OpenShell's gateway takes a sandbox's name of at most 19 characters (a
+// DNS label holds three such names joined by "--"; OpenShell 0.1.8,
+// MAX_ROUTABLE_NAME_LEN), and an agent's sandbox is agent-NAME: an
+// OpenShell agent's name has at most 13.
+const (
+	maxOpenShellSandboxName = 19
+	MaxOpenShellName        = maxOpenShellSandboxName - len("agent-")
+)
+
 var envRE = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 func isLoopback(h string) bool {
@@ -493,6 +502,9 @@ func (c *Config) Check() error {
 		case "", "container", "systemd":
 		default:
 			bad("sandbox.openshell_driver: %q: want container or systemd", c.Sandbox.OpenShellDriver)
+		}
+		if len(c.Name) > MaxOpenShellName {
+			bad("name %q: %d characters; an agent in an OpenShell sandbox has at most %d: its sandbox agent-%s would exceed OpenShell's %d for a sandbox's name", c.Name, len(c.Name), MaxOpenShellName, c.Name, maxOpenShellSandboxName)
 		}
 	default:
 		bad("sandbox.kind: %q: want systemd or openshell", c.Sandbox.Kind)
