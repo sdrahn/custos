@@ -40,6 +40,7 @@ var agentCommands = []command{
 		fs := flags("create")
 		tmpl, from := fs.String("template", "", ""), fs.String("from", "", "")
 		b := backendFlags(fs)
+		gatewayConfigFlag(a, fs)
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err

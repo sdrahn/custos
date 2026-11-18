@@ -28,6 +28,7 @@ var templateCommands = []command{
 		fs := flags("draft")
 		tmpl := fs.String("template", "", "")
 		be := backendFlags(fs)
+		gatewayConfigFlag(a, fs)
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -88,4 +89,10 @@ func backendFlags(fs *flag.FlagSet) *templates.Backend {
 	fs.StringVar(&b.TokenURL, "token-url", "", "")
 	fs.BoolVar(&b.StaticToken, "static-token", false, "")
 	return b
+}
+
+// gatewayConfigFlag is --gateway-config FILE: the gateway configuration
+// read instead of the installed one (OpenShell's parts of a draft).
+func gatewayConfigFlag(a *admin.Admin, fs *flag.FlagSet) {
+	fs.StringVar(&a.GatewayConfig, "gateway-config", "", "")
 }

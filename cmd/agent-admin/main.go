@@ -34,8 +34,9 @@ const usage = `usage: agent-admin COMMAND …
                                          install a new agent from a template: its configuration (or FILE's),
                                          permissions and mode. BACKEND, where it runs, as the template allows:
                                          --sandbox systemd|openshell [--openshell-driver container|systemd]
-                                         [--openshell-gateway NAME] [--token-url URL | --static-token];
-                                         openshell: gateway.url and gateway.oauth from mcp-gateway's http settings
+                                         [--openshell-gateway NAME] [--token-url URL | --static-token]
+                                         [--gateway-config FILE]; openshell: gateway.url and gateway.oauth from
+                                         mcp-gateway's http settings (FILE's instead of the installed gateway's)
   templates                              the agent templates (CONTRACT.md §14a), as JSON
   playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
   compare [NAME…] [--template TEMPLATE]  each agent against its template (CONTRACT.md §14a), as JSON: the
