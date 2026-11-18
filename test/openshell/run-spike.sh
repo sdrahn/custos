@@ -540,7 +540,7 @@ if [ -n "$relay_ok" ]; then
 			echo "    | the workload unit's last lines:"
 			unit_log | tail -n 8 | cut -c1-200 | sed 's/^/    | /'
 		}
-		echo "    | the agent's records there: $(unit_log | grep -c '\"event\":')"
+		echo "    | the agent's records there: $(unit_log | grep -c '"event":')"
 	fi
 
 	# Security review H1: the relay journals the agent's records as root,
