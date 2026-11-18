@@ -10,6 +10,7 @@
 //	cmd_templates.go    internal/admin/templates  templates, model defaults, compare and apply
 //	cmd_promotion.go    internal/admin/promotion  readiness, promote, demote, review, evaluate, feedback
 //	cmd_idp.go          internal/admin/idp        the identity provider
+//	cmd_openshell.go    internal/admin/oshsetup   OpenShell on the host
 package main
 
 import (
@@ -57,6 +58,11 @@ const usage = `usage: agent-admin COMMAND …
   check-token NAME < secret              mint a token with the agent's OAuth client and check its claims
                                          as the gateway will (iss, sub, aud, scope, lifetime)
                                          (both: --gateway-config FILE instead of the installed gateway's)
+  openshell-setup --user USER --driver container|systemd [--gateway NAME] [--ca FILE] [--check]
+                                         set up OpenShell for OpenShell agents (CONTRACT.md §16a): checks what
+                                         is installed (it installs nothing), configures the driver, registers
+                                         the gateway for root, puts mcp-gateway's CA (FILE) where the driver
+                                         needs it; --check: say what would change
   credentials [NAME…]                    the agents' credentials: names, what uses them, missing ones; never
                                          the values (JSON)
   remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
@@ -121,7 +127,7 @@ type command struct {
 }
 
 // groups are the groups' tables; a new group is added here.
-var groups = [][]command{agentCommands, credentialCommands, enablementCommands, templateCommands, promotionCommands, idpCommands}
+var groups = [][]command{agentCommands, credentialCommands, enablementCommands, templateCommands, promotionCommands, idpCommands, openshellCommands}
 
 // commands are all of them, by name.
 var commands = func() map[string]command {

@@ -59,6 +59,7 @@ A package imports only packages from rows above its own layer.
 | 5 | `internal/admin/templates` | root | agent templates, model defaults, compare and apply | §14a, §14b |
 | 5 | `internal/admin/promotion` | root | readiness, promote, demote, review, the demotion evaluator, feedback | §6a, §4a |
 | 5 | `internal/admin/idp` | root | the OAuth client of an OpenShell agent at the site's identity provider; checking a token as the gateway will | §16a |
+| 5 | `internal/admin/oshsetup` | root | `agent-admin openshell-setup`: OpenShell on the host for OpenShell agents, for either compute driver (checks, configures, installs nothing) | §16a, §17 |
 | 5 | `internal/admin/admintest` | tests | `agent-admin` on a test host, with the shipped categories and an agent | |
 | 6 | `internal/admin/setup` | root | `custos-setup`: the bundled diagnostics install | §17a |
 | 7 | `cmd/agent-launcher`, `cmd/agent-delegate`, `cmd/agent-openshell-relay`, `cmd/agent-admin`, `cmd/custos-setup` | | the programs: arguments, environment, exit status | |

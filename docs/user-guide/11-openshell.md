@@ -84,7 +84,9 @@ The steps below apply, with these differences:
   OpenShell's gateway for root as shown, `chown` included: the relay
   reads that registration to find the sandbox, as root but in its own
   SELinux domain, which may not read another user's files. Leave
-  `CUSTOS_OPENSHELL_USER` unset.
+  `CUSTOS_OPENSHELL_USER` unset. After installing the packages,
+  `agent-admin openshell-setup --user osh --driver systemd --ca ca.pem`
+  does the rest of this step and step 4 ([below](#setup)).
 - **Step 2.** No image. `agent-admin` creates the sandbox
   `--from host`, the only image name the driver takes.
 - **Step 4.** OpenShell refuses `additional_ca_bundle` with an external
@@ -97,6 +99,8 @@ The steps below apply, with these differences:
   ```
 
   Sandboxes that run pick it up when they restart.
+  `agent-admin openshell-setup --ca` puts it there as
+  `custos-mcp-gateway-ca.pem`.
 - **Step 7.** `sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: systemd}`.
 - **Step 8.** The same commands, without `CUSTOS_OPENSHELL_USER`.
 - **Step 9.** The sandbox's units and the agent's records:
@@ -155,6 +159,35 @@ export CUSTOS_OPENSHELL_USER=osh
 
 With Docker, OpenShell's gateway runs as root's, and
 `CUSTOS_OPENSHELL_USER` stays unset.
+
+### In one command {#setup}
+
+Once the packages are installed and OpenShell is installed for its
+user, `agent-admin openshell-setup` does the rest of this step, and step 4,
+for either compute driver:
+
+```bash
+agent-admin openshell-setup --user osh --driver container --ca ca.pem --check   # what it would do
+agent-admin openshell-setup --user osh --driver container --ca ca.pem
+```
+
+It installs nothing. It checks what it needs and names what is missing:
+`openshell` and `openshell-gateway`, OpenShell's gateway set up for the
+user, and Podman or Docker, or the systemd compute driver's package with
+`--driver systemd`. It then sets up:
+
+- lingering for the user;
+- for rootless Podman, the delegation and subordinate IDs;
+- for the systemd compute driver, the driver's helper and service;
+- `gateway.toml`, naming the driver;
+- with `--ca`, the CA that signed mcp-gateway's certificate, where the
+  driver needs it ([step 4](#trust));
+- root's own copy of the gateway's registration.
+
+It restarts what changed, checks that the gateway answers root, and
+prints the `sandbox` line for `agent.yaml`, with `CUSTOS_OPENSHELL_USER`
+for rootless Podman. Run again, it changes nothing that is already
+right.
 
 ## Step 2: the agent image {#image}
 
@@ -267,6 +300,8 @@ systemctl --user --machine=osh@ restart openshell-gateway
 
 Without it, the agent's calls fail with a certificate error in the
 sandbox ([chapter 12](12-troubleshooting.md#openshell)).
+`agent-admin openshell-setup --ca ca.pem` ([step 1](#setup)) does this,
+for the systemd compute driver in the host's trust store instead.
 
 ## Step 5: the identity provider and the agent's OAuth client {#idp}
 
