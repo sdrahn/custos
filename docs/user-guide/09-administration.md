@@ -19,13 +19,13 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin show [NAME…]` | their gateway data and the emergency stop, as JSON (no root needed) |
 | `agent-admin check NAME\|FILE` | validate a configuration (a FILE needs no root; `-` is stdin) |
 | `agent-admin create NAME --from FILE` | create an agent: supervised, no permissions |
-| `agent-admin create NAME --template TEMPLATE [--from FILE]` | create an agent from a template, with its permissions and mode ([below](#templates)) |
+| `agent-admin create NAME --template TEMPLATE [--from FILE \| --sandbox openshell …]` | create an agent from a template, with its permissions and mode, where the template allows it to run ([below](#template-backend)) |
 | `agent-admin templates` | the agent templates, as JSON (no root needed) |
 | `agent-admin compare [NAME…] [--template TEMPLATE]` | how agents differ from their templates, as JSON ([below](#compare-template)) |
 | `agent-admin apply-template NAME [--template TEMPLATE] [--configuration] [--permissions]` | give an agent its template's configuration and/or permissions ([below](#compare-template)) |
 | `agent-admin playbooks` | the diagnostic playbooks, as JSON (no root needed; [below](#playbooks)) |
 | `agent-admin feedback NAME ACTIVITY [--hypothesis ID=VERDICT…] [--plan useful\|not_useful] [--executed] [--comment TEXT]` | your feedback on a diagnosis report ([below](#reports)) |
-| `agent-admin draft NAME [--template TEMPLATE]` | a new agent's starting configuration, with the model defaults (no root needed) |
+| `agent-admin draft NAME [--template TEMPLATE] [--sandbox openshell …]` | a new agent's starting configuration, with the model defaults, for where it runs (no root needed) |
 | `agent-admin defaults [--from FILE \| --clear]` | the model for new agents ([chapter 5](05-configuration.md#model-defaults)) |
 | `agent-admin edit NAME --from FILE` | replace its configuration and apply it |
 | `agent-admin delete NAME [--keep-state]` | remove an agent |
@@ -109,6 +109,35 @@ agent-admin templates                                   # the templates, as JSON
 agent-admin create web-doctor --template service-doctor # its configuration, named web-doctor
 agent-admin create web-doctor --template service-doctor --from agent.yaml   # your configuration
 ```
+
+### In an OpenShell sandbox {#template-backend}
+
+An agent from a template runs as a systemd service unless you say
+otherwise. Where its template allows it (`agent-admin templates` lists
+its `backends`; `patch-pilot` and `triage` do), it can run in an
+OpenShell sandbox instead, with either compute driver
+([chapter 11](11-openshell.md#drivers)):
+
+```bash
+agent-admin draft web-pilot --template patch-pilot --sandbox openshell --openshell-driver systemd   # look first
+agent-admin create web-pilot --template patch-pilot --sandbox openshell --openshell-driver systemd
+```
+
+`agent-admin` adds what the template cannot know:
+- `gateway.url`, which is mcp-gateway's `http.audience`;
+- the agent's OAuth client in `gateway.oauth`: client `agent-web-pilot`
+  at the gateway's issuer, with the gateway's scopes;
+- the `sandbox` line.
+
+For an issuer that is not a Keycloak realm, give its token endpoint
+with `--token-url`; for a static token instead of a client,
+`--static-token`. The sandbox is made when you set the gateway
+credential: `agent-admin idp-client`, `check-token` and
+`set-credential`, as `create` says
+([chapter 11](11-openshell.md#credential)). OpenShell must be set up
+first (`agent-admin openshell-setup`,
+[chapter 11](11-openshell.md#setup)). In Cockpit, the new-agent form
+offers the same choice under "Runs".
 
 The agent gets the template's permissions and mode. Its task
 categories stay supervised: every change waits for an approval until

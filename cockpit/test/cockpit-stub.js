@@ -17,7 +17,8 @@
     const TEMPLATES = { transactional: false, templates: {
         "service-doctor": { title: "Service doctor", description: "Finds failed or flapping services and restarts them.", system: "any",
             mode: "supervised", needs: ["systemd-mcp"], dir: "/usr/share/custos/templates/service-doctor", servers: ["systemd"],
-            categories: ["config-lifecycle"], envelopes: ["config-lifecycle"] },
+            categories: ["config-lifecycle"], envelopes: ["config-lifecycle"], backends: ["systemd", "openshell"],
+            needs_openshell: ["OpenShell set up for agents (agent-admin openshell-setup)"] },
         "patch-pilot-transactional": { title: "Patch pilot (transactional)", description: "Updates an immutable system.", system: "transactional",
             mode: "supervised", needs: ["mcp-server-tukit"], dir: "/usr/share/custos/templates/patch-pilot-transactional", servers: ["tukit"] },
         "cleaner": { title: "cleaner", dir: "/etc/custos/templates/cleaner", error: "template cleaner: permissions.yaml: no task category \"tidy\"" },
@@ -463,6 +464,11 @@
                     let text = tmpl ? TEMPLATE_CONFIG(tmpl) : "version: 1\nname: x\ndescription: blank\nmodel:\n  provider: openai\n  name: qwen3-32b\n  endpoint: http://127.0.0.1:8000/v1\ngateway:\n  servers: [zypp]\n";
                     text = text.replace(/^name: .*$/m, "name: " + name);
                     if (model()) text = text.replace(/^model:\n(?:  .*\n)*/m, model());
+                    if (args.includes("--sandbox")) {
+                        const drv = args[args.indexOf("--openshell-driver") + 1];
+                        text = text.replace(/^gateway:\n/m, "gateway:\n  url: \"https://gw.example.com:8443/mcp\"\n") +
+                            "sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: " + drv + "}\n";
+                    }
                     return Promise.resolve(text);
                 }
                 // Read with a delay, as a real spawn takes a moment.

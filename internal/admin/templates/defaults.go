@@ -198,7 +198,16 @@ interaction:
 // Draft is a new agent's starting configuration: a template's, or a
 // blank one, named name, with the host's model defaults.
 func Draft(a *admin.Admin, name, tmpl string) ([]byte, error) {
+	return DraftOn(a, name, tmpl, Backend{})
+}
+
+// DraftOn is Draft for backend b (draft --sandbox): the template must
+// allow it; the configuration gets b's parts (WithBackend).
+func DraftOn(a *admin.Admin, name, tmpl string, b Backend) ([]byte, error) {
 	if err := host.CheckName(name); err != nil {
+		return nil, err
+	}
+	if err := b.check(); err != nil {
 		return nil, err
 	}
 	cfg := []byte(blank)
@@ -207,11 +216,18 @@ func Draft(a *admin.Admin, name, tmpl string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := t.allows(b.kind()); err != nil {
+			return nil, err
+		}
 		if cfg, err = os.ReadFile(filepath.Join(t.Dir, "agent.yaml")); err != nil {
 			return nil, err
 		}
 	}
 	cfg = WithName(cfg, name)
+	cfg, err := WithBackend(a, cfg, name, b)
+	if err != nil {
+		return nil, err
+	}
 	d, err := GetDefaults(a)
 	if err != nil {
 		return nil, err

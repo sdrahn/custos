@@ -30,9 +30,12 @@ const usage = `usage: agent-admin COMMAND …
   show [NAME…]                           the gateway data and the emergency stop, as JSON
   check NAME|FILE                        validate a configuration (FILE -: stdin)
   create NAME --from FILE                install a new agent (supervised, no permissions; FILE -: stdin)
-  create NAME --template TEMPLATE [--from FILE]
+  create NAME --template TEMPLATE [--from FILE | BACKEND]
                                          install a new agent from a template: its configuration (or FILE's),
-                                         permissions and mode
+                                         permissions and mode. BACKEND, where it runs, as the template allows:
+                                         --sandbox systemd|openshell [--openshell-driver container|systemd]
+                                         [--openshell-gateway NAME] [--token-url URL | --static-token];
+                                         openshell: gateway.url and gateway.oauth from mcp-gateway's http settings
   templates                              the agent templates (CONTRACT.md §14a), as JSON
   playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
   compare [NAME…] [--template TEMPLATE]  each agent against its template (CONTRACT.md §14a), as JSON: the
@@ -44,8 +47,9 @@ const usage = `usage: agent-admin COMMAND …
                                          sandbox, gateway connection, mode, categories and credentials
   feedback NAME ACTIVITY [--hypothesis ID=confirmed|rejected|unsure…] [--plan useful|not_useful]
            [--executed] [--comment TEXT]  feedback on an activity's diagnosis report (CONTRACT.md §4a)
-  draft NAME [--template TEMPLATE]       a new agent's starting configuration (blank or the template's),
-                                         with the host's model defaults
+  draft NAME [--template TEMPLATE] [BACKEND]
+                                         a new agent's starting configuration (blank or the template's),
+                                         with the host's model defaults, for BACKEND (as for create)
   defaults [--from FILE | --clear]       the model defaults for new agents (CONTRACT.md §14b), as JSON;
                                          --from sets them (FILE -: stdin), --clear removes them
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)

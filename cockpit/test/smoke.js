@@ -650,6 +650,18 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
           desc.includes("/usr/share/custos/templates/service-doctor/envelopes/"), "the template's description, categories and needs are shown");
     const tread = await spawned("agent-admin draft service-doctor --template service-doctor");
     check(tread.length === 1 && tread[0][4] === "", "the template's configuration is agent-admin draft's, as the person");
+    // Where it runs (#226): the template allows OpenShell, so both
+    // drivers are offered; choosing one drafts the configuration for it.
+    check(await page.isVisible("#create-backend-row") &&
+          !(await page.$eval("#create-backend option[value=openshell-systemd]", o => o.disabled)),
+          "a template that allows OpenShell offers its sandboxes");
+    await page.selectOption("#create-backend", "openshell-systemd");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    check((await spawned("agent-admin draft service-doctor --template service-doctor --sandbox openshell --openshell-driver systemd")).length === 1,
+          "the draft for OpenShell is agent-admin draft --sandbox openshell --openshell-driver systemd's");
+    check((await page.textContent("#create-template")).includes("In an OpenShell sandbox, also"), "what OpenShell needs is shown");
+    await page.selectOption("#create-backend", "systemd");
+    await page.waitForFunction(() => !document.querySelector("#create-agent textarea").value.includes("openshell"));
     await page.fill("#create-name", "web-doctor");
     check((await page.inputValue("#create-agent textarea")).includes("\nname: web-doctor\n"), "the name goes into the template's configuration");
     if (shots) await page.screenshot({ path: path.join(shots, "create-template.png"), fullPage: true });
@@ -659,6 +671,12 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(tc.length === 1 && tc[0][4] === "require", "create from a template runs agent-admin create --template --from - through the root bridge");
     check((await page.textContent("#agent-created")).includes("from the template Service doctor"), "the new agent says where it came from");
     await page.click("#create-open");
+    // A template for systemd only (offered disabled here, as it is for
+    // transactional systems: chosen from the page's script).
+    await page.$eval("#create-from", s => { s.value = "patch-pilot-transactional"; s.dispatchEvent(new Event("change")) });
+    await page.waitForFunction(() => document.querySelector("#create-backend option[value=openshell-container]").disabled);
+    check(await page.$eval("#create-backend option[value=openshell-container]", o => o.disabled),
+          "a template for systemd only offers no OpenShell sandbox");
     await page.selectOption("#create-from", "");
     check(!(await page.inputValue("#create-agent textarea")).includes("Agent template") && !(await page.isVisible("#create-template")),
           "a blank configuration again");

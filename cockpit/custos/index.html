@@ -149,6 +149,12 @@
                 promote them. This needs administrative access.</p>
                 <div class="inline" id="create-from-row" hidden><label for="create-from">Start from</label>
                     <select id="create-from" name="from"><option value="">A blank configuration</option></select></div>
+                <div class="inline" id="create-backend-row" hidden><label for="create-backend">Runs</label>
+                    <select id="create-backend" name="backend">
+                        <option value="systemd">as a systemd service (the default)</option>
+                        <option value="openshell-container">in an OpenShell sandbox, in a container</option>
+                        <option value="openshell-systemd">in an OpenShell sandbox, as systemd units (the systemd compute driver)</option>
+                    </select></div>
                 <div id="create-template" class="note" hidden></div>
                 <div class="inline"><label for="create-name">Name</label>
                     <input id="create-name" name="name" class="mono" placeholder="patch-pilot" autocomplete="off"></div>

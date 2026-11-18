@@ -39,12 +39,16 @@ var agentCommands = []command{
 	{"create", func(a *admin.Admin, args []string) error {
 		fs := flags("create")
 		tmpl, from := fs.String("template", "", ""), fs.String("from", "", "")
+		b := backendFlags(fs)
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
 		}
 		if *tmpl != "" {
-			return templates.Create(a, pos[0], *tmpl, *from)
+			return templates.CreateOn(a, pos[0], *tmpl, *from, *b)
+		}
+		if b.Kind != "" {
+			return fmt.Errorf("create: --sandbox is for --template; without one, FILE says where the agent runs")
 		}
 		if *from == "" {
 			return fmt.Errorf("create: --from FILE is needed")

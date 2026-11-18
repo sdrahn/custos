@@ -322,6 +322,25 @@ fi
 	check "the image resolves names by DNS first (hosts: dns files)" bash -c \
 		"$(declare -f ctr); ctr run --rm --entrypoint /bin/sh '$img' -c 'grep -x \"hosts: dns files\" /etc/nsswitch.conf' >/dev/null"
 
+section "An agent from a template (#226)"
+# create --template --sandbox openshell: the template's configuration
+# with mcp-gateway's audience, the agent's OAuth client (the test issuer
+# is no Keycloak realm: --token-url) and this driver. Its sandbox is made
+# by set-credential, which the agent sb below shows; this one is deleted.
+tpl_driver=container
+[ "$runtime" = systemd ] && tpl_driver=systemd
+agent-admin delete tpl >/dev/null 2>&1
+check "agent-admin create tpl --template triage --sandbox openshell" bash -c \
+	"agent-admin create tpl --template triage --sandbox openshell --openshell-driver $tpl_driver --token-url '$issuer/token' >'$work/tpl.out'" ||
+	sed 's/^/    | /' "$work/tpl.out"
+check "it says what is next (idp-client, set-credential)" grep -q "next: agent-admin idp-client tpl" "$work/tpl.out"
+check "its configuration names this driver and the gateway's audience" bash -c \
+	"grep -q 'openshell_driver: $tpl_driver' /etc/custos/agents/tpl/agent.yaml && grep -qF '$aud' /etc/custos/agents/tpl/agent.yaml"
+check "openshell.env names the driver" grep -qx "OPENSHELL_DRIVER=$tpl_driver" /etc/custos/agents/tpl/openshell.env
+check "it is the same as its template to compare" bash -c "agent-admin compare tpl | jq -e '.[0].configuration.same' >/dev/null"
+check "a template for systemd only refuses OpenShell" not agent-admin create tpl2 --template disk-watch --sandbox openshell --token-url "$issuer/token"
+check "agent-admin delete tpl" agent-admin delete tpl
+
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
 version: 1
