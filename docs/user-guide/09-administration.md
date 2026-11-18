@@ -44,6 +44,7 @@ person behind `sudo` (`SUDO_USER`), else `USER`.
 | `agent-admin seal --agents` | make a host sealed before 0.6 seal the agents' data and token issuers too ([chapter 6](06-permissions-and-modes.md#diagnostics-only)) |
 | `agent-admin issuers [--add ISSUER] [--remove ISSUER]` | the token issuers trusted for agents over HTTPS ([chapter 11](11-openshell.md#issuers)) |
 | `agent-admin set-credential NAME CRED < secret` | store a secret for it |
+| `agent-admin openshell-setup --user USER --driver container\|systemd [--ca FILE] [--check]` | set up OpenShell on this host for OpenShell agents; installs nothing, checks what it needs ([chapter 11](11-openshell.md#setup)) |
 | `agent-admin idp-client NAME [--keycloak]` | the OAuth client an OpenShell agent needs at the identity provider; `--keycloak`: a script that creates it ([chapter 11](11-openshell.md#idp)) |
 | `agent-admin check-token NAME < secret` | get a token with that client and check its claims as the gateway will ([chapter 11](11-openshell.md#keycloak)) |
 | `agent-admin credentials [NAME…]` | its credentials' names, what uses them and the missing ones, as JSON; never the values ([below](#credentials)) |

@@ -275,37 +275,32 @@ osh_systemctl() {
 		setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
 			env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" systemctl --user "$@"
 }
+# agent-admin openshell-setup puts the CA where the driver needs it
+# (#225): OpenShell 0.1.8 refuses gateway.toml's
+# [openshell.supervisor.network] additional_ca_bundle with an external
+# compute driver, whose supervisors run on the host and read its CA
+# bundle, so with the systemd driver the CA goes into the host's trust
+# store; with the container driver into gateway.toml, which hands it to
+# each sandbox's supervisor.
+setup_driver=container
+[ "$runtime" = systemd ] && setup_driver=systemd
+check "agent-admin openshell-setup --ca puts the gateway's CA in place" \
+	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" ||
+	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" --check 2>&1 | tail -n 15 | sed 's/^/    | /'
 if [ "$runtime" = systemd ]; then
-	# OpenShell 0.1.8 refuses gateway.toml's
-	# [openshell.supervisor.network] additional_ca_bundle with an external
-	# compute driver ("cannot propagate network trust"), and the gateway
-	# then does not start. With the systemd driver the supervisor runs on
-	# the host and reads the host's CA bundle (/etc/ssl/ca-bundle.pem on
-	# openSUSE), so the gateway's CA goes into the host's trust store,
-	# which the agent's supervisor reads when its sandbox starts.
-	install -m 0644 "$work/tls/ca.pem" /etc/pki/trust/anchors/custos-spike-ca.pem
-	check "the host's trust store takes the gateway's CA" update-ca-certificates
 	check "the host's CA bundle has it" bash -c "grep -qF \"\$(sed -n 2p '$work/tls/ca.pem')\" /etc/ssl/ca-bundle.pem"
+	check "gateway.toml has no CA bundle (refused with this driver)" not grep -q additional_ca_bundle "$osh_toml"
 else
-	check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
-	install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
-	# A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
-	# package does not ship one for a local gateway.
-	[ -s "$osh_toml" ] || { printf '[openshell]\nversion = 2\n' >"$osh_toml" && chown "$osh_user" "$osh_toml"; }
-	if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
-		sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
-	else
-		printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
-	fi
+	check "gateway.toml names it for the supervisors" grep -q "additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
 	check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight ||
 		{
 			runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
 			sed 's/^/    | gateway.toml: /' "$osh_toml"
 		}
-	check "the OpenShell gateway restarts with the CA" osh_systemctl restart openshell-gateway ||
-		osh_systemctl status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
-	check "the OpenShell gateway answers again" eventually 90 osh status
 fi
+check "the OpenShell gateway answers again" eventually 90 osh status
+check "a second openshell-setup changes nothing" bash -c \
+	"! agent-admin openshell-setup --user '$osh_user' --driver $setup_driver --ca '$work/tls/ca.pem' | grep -q '^set '"
 
 section "Agent image"
 img=localhost/custos-agent:ci
@@ -676,7 +671,7 @@ fi
 systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp osh-dnsmasq >/dev/null 2>&1
 restore_resolv
 if [ "$runtime" = systemd ]; then
-	rm -f /etc/pki/trust/anchors/custos-spike-ca.pem
+	rm -f /etc/pki/trust/anchors/custos-mcp-gateway-ca.pem
 	update-ca-certificates >/dev/null 2>&1
 fi
 
