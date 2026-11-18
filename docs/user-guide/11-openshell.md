@@ -438,12 +438,27 @@ container of root's):
 
 ```bash
 podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
-    --server http://localhost:8080 --realm master --user admin   # Keycloak's own address, in the container
+    --server https://idp.example.com:8443 --realm master --user admin   # Keycloak's address, as its certificate names it
 KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-client.sh >client-secret.txt
 ```
 
 `-i` without `-t`: the script hands the client's definition to
 `kcadm.sh` on its standard input, which a terminal would break.
+
+`--server` is Keycloak's address as people reach it, the host part of
+mcp-gateway's `http.issuer` (`KC_HOSTNAME` and its port): from inside
+the container it reaches the published port. `localhost` with the port
+inside the container works only where Keycloak serves plain HTTP
+(`KC_HTTP_ENABLED`, `start-dev`); `podman port keycloak` shows which
+port is published as which. A Keycloak certificate from a CA of your
+own needs that CA in a truststore for `kcadm.sh`, in the container:
+
+```bash
+podman cp ca.pem keycloak:/tmp/ca.pem
+podman exec keycloak keytool -importcert -noprompt -alias custos-ca -file /tmp/ca.pem \
+    -keystore /tmp/kcadm-trust.p12 -storetype PKCS12 -storepass changeit
+podman exec keycloak /opt/keycloak/bin/kcadm.sh config truststore --trustpass changeit /tmp/kcadm-trust.p12
+```
 
 It stops at the first error; if the client exists already, `kcadm.sh`
 refuses to create it again: delete it (`kcadm.sh delete clients/ID -r
