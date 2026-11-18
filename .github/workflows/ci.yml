@@ -420,6 +420,131 @@ jobs:
             grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
           } >>"$GITHUB_STEP_SUMMARY"
 
+  # The OpenShell systemd compute driver's packages (#215), built in
+  # Leap 16.0 from the source files of its release
+  # (test/openshell/systemd-driver), checked against the release's
+  # SHA256SUMS. Kept in the cache by the release: built once.
+  systemd-driver-rpms:
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container: registry.opensuse.org/opensuse/leap:16.0
+    steps:
+      - name: Disable the codec repository
+        run: zypper -n mr -d repo-openh264 >/dev/null 2>&1 || true
+      - name: Tools
+        run: >
+          zypper -n --gpg-auto-import-keys in --no-recommends
+          tar gzip zstd curl findutils rpm-build sysuser-tools
+          systemd-rpm-macros selinux-policy-devel
+      - uses: actions/checkout@v7
+      - name: The release
+        id: release
+        run: |
+          . test/openshell/systemd-driver
+          echo "version=$DRIVER_VERSION" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: driver-rpms
+          key: systemd-driver-rpms-leap16.0-${{ steps.release.outputs.version }}
+      - name: The release's source files
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          v=${{ steps.release.outputs.version }}
+          base=https://github.com/sdrahn/OpenShell-systemd-compute-driver/releases/download/$v
+          mkdir sources && cd sources
+          curl -fsSLO --retry 3 "$base/SHA256SUMS"
+          for f in $(awk '{print $2}' SHA256SUMS); do curl -fsSLO --retry 3 "$base/$f"; done
+          sha256sum -c SHA256SUMS
+      - name: Build the packages
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          rpmspec -q --buildrequires sources/openshell-driver-systemd.spec | sed 's/ .*//' |
+            xargs zypper -n --gpg-auto-import-keys in --no-recommends
+          rpmbuild -ba --define "_sourcedir $PWD/sources" --define "_topdir $PWD/rpmbuild" \
+            sources/openshell-driver-systemd.spec 2>&1 | grep -vE '^ *(Compiling|Downloaded|Unpacking) ' | tail -n 60
+          test "${PIPESTATUS[0]}" = 0
+          mkdir driver-rpms
+          cp rpmbuild/RPMS/*/*.rpm driver-rpms/
+      - run: ls -l driver-rpms
+      - uses: actions/upload-artifact@v7
+        with:
+          name: systemd-driver-rpms
+          path: driver-rpms/*.rpm
+          retention-days: 7
+
+  # The OpenShell backend on the systemd compute driver (#215, a spike):
+  # the same tests as openshell-podman, in the Leap 16 VM with SELinux
+  # enforcing, with OpenShell's gateway on the driver instead of Podman.
+  openshell-systemd:
+    needs: [opensuse, systemd-driver-rpms]
+    # Not on a release's tag: the release branch ran it before.
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
+        with:
+          version: latest
+          static: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: rpms-leap16
+          path: rpms
+      - uses: actions/download-artifact@v8
+        with:
+          name: systemd-driver-rpms
+          path: driver-rpms
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+      - name: Image cache key
+        id: image
+        run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/vm/base.qcow2
+          key: vm-image-leap16-${{ steps.image.outputs.week }}
+      - name: Run the OpenShell tests (openSUSE Leap 16.0, systemd compute driver, SELinux enforcing)
+        env:
+          WORK: ${{ runner.temp }}/vm
+          SUITE: openshell-systemd
+          DRIVER_RPMS: ${{ github.workspace }}/driver-rpms
+        run: test/vm/run-vm.sh rpms "$(command -v opa)"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openshell-systemd-logs-leap16
+          path: |
+            ${{ runner.temp }}/vm/console.log
+            ${{ runner.temp }}/vm/prepare.log
+            ${{ runner.temp }}/vm/openshell-setup.log
+            ${{ runner.temp }}/vm/test.log
+            ${{ runner.temp }}/vm/results.tap
+            ${{ runner.temp }}/vm/avc.txt
+            ${{ runner.temp }}/vm/*.log
+          if-no-files-found: ignore
+      - if: always()
+        name: Test summary
+        run: |
+          f="$RUNNER_TEMP/vm/test.log"
+          [ -f "$f" ] || exit 0
+          {
+            echo '### OpenShell tests (Leap 16.0, systemd compute driver, SELinux enforcing)'
+            tail -1 "$f"
+            echo
+            grep -E '^(FAIL|SKIP):' "$f" | sed 's/^/- /' || true
+          } >>"$GITHUB_STEP_SUMMARY"
+
   # The Cockpit page in a real Cockpit in the Leap 16 VM (SELinux
   # enforcing): logged in as a person, driven by Playwright from here
   # (test/cockpit/vm-test.js), checked in the VM; the screenshots of the

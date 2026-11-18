@@ -233,6 +233,35 @@ optional_policy(`
 	allow container_runtime_t agent_relay_t:fifo_file rw_fifo_file_perms;
 	allow container_runtime_t agent_relay_t:process sigchld;
 ')
+# With OpenShell's systemd compute driver (sandbox.openshell_driver:
+# systemd) agent-openshell-logs follows the journal of the sandbox's
+# workload unit: journalctl reads and watches the journal files
+# (/var/log/journal, /run/log/journal; var_log_t) under the relay's domain.
+logging_read_generic_logs(agent_relay_t)
+gen_require(`
+	type var_log_t;
+	class dir watch;
+')
+allow agent_relay_t var_log_t:dir watch;
+# journalctl has a type of its own: the relay runs it in its domain.
+optional_policy(`
+	gen_require(`
+		type journalctl_exec_t;
+	')
+	can_exec(agent_relay_t, journalctl_exec_t)
+')
+# It asks the OpenShell gateway for the sandbox's id: the openshell CLI
+# reads root's registration of that gateway (/root/.config/openshell,
+# config_home_t; the relay unit's HOME=/root). The Go runtime reads the
+# huge page size from sysfs.
+optional_policy(`
+	gen_require(`
+		type config_home_t;
+	')
+	list_dirs_pattern(agent_relay_t, config_home_t, config_home_t)
+	read_files_pattern(agent_relay_t, config_home_t, config_home_t)
+')
+dev_read_sysfs(agent_relay_t)
 # systemd creates the agents' sockets (agent@.socket, DirectoryMode=)
 # and tmpfiles /run/agents: with the right labels even before a relabel
 # (the package's tmpfiles run before this module is loaded).

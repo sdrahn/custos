@@ -66,6 +66,7 @@ installer, or its package). Then register its gateway for root too:
 
 ```bash
 mkdir -p /root/.config && cp -a /home/osh/.config/openshell /root/.config/
+chown -R root:root /root/.config/openshell   # root's copy, root's files
 openshell gateway list           # the gateway's name, by default "openshell"
 openshell status
 ```
@@ -344,7 +345,7 @@ gateway:
     token_url: https://idp.example.com/realms/mcp/protocol/openid-connect/token
     client_id: agent-patch-pilot
     scopes: [mcp-agents]
-    refresh_before_seconds: 60
+    refresh_before_seconds: 120
 sandbox: {kind: openshell, openshell_gateway: openshell}
 ```
 
@@ -357,6 +358,15 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
   ([above](#other-idp)).
 - `sandbox.openshell_gateway` names OpenShell's gateway as registered for
   root (default `openshell`).
+- `sandbox.openshell_driver` says which compute driver that gateway
+  uses: `container` (the default, Docker or Podman, as in this chapter)
+  or `systemd` (the OpenShell systemd compute driver: the sandbox runs
+  as systemd units on the host, without an image, and the agent's
+  records come from the journal of the sandbox's workload unit).
+  Custos does not detect it: it must match the gateway's configuration.
+  With the systemd driver, a private CA goes into the host's trust store
+  (`/etc/pki/trust/anchors`, then `update-ca-certificates`), not into
+  `gateway.toml`, which OpenShell refuses for that driver.
 - The sandbox's policy allows the model endpoint, for `agent-launcher`
   only.
 
@@ -388,8 +398,13 @@ set it again.
 ## How the token is renewed {#oauth}
 
 OpenShell's gateway renews the token `refresh_before_seconds` before it
-expires (OpenShell's default if unset) and the sandbox's placeholder
-always resolves to the current one, so the agent needs no restart.
+expires (OpenShell's default, 300, if unset) and the sandbox's
+placeholder always resolves to the current one, so the agent needs no
+restart. It looks for tokens to renew once a minute: with less than 90
+seconds, a token can expire before it is renewed, and a sandbox that
+starts then gets no token at all (its calls to the gateway fail with
+`401`, "no bearer token", until it is restarted). `agent-admin check`
+notes such a value.
 While a renewal happens, OpenShell's proxy can answer a request with
 `500`; the agent retries for a few seconds and reconnects. Check the
 renewal:
@@ -431,7 +446,7 @@ rm /root/agent.jwt
 | nothing the sandbox gets | restarts the relay (`try-restart agent-openshell@NAME.service`) |
 | the configuration, the model endpoint, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
 | `gateway.oauth` added or removed, or its `client_id` | stops the agent, deletes the sandbox and provider, and asks for `set-credential` again |
-| `sandbox.kind` or `sandbox.openshell_gateway` | refused: delete and create the agent |
+| `sandbox.kind`, `sandbox.openshell_gateway` or `sandbox.openshell_driver` | refused: delete and create the agent |
 
 `systemctl stop agent-openshell@NAME.service` stops the relay and the
 sandbox. `agent-admin stop-all` stops every relay and sandbox, and the

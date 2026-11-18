@@ -97,10 +97,18 @@ func TestSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l := c.Lifecycle(); l["kind"] != "openshell" || l["sandbox"] != "agent-patch-pilot" || l["gateway"] != "openshell" || l["service"] != "agent-openshell@patch-pilot.service" {
+	if l := c.Lifecycle(); l["kind"] != "openshell" || l["sandbox"] != "agent-patch-pilot" || l["gateway"] != "openshell" || l["driver"] != "container" || l["service"] != "agent-openshell@patch-pilot.service" {
 		t.Errorf("openshell lifecycle %v", l)
 	}
-	for _, bad := range []string{"sandbox: {kind: docker}\n", "sandbox: {kind: systemd, openshell_gateway: x}\n"} {
+	c, err = Parse([]byte(osh + "sandbox: {kind: openshell, openshell_driver: systemd}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Sandbox.OpenShellDriver != "systemd" || c.Lifecycle()["driver"] != "systemd" {
+		t.Errorf("openshell_driver systemd: %+v %v", c.Sandbox, c.Lifecycle())
+	}
+	for _, bad := range []string{"sandbox: {kind: docker}\n", "sandbox: {kind: systemd, openshell_gateway: x}\n",
+		"sandbox: {kind: systemd, openshell_driver: systemd}\n", "sandbox: {kind: openshell, openshell_driver: podman}\n"} {
 		if _, err := Parse([]byte(sample + bad)); err == nil || !strings.Contains(err.Error(), "sandbox.") {
 			t.Errorf("%q: %v", bad, err)
 		}

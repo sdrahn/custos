@@ -56,7 +56,8 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `limits.…: N: must be positive`, `sessions.retention_days: must be positive` | a positive number, or leave it out for the default |
 | `client_tools: "…": want deny or {allow: [...]}` | `client_tools: deny` |
 | `sandbox.kind: "…": want systemd or openshell` | fix the kind |
-| `sandbox.openshell_gateway: only for kind openshell` | remove it for a systemd agent |
+| `sandbox.openshell_gateway: only for kind openshell`, `sandbox.openshell_driver: only for kind openshell` | remove it for a systemd agent |
+| `sandbox.openshell_driver: "…": want container or systemd` | `container` (Docker or Podman) or `systemd` (the OpenShell systemd compute driver) |
 | an unknown key (`field … not found`) | remove or correct the key: unknown keys are errors |
 
 ## An agent does not start or answer {#agent-start}
@@ -242,6 +243,8 @@ anyway. Check in this order:
 | You see | Cause | Fix |
 |---|---|---|
 | `importing the provider profile: …`, or `Unknown gateway` from `openshell` | OpenShell's gateway is not registered for root, or has another name | copy the registration to `/root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)); `sandbox.openshell_gateway` |
+| An OpenShell agent's calls fail with `Unauthorized`, the gateway logs `401` "no bearer token", until the agent's sandbox is restarted | the token had expired when the sandbox started: OpenShell renews tokens once a minute, and `refresh_before_seconds` is below 90 | `refresh_before_seconds: 120` (or leave it out), `agent-admin edit`; `systemctl restart agent-openshell@<name>.service` for the agent at hand |
+| `agent-openshell-logs: no sandbox id for agent-… from OpenShell gateway …` in the relay's journal (systemd driver), and no agent records in the journal | the relay's `openshell` cannot read root's registration: files of another user there need a capability SELinux does not give it | `chown -R root:root /root/.config/openshell` ([chapter 11](11-openshell.md#install-openshell)), then `systemctl restart agent-openshell@<name>.service` |
 | `configuring the token's renewal: …` | OpenShell refused the renewal settings for the provider | the text after the colon is OpenShell's; check `gateway.oauth` and the OpenShell version ([chapter 11](11-openshell.md#oauth)) |
 | `minting the first token (the issuer refused the client?): …` | wrong client id or secret, or the client lacks the client credentials grant | fix the client at the identity provider; `set-credential` again |
 | a certificate error from the agent's calls | OpenShell does not trust the gateway's CA | `additional_ca_bundle` ([chapter 11](11-openshell.md#trust)) |
@@ -319,6 +322,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | `"…" is not a valid credential name` | lower-case letters, digits, `-` and `_`, such as `model-key` ([chapter 5](05-configuration.md#model-credentials)) |
 | `…: empty` (`set-credential`) | nothing on stdin: pipe the secret in |
 | `sandbox.openshell_gateway: agent …'s sandbox is on OpenShell gateway "…"; delete and create it to move it` | the OpenShell gateway is fixed at `create` |
+| `sandbox.openshell_driver: agent …'s sandbox is on OpenShell's … driver; delete and create it to change the driver` | the driver is fixed at `create` |
 | `permissions[…]: autonomous is for permissions without a category` | drop `autonomous`; promote the category instead |
 | `agent …: category … is not promoted` (demote) | it is supervised already |
 | `agent … exists` | the agent exists: `edit`, or `delete` first |

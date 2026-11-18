@@ -441,6 +441,54 @@ func TestOpenShellUser(t *testing.T) {
 	}
 }
 
+// On the OpenShell systemd compute driver the sandbox has no image:
+// "host", the one name that driver takes. The relay is told the driver
+// (openshell.env), for its log source, and is not given the container
+// runtime's user.
+func TestOpenShellSystemdDriver(t *testing.T) {
+	a, r := newAdmin(t)
+	a.OpenShellUser = "osh"
+	old := LookupUser
+	LookupUser = func(string) (string, string, error) { return "1001", "/home/osh", nil }
+	t.Cleanup(func() { LookupUser = old })
+	yml := strings.Replace(oshYml, "{kind: openshell}", "{kind: openshell, openshell_driver: systemd}", 1)
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(yml), 0o644)
+	if err := a.Create("sb", f); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(a.AgentDir("sb"), "openshell.env"))
+	for _, want := range []string{"\nAGENT_IMAGE=host\n", "\nOPENSHELL_DRIVER=systemd\n"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("openshell.env lacks %q:\n%s", want, b)
+		}
+	}
+	if strings.Contains(string(b), "OPENSHELL_USER=") {
+		t.Errorf("a container runtime's user for the systemd driver:\n%s", b)
+	}
+	if _, err := os.Stat(a.Path(filepath.Join(UnitDir, "agent-openshell@sb.service.d", "openshell-user.conf"))); err == nil {
+		t.Error("the relay got the container runtime user's drop-in")
+	}
+	r.Cmds = nil
+	if err := a.SetCredential("sb", "gateway-token", strings.NewReader("tok-123\n")); err != nil {
+		t.Fatal(err)
+	}
+	if all := strings.Join(r.Cmds, "\n"); !strings.Contains(all, "sandbox create --name agent-sb --from host --policy") {
+		t.Errorf("not created from host:\n%s", all)
+	}
+	// The container driver is the default, and its env says so.
+	a2, _ := newAdmin(t)
+	f2 := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f2, []byte(oshYml), 0o644)
+	if err := a2.Create("sb", f2); err != nil {
+		t.Fatal(err)
+	}
+	b2, _ := os.ReadFile(filepath.Join(a2.AgentDir("sb"), "openshell.env"))
+	if !strings.Contains(string(b2), "\nOPENSHELL_DRIVER=container\n") || !strings.Contains(string(b2), "\nAGENT_IMAGE=localhost/agent:test\n") {
+		t.Errorf("openshell.env of a container-driver agent:\n%s", b2)
+	}
+}
+
 // inOrder reports the first of want that is missing from cmds or out of order.
 func inOrder(cmds []string, want ...string) string {
 	all := strings.Join(cmds, "\n")
@@ -671,6 +719,15 @@ func TestEditOpenShellGatewayFixed(t *testing.T) {
 	err := edit(t, a, strings.Replace(oshYml, "{kind: openshell}", "{kind: openshell, openshell_gateway: other}", 1))
 	if err == nil || !strings.Contains(err.Error(), "openshell_gateway") {
 		t.Errorf("moving to another OpenShell gateway: %v", err)
+	}
+}
+
+// The driver holds the sandbox: an edit does not move it to another.
+func TestEditOpenShellDriverFixed(t *testing.T) {
+	a, _ := openShellRunning(t, oshYml)
+	err := edit(t, a, strings.Replace(oshYml, "{kind: openshell}", "{kind: openshell, openshell_driver: systemd}", 1))
+	if err == nil || !strings.Contains(err.Error(), "openshell_driver") {
+		t.Errorf("moving to another OpenShell driver: %v", err)
 	}
 }
 

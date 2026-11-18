@@ -148,6 +148,7 @@ func (a *Admin) Check(target string) error {
 		return err
 	}
 	a.noteGatewayHost(cfg)
+	a.noteRefresh(cfg)
 	return nil
 }
 
@@ -189,6 +190,7 @@ func (a *Admin) CreateConfig(name string, b []byte) (err error) {
 		if err == nil {
 			a.noteModelCredential(cfg)
 			a.noteGatewayHost(cfg)
+			a.noteRefresh(cfg)
 		}
 	}()
 	user := "agent-" + name
@@ -288,9 +290,11 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	env := fmt.Sprintf("# agent-admin: agent %s in OpenShell\nOPENSHELL_GATEWAY=%s\nFORWARD_PORT=%d\nAGENT_IMAGE=%s\n",
-		cfg.Name, cfg.Sandbox.OpenShellGateway, openshell.Port(cfg.Name), a.Image)
-	if a.OpenShellUser != "" {
+	env := fmt.Sprintf("# agent-admin: agent %s in OpenShell\nOPENSHELL_GATEWAY=%s\nFORWARD_PORT=%d\nAGENT_IMAGE=%s\nOPENSHELL_DRIVER=%s\n",
+		cfg.Name, cfg.Sandbox.OpenShellGateway, openshell.Port(cfg.Name), a.image(cfg), cfg.Sandbox.OpenShellDriver)
+	// With the systemd driver the agent's output is in the journal, not in
+	// a container runtime's: no runtime user to read it as.
+	if a.OpenShellUser != "" && cfg.Sandbox.OpenShellDriver != "systemd" {
 		if !userRE.MatchString(a.OpenShellUser) {
 			return fmt.Errorf("CUSTOS_OPENSHELL_USER: %q is not a user name", a.OpenShellUser)
 		}
@@ -367,7 +371,7 @@ func (a *Admin) startOpenShellOAuth(cfg *config.Config, secret string) error {
 // startSandbox creates the sandbox with the provider attached and starts
 // the relay.
 func (a *Admin) startSandbox(cfg *config.Config) error {
-	if err := a.createSandbox(cfg, a.Image); err != nil {
+	if err := a.createSandbox(cfg, a.image(cfg)); err != nil {
 		return err
 	}
 	return a.Run(nil, "systemctl", "enable", "--now", "agent-openshell@"+cfg.Name+".socket")
@@ -432,10 +436,14 @@ func (a *Admin) EditConfig(name string, b []byte) (err error) {
 		if err == nil {
 			a.noteModelCredential(cfg)
 			a.noteGatewayHost(cfg)
+			a.noteRefresh(cfg)
 		}
 	}()
 	if old != nil && old.Sandbox.Kind != cfg.Sandbox.Kind {
 		return fmt.Errorf("sandbox.kind: agent %s runs with %s, not %s; delete and create it to change the backend", name, old.Sandbox.Kind, cfg.Sandbox.Kind)
+	}
+	if old != nil && cfg.Sandbox.Kind == "openshell" && old.Sandbox.OpenShellDriver != cfg.Sandbox.OpenShellDriver {
+		return fmt.Errorf("sandbox.openshell_driver: agent %s's sandbox is on OpenShell's %s driver; delete and create it to change the driver", name, old.Sandbox.OpenShellDriver)
 	}
 	if old != nil && cfg.Sandbox.Kind == "openshell" && old.Sandbox.OpenShellGateway != cfg.Sandbox.OpenShellGateway {
 		return fmt.Errorf("sandbox.openshell_gateway: agent %s's sandbox is on OpenShell gateway %q; delete and create it to move it", name, old.Sandbox.OpenShellGateway)
@@ -579,6 +587,17 @@ func (a *Admin) waitSandboxGone(cfg *config.Config) error {
 func credentialChanged(old, cfg *config.Config) bool {
 	o, n := old.Gateway.OAuth, cfg.Gateway.OAuth
 	return (o == nil) != (n == nil) || (o != nil && o.ClientID != n.ClientID)
+}
+
+// image is what a new sandbox of the agent is created from: the agent
+// image (CUSTOS_OPENSHELL_IMAGE) on a container driver, and "host", the
+// one name the OpenShell systemd compute driver takes, on that driver:
+// the sandbox runs the host's agent-launcher.
+func (a *Admin) image(cfg *config.Config) string {
+	if cfg.Sandbox.OpenShellDriver == "systemd" {
+		return openshell.HostImage
+	}
+	return a.Image
 }
 
 // sandboxImage is the image the agent's sandbox was created from

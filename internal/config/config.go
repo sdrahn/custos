@@ -214,13 +214,18 @@ type Sandbox struct {
 	Kind string `yaml:"kind"` // systemd (default) | openshell
 	// OpenShellGateway names the OpenShell gateway (openshell only).
 	OpenShellGateway string `yaml:"openshell_gateway"`
+	// OpenShellDriver is the compute driver of that gateway (openshell
+	// only): container (default; Docker or Podman, with the agent image)
+	// or systemd (the OpenShell systemd compute driver: no image, the
+	// host's agent-launcher).
+	OpenShellDriver string `yaml:"openshell_driver"`
 }
 
 // Lifecycle is /v1/status's lifecycle (CONTRACT.md §3a).
 func (c *Config) Lifecycle() map[string]string {
 	if c.Sandbox.Kind == "openshell" {
 		return map[string]string{"kind": "openshell", "sandbox": "agent-" + c.Name, "gateway": c.Sandbox.OpenShellGateway,
-			"service": "agent-openshell@" + c.Name + ".service"}
+			"driver": c.Sandbox.OpenShellDriver, "service": "agent-openshell@" + c.Name + ".service"}
 	}
 	return map[string]string{"kind": "systemd", "service": "agent@" + c.Name + ".service", "socket": "agent@" + c.Name + ".socket"}
 }
@@ -346,6 +351,9 @@ func (c *Config) defaults() {
 	}
 	if c.Sandbox.Kind == "openshell" && c.Sandbox.OpenShellGateway == "" {
 		c.Sandbox.OpenShellGateway = "openshell" // the name OpenShell's installer registers
+	}
+	if c.Sandbox.Kind == "openshell" && c.Sandbox.OpenShellDriver == "" {
+		c.Sandbox.OpenShellDriver = "container"
 	}
 }
 
@@ -477,7 +485,15 @@ func (c *Config) Check() error {
 		if c.Sandbox.OpenShellGateway != "" {
 			bad("sandbox.openshell_gateway: only for kind openshell")
 		}
+		if c.Sandbox.OpenShellDriver != "" {
+			bad("sandbox.openshell_driver: only for kind openshell")
+		}
 	case "openshell":
+		switch c.Sandbox.OpenShellDriver {
+		case "", "container", "systemd":
+		default:
+			bad("sandbox.openshell_driver: %q: want container or systemd", c.Sandbox.OpenShellDriver)
+		}
 	default:
 		bad("sandbox.kind: %q: want systemd or openshell", c.Sandbox.Kind)
 	}

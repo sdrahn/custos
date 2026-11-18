@@ -10,7 +10,7 @@
 # whose local OpenShell gateway it is (OPENSHELL_GATEWAY_USER).
 #
 # Usage: MCPGW_SRC=DIR OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --disposable [--gateway-host name|alias] [--results DIR]
-#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--gateway-host name|alias] [--results DIR]
+#        OPENSHELL_GATEWAY_USER=USER test/openshell/run-spike.sh --system --disposable [--gateway-host name|alias] [--driver systemd] [--results DIR]
 #
 # --gateway-host: the name the agent reaches the gateway by (#131). name
 # (the default): a host name of its own, custos-gw.test, which a local
@@ -25,6 +25,13 @@
 # The container runtime is Docker if it runs, else OPENSHELL_GATEWAY_USER's
 # rootless Podman (OpenShell's RPM default).
 #
+# --driver systemd (#215, a spike): OpenShell's gateway uses the OpenShell
+# systemd compute driver (test/openshell/vm-setup.sh --driver systemd):
+# no container runtime and no image. The sandbox is created --from host,
+# the one image name that driver takes, and runs the host's
+# agent-launcher. The agent has sandbox.openshell_driver: systemd, and the
+# relay reads its records from the journal of the sandbox's workload unit.
+#
 # mcp-gateway runs in its development mode (no systemd, no SELinux; the
 # exec supervisor) with its own policy, custos's agents module
 # and the agents' data from agent-admin, as installed. Its HTTPS listener
@@ -34,20 +41,22 @@
 # credentials grant and renews them while the agent runs.
 set -u
 here=$(cd "$(dirname "$0")/../.." && pwd)
-disposable= results= system= gateway_host=name
+disposable= results= system= gateway_host=name driver=
 while [ $# -gt 0 ]; do
 	case $1 in
 	--disposable) disposable=1 ;;
 	--results) results=${2:?}; shift ;;
 	--system) system=1 ;;
 	--gateway-host) gateway_host=${2:?}; shift ;;
-	*) echo "usage: $0 [--system] --disposable [--gateway-host name|alias] [--results DIR]" >&2; exit 2 ;;
+	--driver) driver=${2:?}; shift ;;
+	*) echo "usage: $0 [--system] --disposable [--gateway-host name|alias] [--driver systemd] [--results DIR]" >&2; exit 2 ;;
 	esac
 	shift
 done
 [ -n "$disposable" ] || { echo "$0: installs agents, units and users on this system; use --disposable" >&2; exit 2; }
 [ "$(id -u)" = 0 ] || { echo "$0: runs as root" >&2; exit 2; }
 case $gateway_host in name | alias) ;; *) echo "$0: --gateway-host name or alias" >&2; exit 2 ;; esac
+case $driver in "" | systemd) ;; *) echo "$0: --driver systemd, or none for Docker or Podman" >&2; exit 2 ;; esac
 work=$(mktemp -d)
 t0=$(date +%s)
 failed=0
@@ -87,8 +96,11 @@ osh_home=$(getent passwd "$osh_user" | cut -d: -f6)
 osh_uid=$(id -u "$osh_user" 2>/dev/null)
 export osh_user osh_home osh_uid
 # The container runtime OpenShell's driver uses: Docker, or the gateway
-# user's rootless Podman.
-if docker info >/dev/null 2>&1; then
+# user's rootless Podman; none with the systemd driver.
+if [ "$driver" = systemd ]; then
+	runtime=systemd
+	ctr() { echo "no container runtime: the systemd compute driver" >&2; return 1; }
+elif docker info >/dev/null 2>&1; then
 	runtime=docker
 	ctr() { docker "$@"; }
 else
@@ -100,7 +112,12 @@ else
 		XDG_RUNTIME_DIR="/run/user/$osh_uid" podman "$@"); }
 fi
 ctr_ok() { ctr "$@" >"$work/ctr.out" 2>&1 || { tail -n 8 "$work/ctr.out" | sed 's/^/    | /'; return 1; }; }
-check "the container runtime runs ($runtime)" ctr_ok info
+if [ "$runtime" = systemd ]; then
+	check "the OpenShell gateway uses the systemd compute driver" bash -c 'openshell -g openshell gateway info 2>&1 | grep -q openshell-driver-systemd'
+	check "the driver's helper runs" systemctl is-active -q openshell-systemd-helper.service
+else
+	check "the container runtime runs ($runtime)" ctr_ok info
+fi
 gw_ctl=$work/gw/control.sock gw_unit=osh-mcp-gateway.service
 if [ -n "$system" ]; then
 	# The system's mcp-gateway (confined, systemd supervisor) gets the
@@ -258,28 +275,45 @@ osh_systemctl() {
 		setpriv --reuid="$osh_uid" --regid="$(id -g "$osh_user")" --init-groups -- \
 			env HOME="$osh_home" XDG_RUNTIME_DIR="/run/user/$osh_uid" systemctl --user "$@"
 }
-check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
-install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
-# A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
-# package does not ship one for a local gateway.
-[ -s "$osh_toml" ] || { printf '[openshell]\nversion = 2\n' >"$osh_toml" && chown "$osh_user" "$osh_toml"; }
-if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
-	sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
+if [ "$runtime" = systemd ]; then
+	# OpenShell 0.1.8 refuses gateway.toml's
+	# [openshell.supervisor.network] additional_ca_bundle with an external
+	# compute driver ("cannot propagate network trust"), and the gateway
+	# then does not start. With the systemd driver the supervisor runs on
+	# the host and reads the host's CA bundle (/etc/ssl/ca-bundle.pem on
+	# openSUSE), so the gateway's CA goes into the host's trust store,
+	# which the agent's supervisor reads when its sandbox starts.
+	install -m 0644 "$work/tls/ca.pem" /etc/pki/trust/anchors/custos-spike-ca.pem
+	check "the host's trust store takes the gateway's CA" update-ca-certificates
+	check "the host's CA bundle has it" bash -c "grep -qF \"\$(sed -n 2p '$work/tls/ca.pem')\" /etc/ssl/ca-bundle.pem"
 else
-	printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
+	check "the OpenShell gateway's user is known (OPENSHELL_GATEWAY_USER)" test -n "$osh_user" -a -d "$osh_home/.config/openshell"
+	install -m 0644 -o "$osh_user" "$work/tls/ca.pem" "$osh_home/.config/openshell/mcp-gateway-ca.pem"
+	# A gateway.toml must say its format (OpenShell 0.1.7: version 2); the
+	# package does not ship one for a local gateway.
+	[ -s "$osh_toml" ] || { printf '[openshell]\nversion = 2\n' >"$osh_toml" && chown "$osh_user" "$osh_toml"; }
+	if grep -q '^\[openshell\.supervisor\.network\]' "$osh_toml"; then
+		sed -i "/^\[openshell\.supervisor\.network\]/a additional_ca_bundle = \"$osh_home/.config/openshell/mcp-gateway-ca.pem\"" "$osh_toml"
+	else
+		printf '\n[openshell.supervisor.network]\nadditional_ca_bundle = "%s"\n' "$osh_home/.config/openshell/mcp-gateway-ca.pem" >>"$osh_toml"
+	fi
+	check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight ||
+		{
+			runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
+			sed 's/^/    | gateway.toml: /' "$osh_toml"
+		}
+	check "the OpenShell gateway restarts with the CA" osh_systemctl restart openshell-gateway ||
+		osh_systemctl status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
+	check "the OpenShell gateway answers again" eventually 90 osh status
 fi
-check "OpenShell's configuration check takes it" runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight ||
-	{
-		runuser -u "$osh_user" -- env HOME="$osh_home" XDG_CONFIG_HOME="$osh_home/.config" openshell-gateway config preflight 2>&1 | tail -n 15 | sed 's/^/    | preflight: /'
-		sed 's/^/    | gateway.toml: /' "$osh_toml"
-	}
-check "the OpenShell gateway restarts with the CA" osh_systemctl restart openshell-gateway ||
-	osh_systemctl status --no-pager openshell-gateway 2>&1 | tail -n 15 | sed 's/^/    | /'
-check "the OpenShell gateway answers again" eventually 90 osh status
 
 section "Agent image"
 img=localhost/custos-agent:ci
-if [ -n "$system" ]; then
+if [ "$runtime" = systemd ]; then
+	# No image: the host's agent-launcher, from the custos package.
+	img=host
+	check "the host's agent-launcher is there for the sandbox" test -x /usr/libexec/custos/agent-launcher
+elif [ -n "$system" ]; then
 	# The installed launcher and Containerfile (custos package).
 	mkdir -p "$work/image/bin" && cp /usr/libexec/custos/agent-launcher "$work/image/bin/"
 	chown -R "$osh_user" "$work/image"
@@ -289,8 +323,9 @@ else
 	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
 fi
 
-check "the image resolves names by DNS first (hosts: dns files)" bash -c \
-	"$(declare -f ctr); ctr run --rm --entrypoint /bin/sh '$img' -c 'grep -x \"hosts: dns files\" /etc/nsswitch.conf' >/dev/null"
+[ "$runtime" = systemd ] ||
+	check "the image resolves names by DNS first (hosts: dns files)" bash -c \
+		"$(declare -f ctr); ctr run --rm --entrypoint /bin/sh '$img' -c 'grep -x \"hosts: dns files\" /etc/nsswitch.conf' >/dev/null"
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
@@ -302,16 +337,22 @@ instruction: You are a test agent.
 gateway:
   url: "$aud"
   servers: [custos-test]
-  oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 30}
+  oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 90}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
-sandbox: {kind: openshell, openshell_gateway: openshell}
+sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: $([ "$runtime" = systemd ] && echo systemd || echo container)}
 EOF
 agent-admin delete sb >/dev/null 2>&1
-export CUSTOS_OPENSHELL_IMAGE=$img
+# The systemd driver: agent-admin takes no image (sandbox.openshell_driver).
+[ "$runtime" = systemd ] || export CUSTOS_OPENSHELL_IMAGE=$img
 # Rootless Podman: the relay's log source reads the user's containers.
 [ "$runtime" = podman ] && export CUSTOS_OPENSHELL_USER=$osh_user
 check "agent-admin create sb (openshell)" agent-admin create sb --from "$work/sb.yaml"
+if [ "$runtime" = systemd ]; then
+	check "openshell.env names the systemd driver" grep -qx OPENSHELL_DRIVER=systemd /etc/custos/agents/sb/openshell.env
+	check "openshell.env: the sandbox has no image (host)" grep -qx AGENT_IMAGE=host /etc/custos/agents/sb/openshell.env
+	check "no rootless Podman user for the systemd driver" not grep -q '^OPENSHELL_USER=' /etc/custos/agents/sb/openshell.env
+fi
 # #131: no note by the host's name (it resolves to a network address and
 # is the gateway's audience); the alias's note says what an official
 # certificate needs.
@@ -346,6 +387,38 @@ check "OpenShell renews it (oauth2_client_credentials)" bash -c "openshell -g op
 t_first=$SECONDS
 check "the sandbox exists" eventually 120 bash -c 'openshell -g openshell sandbox get agent-sb >/dev/null 2>&1'
 check "the relay socket is active" systemctl is-active -q agent-openshell@sb.socket
+if [ "$runtime" = systemd ]; then
+	section "The sandbox as systemd units"
+	sid=$(openshell -g openshell sandbox get agent-sb 2>/dev/null | awk '$1 == "Id:" {print $2}')
+	echo "    | sandbox id: ${sid:-none}"
+	check "the sandbox's units exist" test -n "$sid"
+	check "its workload unit becomes active" eventually 120 systemctl is-active -q "openshell-sandbox-workload@$sid.service" ||
+		systemctl status --no-pager "openshell-sandbox-*@$sid.service" 2>&1 | tail -n 20 | sed 's/^/    | /'
+	wl=$(systemctl show -p MainPID --value "openshell-sandbox-workload@$sid.service")
+	echo "    | workload: pid ${wl:-none}, user $(stat -c %U "/proc/$wl" 2>&1), $(tr -d '\0' <"/proc/$wl/attr/current" 2>&1)"
+	check "the workload runs as a user of the sandbox's own" bash -c "u=\$(stat -c %u /proc/$wl) && [ \"\$u\" -ge 70000 ] && [ \"\$u\" -le 79999 ]"
+	check "the agent-launcher in the sandbox is the host's" eventually 60 bash -c \
+		"pgrep -f -u \"\$(stat -c %u /proc/$wl)\" '^/usr/libexec/custos/agent-launcher serve' >/dev/null" || {
+		# What the workload printed: openshell-sandbox's lines and the
+		# agent's, before it ended.
+		echo "    | the workload unit's journal:"
+		journalctl --no-pager -o cat --since "@$t0" -u "openshell-sandbox-workload@$sid.service" 2>&1 |
+			grep -v 'network notification denied' | tail -n 40 | cut -c1-300 | sed 's/^/    | /'
+		echo "    | its state: $(systemctl show -p ActiveState,SubState,Result,ExecMainStatus --value "openshell-sandbox-workload@$sid.service" | tr '\n' ' ')"
+		# The sandbox's own variables (--env, --env-from) as systemd gave
+		# them to the supervisor, in OPENSHELL_USER_ENVIRONMENT: names,
+		# lengths and whether the configuration decodes. No values: one of
+		# them is the relay secret.
+		sup=$(systemctl show -p MainPID --value "openshell-sandbox-supervisor@$sid.service")
+		ue=$(tr '\0' '\n' <"/proc/$sup/environ" 2>/dev/null | sed -n 's/^OPENSHELL_USER_ENVIRONMENT=//p')
+		echo "    | the supervisor's OPENSHELL_USER_ENVIRONMENT: ${#ue} bytes, $(jq -r 'to_entries | map("\(.key) (\(.value | length))") | join(", ")' <<<"$ue" 2>&1 | head -c 300)"
+		echo "    | CUSTOS_CONFIG there decodes: $(jq -r '.CUSTOS_CONFIG // empty' <<<"$ue" 2>/dev/null | base64 -d 2>/dev/null | head -c 40 | tr -c '[:print:]' '.')"
+		f=/var/lib/openshell/systemd/$sid/supervisor.env
+		echo "    | supervisor.env: $(wc -c <"$f" 2>&1) bytes; its line: $(grep -c '^OPENSHELL_USER_ENVIRONMENT=' "$f" 2>&1), $(grep '^OPENSHELL_USER_ENVIRONMENT=' "$f" 2>/dev/null | wc -c) bytes"
+		echo "    | SELinux denials so far (audit.log):"
+		cat /var/log/audit/audit.log* 2>/dev/null | grep 'avc:  denied' | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | tail -n 15 | cut -c1-300 | sed 's/^/    | /'
+	}
+fi
 
 section "Supervising through the relay"
 diagnose() {
@@ -452,8 +525,23 @@ if [ -n "$relay_ok" ]; then
 			-p RuntimeMaxSec=5 /usr/libexec/custos/agent-openshell-logs agent-sb </dev/null 2>&1 | tail -n 5 | tr '\n' '|')"
 		echo "    | the relay's drop-ins: $(systemctl show -p DropInPaths --value agent-openshell@sb.service)"
 		echo "    | journal AGENT_NAME=sb: $(journalctl --no-pager -o cat --since "@$t0" AGENT_NAME=sb 2>&1 | wc -l) records"
+		# What the relay's domain was refused (from the audit log: #221).
+		echo "    | agent_relay_t denials: $(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied' | grep 'scontext=[^ ]*:agent_relay_t:' |
+			sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 10 | tr '\n' '|')"
 	}
 	check "journal: approval.resolved approved" eventually 60 journal_has approval.resolved '.AGENT_OUTCOME == "approved"'
+	if [ "$runtime" = systemd ]; then
+		# The agent's own output, as journald has it from the workload's
+		# unit: what the relay's log source reads. In the
+		# sandbox there is no journal socket, so the agent writes JSON
+		# lines (internal/journal).
+		unit_log() { journalctl --no-pager -o cat --since "@$t0" -u "openshell-sandbox-workload@$sid.service" 2>/dev/null; }
+		check "the agent's records are in its workload unit's journal" bash -c "$(declare -f unit_log); t0=$t0 sid=$sid; unit_log | grep -q '\"event\":\"approval.pending\"'" || {
+			echo "    | the workload unit's last lines:"
+			unit_log | tail -n 8 | cut -c1-200 | sed 's/^/    | /'
+		}
+		echo "    | the agent's records there: $(unit_log | grep -c '"event":')"
+	fi
 
 	# Security review H1: the relay journals the agent's records as root,
 	# so it passes only the events an agent host writes, with field names
@@ -476,7 +564,16 @@ if [ -n "$relay_ok" ]; then
 	# secret and the configuration must be in none.
 	(while :; do cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\0' ' '; echo; done) >"$work/cmdlines" 2>/dev/null &
 	sampler=$!
-	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'"
+	te=$(date +%s)
+	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'" || {
+		if [ "$runtime" = systemd ]; then
+			# What the driver did with the old sandbox and the new one.
+			journalctl --no-pager -o cat --since "@$te" -u openshell-systemd-helper.service 2>&1 | tail -n 15 | cut -c1-240 | sed 's/^/    | helper: /'
+			journalctl --no-pager -o cat --since "@$te" _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 |
+				grep -iE 'error|warn|sandbox|driver' | tail -n 15 | cut -c1-240 | sed 's/^/    | gateway: /'
+			journalctl --no-pager -o short-precise --since "@$te" -u 'openshell-sandbox-*' 2>&1 | tail -n 25 | cut -c1-240 | sed 's/^/    | units: /'
+		fi
+	}
 	kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null
 	check "the sampler saw openshell's sandbox create (the control)" grep -q "sandbox create --name agent-sb" "$work/cmdlines"
 	check "no command line had the relay secret" not grep -qF "$(cat /etc/custos/agents/sb/relay.secret)" "$work/cmdlines"
@@ -491,7 +588,27 @@ if [ -n "$relay_ok" ]; then
 		"curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status | jq -e '.limits.max_invocation_seconds == 301' >/dev/null" ||
 		sandbox_state
 	a=$(run_activity PROBE)
-	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok"
+	check "a read-only call runs after the edit (the provider stayed)" summary_has "$a" "probe ok" || {
+		echo "    | the agent answered: $(jq -c '{state, summary, reason}' <<<"$a" 2>/dev/null | head -c 600 || head -c 400 <<<"$a")"
+		journalctl -u "$gw_unit" -o cat --no-pager --since "-180s" | grep -v '"audit":true' | tail -n 8 | cut -c1-240 | sed 's/^/    | gateway: /'
+		if [ "$runtime" = systemd ]; then
+			sid2=$(openshell -g openshell sandbox get agent-sb 2>/dev/null | awk '$1 == "Id:" {print $2}')
+			echo "    | the new sandbox: ${sid2:-none}, user $(cat "/var/lib/openshell/systemd/$sid2/uid" 2>&1)"
+			journalctl --no-pager -o cat --since "-180s" -u "openshell-sandbox-supervisor@$sid2.service" 2>&1 |
+				grep -iE 'error|warn|denied|tls|certificate|credential|provider' | tail -n 10 | cut -c1-240 | sed 's/^/    | supervisor: /'
+			# The workload started without AGENT_GATEWAY_TOKEN (the agent sent
+			# no Authorization header): what the supervisor did up to the
+			# workload's launch, unfiltered, and what the OpenShell gateway
+			# said of the sandbox's provider environment.
+			journalctl --no-pager -o short-precise --since "-180s" -u "openshell-sandbox-supervisor@$sid2.service" \
+				-u "openshell-sandbox-workload@$sid2.service" 2>&1 | head -n 60 | cut -c1-260 | sed 's/^/    | start: /'
+			# Whole lines, without colours and the request span's fields, so
+			# the message of a warning is not cut off.
+			journalctl --no-pager -o cat --since "-180s" _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 |
+				grep -iE 'provider|environment|credential|identity' | sed -E 's/\x1b\[[0-9;]*m//g; s/request\{[^}]*\}//' |
+				grep -vE ' INFO +(:|openshell_server::grpc)? *$' | tail -n 25 | cut -c1-600 | sed 's/^/    | gateway: /'
+		fi
+	}
 	check "the same file again leaves the sandbox's configuration (try-restart only)" agent-admin edit sb --from "$work/sb-edited.yaml" ||
 		sandbox_state
 	check "and the agent answers again" eventually 180 bash -c \
@@ -542,6 +659,15 @@ if [ -n "$system" ]; then
 	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
 	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
 	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
+	if [ "$runtime" = systemd ]; then
+		# Not a check yet: what the driver's domains were refused while a
+		# Custos agent ran in them. From the audit log itself: on the Leap 16
+		# VM ausearch -ts boot gives nothing where the log has denials
+		# (the check below has the same blind spot, #221).
+		drv=$(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied' | grep -E 'scontext=[^ ]*:openshell_[a-z_]*_t:')
+		echo "    | denials for the driver's domains (openshell_*, audit.log): $(grep -c . <<<"$drv")"
+		printf '%s\n' "$drv" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 20 | sed 's/^/    | /'
+	fi
 	check "no SELinux denial for custos's domains" not grep -qE 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" ||
 		grep -E 'scontext=[^ ]*:(agent_t|agent_relay_t|mcpsrv_agents_t):' <<<"$avc" | sed -E 's/^.*(avc: +denied)/\1/' | sort -u | head -n 20 | sed 's/^/    | /'
 	echo "    | all denials since the start: $(grep -c 'denied' <<<"$avc")"
@@ -549,6 +675,10 @@ if [ -n "$system" ]; then
 fi
 systemctl stop osh-fakemodel osh-mcp-gateway osh-opa osh-testidp osh-dnsmasq >/dev/null 2>&1
 restore_resolv
+if [ "$runtime" = systemd ]; then
+	rm -f /etc/pki/trust/anchors/custos-spike-ca.pem
+	update-ca-certificates >/dev/null 2>&1
+fi
 
 if [ -n "$results" ]; then
 	mkdir -p "$results"
@@ -563,6 +693,8 @@ if [ -n "$results" ]; then
 	} >"$results/results.tap"
 	journalctl --no-pager --since "@$t0" -u 'agent-openshell@*' -o short-precise >"$results/relay.log" 2>&1
 	openshell -g openshell logs agent-sb >"$results/sandbox.log" 2>&1 || true
+	[ "$runtime" = systemd ] &&
+		journalctl --no-pager --since "@$t0" -u 'openshell-sandbox-*' -u openshell-systemd-helper.service -o short-precise >"$results/sandbox-units.log" 2>&1
 fi
 n_fail=$(printf '%s\n' "${results_list[@]}" | awk -F'\t' '$2 == "fail"' | wc -l)
 printf '\n%d checks, %d failed\n' "${#results_list[@]}" "$n_fail"

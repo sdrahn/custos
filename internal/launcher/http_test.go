@@ -90,7 +90,7 @@ sandbox: {kind: openshell}
 		t.Errorf("resolved %+v", r)
 	}
 	b := asRoot("GET", "/v1/status", "").Body.Bytes()
-	if !testutil.Has(string(b), `"lifecycle":{"gateway":"openshell","kind":"openshell"`, `"url":"`+url+`"`) || strings.Contains(string(b), `"units"`) {
+	if !testutil.Has(string(b), `"lifecycle":{"driver":"container","gateway":"openshell","kind":"openshell"`, `"url":"`+url+`"`) || strings.Contains(string(b), `"units"`) {
 		t.Errorf("status %s", b)
 	}
 }
