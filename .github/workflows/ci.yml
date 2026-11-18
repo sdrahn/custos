@@ -28,12 +28,15 @@ jobs:
     if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Sources only (no binaries, nothing over 1 MiB)
         run: tools/check-tree
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          # setup-go keys its module cache on go.mod since v6; go.sum
+          # changes with every module version, as the key did before.
+          cache-dependency-path: go.sum
       - name: gofmt
         run: test -z "$(gofmt -l cmd internal test)" || { gofmt -l cmd internal test; exit 1; }
       - name: go vet
@@ -60,10 +63,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          # setup-go keys its module cache on go.mod since v6; go.sum
+          # changes with every module version, as the key did before.
+          cache-dependency-path: go.sum
       - name: Keycloak
         run: |
           docker run -d --name kc -p 127.0.0.1:8180:8080 \
@@ -89,8 +95,8 @@ jobs:
     if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm install --no-save --no-package-lock playwright-core@1
@@ -103,13 +109,13 @@ jobs:
     if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: ${{ env.GATEWAY_REPO }}
           ref: ${{ env.GATEWAY_REF }}
           path: mcp-gateway
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
       - name: The autonomy modes, with mcp-gateway's policy
@@ -132,8 +138,8 @@ jobs:
           zypper -n --gpg-auto-import-keys in --no-recommends
           git tar gzip rpm-build rpmlint
           sysuser-tools systemd-rpm-macros selinux-policy-devel policycoreutils
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: ${{ env.GATEWAY_REPO }}
           ref: ${{ env.GATEWAY_REF }}
@@ -207,7 +213,7 @@ jobs:
           test/docs/mcp-docs-smoke.sh /usr/local/bin/mcp-docs
       - name: Collect the packages for the VM test
         run: cp ~/rpmbuild/RPMS/*/custos*.rpm rpms/ && ls rpms
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rpms-leap16
           path: rpms/
@@ -222,12 +228,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -241,7 +247,7 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
@@ -250,7 +256,7 @@ jobs:
           WORK: ${{ runner.temp }}/vm
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vm-logs-leap16
           path: |
@@ -286,12 +292,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -305,11 +311,11 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/mirror
           key: airgap-mirror-${{ hashFiles('test/airgap/versions') }}
@@ -322,7 +328,7 @@ jobs:
           MIRROR: ${{ runner.temp }}/mirror
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: airgap-logs-leap16
           path: |
@@ -360,12 +366,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -379,7 +385,7 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
@@ -389,7 +395,7 @@ jobs:
           SUITE: openshell
         run: test/vm/run-vm.sh rpms "$(command -v opa)"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openshell-podman-logs-leap16
           path: |
@@ -550,16 +556,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm install --no-save --no-package-lock playwright-core@1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -573,7 +579,7 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
@@ -602,13 +608,13 @@ jobs:
             echo "::endgroup::"
           done
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cockpit-screenshots
           path: ${{ runner.temp }}/vm/screenshots/
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cockpit-vm-logs-leap16
           path: |
@@ -644,7 +650,7 @@ jobs:
     outputs:
       models: ${{ steps.list.outputs.models }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: list
         run: echo "models=$(grep -v '^#' test/vm/eval-models | grep . | jq -R . | jq -sc .)" >>"$GITHUB_OUTPUT"
   models:
@@ -656,12 +662,12 @@ jobs:
       matrix:
         model: ${{ fromJSON(needs.models-list.outputs.models) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -675,14 +681,14 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
       # The playbooks' systemd tools: Leap 16.0 has no systemd-mcp package,
       # so the openSUSE project's release, built here (it reads the journal
       # through libsystemd).
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -734,7 +740,7 @@ jobs:
             echo "MODEL-EVAL-BEGIN"; jq -c . "$f"; echo "MODEL-EVAL-END"
           done
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: model-eval-${{ steps.model.outputs.name }}
           path: |
@@ -748,7 +754,7 @@ jobs:
     if: always() && needs.models.result != 'skipped'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: model-eval-*
           path: evals
@@ -779,18 +785,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: actions/checkout@v7
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # The browser records with Playwright's ffmpeg; render.sh encodes
       # with the system's (libass, for the subtitles).
       - run: npm install --no-save --no-package-lock playwright-core@1 && npx playwright-core install ffmpeg
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rpms-leap16
           path: rpms
@@ -804,7 +810,7 @@ jobs:
       - name: Image cache key
         id: image
         run: echo "week=$(date -u +%G-%V)" >>"$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/vm/base.qcow2
           key: vm-image-leap16-${{ steps.image.outputs.week }}
@@ -845,7 +851,7 @@ jobs:
             echo "::endgroup::"
           done
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: demo-videos
           path: |
@@ -854,7 +860,7 @@ jobs:
             ${{ runner.temp }}/vm/videos/*.vtt
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: video-logs-leap16
           path: |
@@ -891,22 +897,25 @@ jobs:
       matrix:
         gateway_host: [name, alias]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          # setup-go keys its module cache on go.mod since v6; go.sum
+          # changes with every module version, as the key did before.
+          cache-dependency-path: go.sum
       - name: Build
         run: CGO_ENABLED=0 make build build-tests
       # The agent reaches mcp-gateway's HTTPS listener: the gateway from its
       # repository, in development mode, with OPA (test/openshell/run-spike.sh).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ env.GATEWAY_REPO }}
           ref: ${{ env.GATEWAY_REF }}
           path: mcp-gateway
       - name: Build mcp-gateway
         run: make -C mcp-gateway build
-      - uses: open-policy-agent/setup-opa@v2
+      - uses: open-policy-agent/setup-opa@v2.4.0
         with:
           version: latest
           static: true
@@ -941,7 +950,7 @@ jobs:
       - name: Run the OpenShell tests
         run: sudo -E env "PATH=$PATH" MCPGW_SRC="$GITHUB_WORKSPACE/mcp-gateway" OPENSHELL_GATEWAY_USER="$USER" test/openshell/run-spike.sh --disposable --gateway-host ${{ matrix.gateway_host }} --results "$RUNNER_TEMP/osh"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openshell-logs-${{ matrix.gateway_host }}
           path: ${{ runner.temp }}/osh/
