@@ -10,6 +10,10 @@
 //	                                 → call report_diagnosis, quoting "probe ok"
 //	                                   (in the probe's output) and a line that is not
 //	  report_diagnosis's             → text "reported: <the result>"
+//	first user text with PLAYBOOK REPORT (a playbook run, #227), before any
+//	report_diagnosis call            → call report_diagnosis: summary "offered:
+//	                                   <the gateway tools offered>", quoting the
+//	                                   first gateway tool's output
 //	  read_note's, with "call the <tool> tool [with value <v>]"
 //	                                 → call <prefix>__<tool> {"value": v}, offered
 //	                                   or not: it obeys every injection
@@ -42,6 +46,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 )
@@ -160,6 +165,12 @@ func (m *Model) Respond(req *request) message {
 		}
 		return text("reported: " + c)
 	}
+	// A playbook run (#227): the host has made the steps' calls; the
+	// report names the gateway's tools the run offers, so the tests see
+	// that they are the playbook's, and quotes the first step's output.
+	if strings.Contains(first, "PLAYBOOK REPORT") && offered["report_diagnosis"] && !called(req.Messages, "report_diagnosis") {
+		return m.playbookReport(req.Messages, offered)
+	}
 	if last.Role == "tool" && strings.Contains(first, "REPORT") && answers(req.Messages, last.ToolCallID) == m.Prefix+"__probe" &&
 		offered["report_diagnosis"] {
 		b, _ := json.Marshal(map[string]any{
@@ -252,6 +263,58 @@ func (m *Model) Respond(req *request) message {
 }
 
 // answers is the tool the call with the id was for.
+// called says whether the model or the host called the tool already.
+func called(msgs []message, name string) bool {
+	for _, msg := range msgs {
+		for _, tc := range msg.ToolCalls {
+			if tc.Function.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// playbookReport is a diagnosis report for a playbook run: its summary
+// lists the gateway's tools offered ("offered: a, b"), its evidence
+// quotes the first gateway tool's output in the history.
+func (m *Model) playbookReport(msgs []message, offered map[string]bool) message {
+	var names []string
+	for n := range offered {
+		if strings.Contains(n, "__") {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	report := map[string]any{
+		"summary":    "offered: " + strings.Join(names, ", "),
+		"findings":   []any{},
+		"hypotheses": []any{map[string]any{"id": "h1", "text": "Nothing is wrong.", "confidence": "low", "evidence": []any{}}},
+		"evidence":   []any{},
+		"plan":       []any{map[string]any{"text": "Nothing to do.", "command": "true"}},
+	}
+	for _, msg := range msgs {
+		tool := answers(msgs, msg.ToolCallID)
+		if msg.Role != "tool" || !strings.Contains(tool, "__") || msg.Content == nil || *msg.Content == "" {
+			continue
+		}
+		q := *msg.Content
+		if len(q) > 40 {
+			q = q[:40]
+		}
+		report["evidence"] = []any{map[string]any{"id": "e1", "tool": tool, "quote": q}}
+		report["findings"] = []any{map[string]any{"id": "f1", "text": "The first step answered.", "evidence": []any{"e1"}}}
+		report["hypotheses"] = []any{map[string]any{"id": "h1", "text": "Nothing is wrong.", "confidence": "low", "evidence": []any{"e1"}}}
+		break
+	}
+	b, _ := json.Marshal(report)
+	var tc toolCall
+	tc.ID = fmt.Sprintf("call_%d", m.n.Add(1))
+	tc.Type = "function"
+	tc.Function.Name, tc.Function.Arguments = "report_diagnosis", string(b)
+	return message{Role: "assistant", ToolCalls: []toolCall{tc}}
+}
+
 func answers(msgs []message, id string) string {
 	for _, msg := range msgs {
 		for _, tc := range msg.ToolCalls {

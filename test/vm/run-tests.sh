@@ -65,6 +65,8 @@ for f in "$dir"/sections/[0-9]*.sh; do
 done
 
 rm -f /etc/mcp-gateway/servers.d/custos-test.yaml /etc/mcp-gateway/servers.d/agents.yaml
+# The playbooks' stand-ins (sections/85-playbooks.sh), if a run stopped there.
+[ -f "$dir/playbook-runs.sh" ] && { . "$dir/playbook-runs.sh"; standins_remove /etc/mcp-gateway/servers.d; }
 systemctl stop custos-fakemodel.service >/dev/null 2>&1
 
 # --- results --------------------------------------------------------------------

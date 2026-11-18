@@ -1,10 +1,15 @@
 # The image an agent runs in under NVIDIA OpenShell (CONTRACT.md §16a):
-# openSUSE Leap 16 with agent-launcher. Its configuration and the relay's
-# secret come in the sandbox's environment (agent-admin), its state lives
-# in the sandbox's working directory.
+# openSUSE Leap 16 with agent-launcher and the shipped diagnostic
+# playbooks, which the agent reads from its own file system. Its
+# configuration and the relay's secret come in the sandbox's environment
+# (agent-admin), its state lives in the sandbox's working directory.
+#
+# The build context holds bin/agent-launcher and playbooks/ (the files of
+# /usr/share/custos/playbooks), from the installed package or the source:
 #
 #   make build
-#   podman build -t localhost/custos-agent:latest -f packaging/openshell/Containerfile .
+#   d=$(mktemp -d) && mkdir $d/bin && cp bin/agent-launcher $d/bin/ && cp -r packaging/playbooks $d/
+#   podman build -t localhost/custos-agent:latest -f packaging/openshell/Containerfile $d
 FROM registry.opensuse.org/opensuse/leap:16.0
 # OpenShell runs the workload as the image's user "sandbox" (the sandbox
 # policy's run_as_user), whose home is the working directory.
@@ -24,5 +29,6 @@ RUN { [ -e /etc/nsswitch.conf ] || cp /usr/etc/nsswitch.conf /etc/nsswitch.conf 
       printf 'passwd: files\ngroup: files\nshadow: files\n' >/etc/nsswitch.conf; } && \
     sed -i '/^hosts:/d' /etc/nsswitch.conf && echo 'hosts: dns files' >>/etc/nsswitch.conf
 COPY bin/agent-launcher /usr/libexec/custos/agent-launcher
+COPY playbooks/ /usr/share/custos/playbooks/
 LABEL org.opencontainers.image.title="Custos agent" \
       org.opencontainers.image.source="https://github.com/sdrahn/custos"

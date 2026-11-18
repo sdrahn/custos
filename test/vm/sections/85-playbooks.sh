@@ -94,6 +94,25 @@ check "a unit that is not a unit name is refused (400)" code_is 400 api pb /v1/a
 check "agent-admin delete pb" agent-admin delete pb
 rm -f /etc/custos/playbooks/probe-check.yaml /etc/custos/playbooks/change-check.yaml /etc/custos/playbooks/unit-check.yaml
 
+section "The shipped playbooks on the systemd backend (#227)"
+# Every shipped playbook, run by an agent on systemd against stand-ins for
+# its servers (test/vm/playbook-runs.sh); the OpenShell spike runs the
+# same on both of OpenShell's compute drivers.
+# shellcheck source=/dev/null
+. "$dir/playbook-runs.sh"
+standins_register /etc/mcp-gateway/servers.d "$dir/testsrv" principal
+for s in "${standin_servers[@]}"; do
+	check "the gateway takes the stand-in for $s" eventually 30 servers_have "$s"
+done
+agent-admin delete pbs >/dev/null 2>&1
+check "agent-admin create pbs, with the stand-ins' servers" agent-admin create pbs --from \
+	"$(config pbs "$(IFS=,; echo "${standin_servers[*]}")")"
+check "agent-admin permissions pbs: the stand-ins' tools, read-only" bash -c \
+	"$(declare -f standin_permissions); standin_permissions '$dir/testsrv' | agent-admin permissions pbs"
+playbook_runs pbs mcp-gateway.service systemd
+check "agent-admin delete pbs" agent-admin delete pbs
+standins_remove /etc/mcp-gateway/servers.d
+
 section "Events"
 # CONTRACT.md §14, §15: an event starts an activity when a unit it names
 # fails. agent-admin puts an OnFailure= drop-in on the unit; systemd starts

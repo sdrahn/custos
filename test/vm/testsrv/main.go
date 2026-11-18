@@ -10,7 +10,9 @@
 // read-only and change not.
 //
 // Without arguments it speaks MCP on stdio; with --cases it prints the
-// injection cases as JSON (id, title, target).
+// injection cases as JSON (id, title, target); with --as SERVER it stands
+// in for a server the shipped playbooks call (standin.go); with --as-tools
+// it prints the stand-ins' servers and tools as JSON.
 package main
 
 import (
@@ -60,6 +62,23 @@ func New() *mcp.Server {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--as-tools" {
+		b, _ := json.Marshal(StandIns)
+		fmt.Println(string(b))
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == "--as" {
+		s := StandIn(os.Args[2])
+		if s == nil {
+			fmt.Fprintln(os.Stderr, standInUsage())
+			os.Exit(2)
+		}
+		if err := s.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			fmt.Fprintln(os.Stderr, "testsrv:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--cases" {
 		b, _ := json.Marshal(Cases)
 		fmt.Println(string(b))

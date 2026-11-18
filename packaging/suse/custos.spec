@@ -270,6 +270,7 @@ done
 %dir %{_libexecdir}/custos/tests
 %{_libexecdir}/custos/tests/run-tests.sh
 %{_libexecdir}/custos/tests/lib.sh
+%{_libexecdir}/custos/tests/playbook-runs.sh
 %{_libexecdir}/custos/tests/sections
 %{_libexecdir}/custos/tests/model-eval.sh
 %{_libexecdir}/custos/tests/fakemodel
