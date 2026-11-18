@@ -8,3 +8,9 @@ needs:
   - Custos's server custos-net (mcp-gateway 1.15) with /usr/share/custos/gateway/servers.d/custos-net.yaml in /etc/mcp-gateway/servers.d/
   - mcp-server-zypp and mcp-server-snapper, or on a transactional system mcp-server-tukit, as far as they are installed
   - for checking against the product documentation (optional), mcp-docs at the gateway as the server suse-docs, with documentation such as suse-docs-mcp-sles-16.0 and custos-docs
+backends: [systemd, openshell]
+needs_openshell:
+  - OpenShell set up for agents (agent-admin openshell-setup), with the container or the systemd compute driver
+  - mcp-gateway's HTTPS listener, its issuer trusted for agents (agent-admin issuers)
+  - the agent's OAuth client at that issuer (agent-admin idp-client NAME), or a static token
+  - an agent name of at most 13 characters (its sandbox is agent-NAME)
