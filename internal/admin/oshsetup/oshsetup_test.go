@@ -72,7 +72,7 @@ func oshHost(t *testing.T, driver string) (*admin.Admin, *hosttest.Rec, string) 
 	var out strings.Builder
 	a.Out = &out
 	put(t, a, "/etc/passwd", "root:x:0:0:root:/root:/bin/bash\nosh:x:1001:1001::/home/osh:/bin/bash\n")
-	for _, p := range []string{"/usr/local/bin/openshell", "/usr/local/bin/openshell-gateway", "/usr/bin/update-ca-certificates",
+	for _, p := range []string{"/usr/local/bin/openshell", "/usr/local/bin/openshell-gateway", "/usr/bin/update-ca-certificates", "/usr/sbin/restorecon",
 		"/usr/lib/systemd/user/openshell-gateway.service"} {
 		put(t, a, p, "")
 	}
@@ -145,6 +145,7 @@ func TestSetupSystemdDriver(t *testing.T) {
 		"runuser -u osh -- env HOME=/home/osh XDG_RUNTIME_DIR=/run/user/1001 systemctl --user restart openshell-gateway.service",
 		"update-ca-certificates",
 		"chown -R root:root /root/.config/openshell",
+		"restorecon -R /root/.config/openshell",
 		"openshell -g openshell gateway info",
 	} {
 		if !ran(r, want) {

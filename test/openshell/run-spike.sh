@@ -305,6 +305,13 @@ else
 			sed 's/^/    | gateway.toml: /' "$osh_toml"
 		}
 fi
+# The relay reads root's registration by its own type, not as any
+# user's ~/.config (#237).
+if [ -n "$system" ] && [ "$(getenforce 2>/dev/null)" = Enforcing ]; then
+	check "root's OpenShell registration has the relay's type (agent_openshell_home_t)" bash -c \
+		"ls -Zd /root/.config/openshell | grep -q ':agent_openshell_home_t:' && ! find /root/.config/openshell -not -context '*:agent_openshell_home_t:*' | grep -q ." ||
+		ls -RZ /root/.config/openshell 2>&1 | head -n 10 | sed 's/^/    | /'
+fi
 check "the OpenShell gateway answers again" eventually 90 osh status
 check "a second openshell-setup changes nothing" bash -c \
 	"! agent-admin openshell-setup --user '$osh_user' --driver $setup_driver --ca '$work/tls/ca.pem' | grep -q '^set '"
