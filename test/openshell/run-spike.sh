@@ -686,16 +686,28 @@ if [ -n "$system" ]; then
 	section SELinux
 	# Denials since the start for the domains this repository ships
 	# (agent_t, agent_relay_t, mcpsrv_agents_t) and for what they reach.
-	# Since boot (the VM's whole run): a start time in the locale's format
-	# that ausearch does not take would make the check blind.
-	avc=$(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null)
-	[ -n "$avc" ] || avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
+	# From auditd's log itself, by the records' own time (msg=audit(EPOCH…)):
+	# on the Leap 16 VM, ausearch -ts boot gave nothing where the log had
+	# denials, and the kernel's journal has none while auditd takes them,
+	# which left this check blind (#221). The kernel's journal only where
+	# there is no audit log.
+	if ls /var/log/audit/audit.log* >/dev/null 2>&1; then
+		avc=$(cat /var/log/audit/audit.log* | grep -E '^type=(AVC|USER_AVC|SELINUX_ERR) ' |
+			awk -v t0="$t0" '{ s = $0; sub(/^.*msg=audit\(/, "", s); sub(/[.:].*$/, "", s); if (s + 0 >= t0) print }')
+		# The log has the run's records (service starts at least), so that
+		# the check below sees what was denied.
+		check "auditd's log has this run's records" bash -c \
+			"cat /var/log/audit/audit.log* | grep -E '^type=SERVICE_START ' | awk -v t0=$t0 '{ s = \$0; sub(/^.*msg=audit\\(/, \"\", s); sub(/[.:].*\$/, \"\", s); if (s + 0 >= t0) n++ } END { exit !n }'"
+		# Whether ausearch with a start time (as the VM tests ask it) sees them.
+		echo "    | denials in audit.log since the start: $(grep -c denied <<<"$avc"); ausearch -ts <start> finds: $(ausearch -m AVC,USER_AVC,SELINUX_ERR -ts "$(date -d "@$t0" '+%m/%d/%Y %H:%M:%S')" 2>/dev/null | grep -c denied)"
+	else
+		avc=$(journalctl -k --no-pager -o cat --since "@$t0" 2>/dev/null | grep -E 'avc: +denied')
+	fi
 	[ -n "$results" ] && mkdir -p "$results" && printf '%s\n' "$avc" >"$results/avc.txt"
 	if [ "$runtime" = systemd ]; then
 		# Not a check yet: what the driver's domains were refused while a
 		# Custos agent ran in them. From the audit log itself: on the Leap 16
-		# VM ausearch -ts boot gives nothing where the log has denials
-		# (the check below has the same blind spot, #221).
+		# VM ausearch -ts boot gives nothing where the log has denials.
 		drv=$(cat /var/log/audit/audit.log* 2>/dev/null | grep -E 'avc: +denied' | grep -E 'scontext=[^ ]*:openshell_[a-z_]*_t:')
 		echo "    | denials for the driver's domains (openshell_*, audit.log): $(grep -c . <<<"$drv")"
 		printf '%s\n' "$drv" | sed -E 's/^.*(avc: +denied)/\1/; s/ pid=[0-9]+//; s/ ino=[0-9]+//' | sort -u | head -n 20 | sed 's/^/    | /'
