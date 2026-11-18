@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
@@ -88,6 +89,18 @@ func oshHost(t *testing.T, driver string) (*admin.Admin, *hosttest.Rec, string) 
 		put(t, a, "/run/user/1001/openshell/systemd-driver.sock", "")
 	case "container":
 		put(t, a, "/usr/bin/podman", "")
+	}
+	// Ownership through descriptors and the confined home, recorded (a
+	// test does not run as root).
+	oldF, oldL := fchown, lchown
+	t.Cleanup(func() { fchown, lchown = oldF, oldL })
+	fchown = func(f *os.File, uid, gid int) error {
+		r.Cmds = append(r.Cmds, fmt.Sprintf("fchown %s %d:%d", f.Name(), uid, gid))
+		return nil
+	}
+	lchown = func(_ *os.Root, name string, uid, gid int) error {
+		r.Cmds = append(r.Cmds, fmt.Sprintf("lchown %s %d:%d", name, uid, gid))
+		return nil
 	}
 	// The gateway answers root; it names the systemd driver.
 	r.Gone = func(cmd string) error {
@@ -206,8 +219,8 @@ func TestSetupPodman(t *testing.T) {
 	if !strings.Contains(g, "[openshell.supervisor.network]\nadditional_ca_bundle = \"/home/osh/.config/openshell/mcp-gateway-ca.pem\"") || !strings.Contains(g, `compute_driver = "podman"`) {
 		t.Errorf("gateway.toml:\n%s", g)
 	}
-	if !strings.Contains(read(t, a, "/home/osh/.config/openshell/mcp-gateway-ca.pem"), "CERTIFICATE") || !ran(r, "chown osh: /home/osh/.config/openshell/mcp-gateway-ca.pem") {
-		t.Error("the CA for the supervisors")
+	if !strings.Contains(read(t, a, "/home/osh/.config/openshell/mcp-gateway-ca.pem"), "CERTIFICATE") || !ran(r, "/home/osh/.config/openshell/mcp-gateway-ca.pem.custos-") {
+		t.Errorf("the CA for the supervisors: %q", r.Cmds)
 	}
 	if ran(r, "update-ca-certificates") || ran(r, "openshell-systemd-helper") {
 		t.Errorf("systemd driver's steps:\n%s", strings.Join(r.Cmds, "\n"))
