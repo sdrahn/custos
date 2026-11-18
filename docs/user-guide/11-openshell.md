@@ -192,17 +192,20 @@ right.
 ## Step 2: the agent image {#image}
 
 The package ships the image's build file. Build it with the installed
-launcher, with the runtime that holds the sandboxes (for rootless
+launcher and playbooks, with the runtime that holds the sandboxes (for rootless
 Podman, as `osh`):
 
 ```bash
-d=$(mktemp -d) && mkdir -p $d/bin && cp /usr/libexec/custos/agent-launcher $d/bin/ && chown -R osh $d
+d=$(mktemp -d) && mkdir -p $d/bin && cp /usr/libexec/custos/agent-launcher $d/bin/ && cp -r /usr/share/custos/playbooks $d/ && chown -R osh $d
 cd / && runuser -l osh -c "podman build -t localhost/custos-agent:latest -f /usr/share/custos/openshell/Containerfile $d"
 ```
 
 `agent-admin` creates sandboxes from `localhost/custos-agent:latest`, or
 from the image `CUSTOS_OPENSHELL_IMAGE` names. Rebuild the image after
-updating `custos`. A running sandbox keeps its image: to move an agent
+updating `custos`. The image carries the shipped playbooks: an agent
+in a container reads those, not the host's `/etc/custos/playbooks`; to
+give it your own, copy them into the build context's `playbooks/` as
+well. A running sandbox keeps its image: to move an agent
 to the new one, set its gateway credential again
 (`agent-admin set-credential NAME gateway-client-secret`, or
 `gateway-token`), which deletes the sandbox and creates it anew from the

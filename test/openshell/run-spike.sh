@@ -316,13 +316,16 @@ if [ "$runtime" = systemd ]; then
 	img=host
 	check "the host's agent-launcher is there for the sandbox" test -x /usr/libexec/custos/agent-launcher
 elif [ -n "$system" ]; then
-	# The installed launcher and Containerfile (custos package).
+	# The installed launcher, playbooks and Containerfile (custos package).
 	mkdir -p "$work/image/bin" && cp /usr/libexec/custos/agent-launcher "$work/image/bin/"
+	cp -r /usr/share/custos/playbooks "$work/image/"
 	chown -R "$osh_user" "$work/image"
 	chmod 0755 "$work"
 	check "the agent image builds ($runtime)" ctr_ok build -q -t "$img" -f /usr/share/custos/openshell/Containerfile "$work/image"
 else
-	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$here"
+	mkdir -p "$work/image/bin" && cp "$here/bin/agent-launcher" "$work/image/bin/"
+	cp -r "$here/packaging/playbooks" "$work/image/"
+	check "the agent image builds ($runtime)" ctr build -q -t "$img" -f "$here/packaging/openshell/Containerfile" "$work/image"
 fi
 
 [ "$runtime" = systemd ] ||
