@@ -438,20 +438,23 @@ container of root's):
 
 ```bash
 podman exec -it keycloak /opt/keycloak/bin/kcadm.sh config credentials \
-    --server https://idp.example.com:8443 --realm master --user admin   # Keycloak's address, as its certificate names it
+    --server https://idp.example.com:8443 --realm master --user admin   # its certificate's name, the port in the container
 KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh" bash patch-pilot-client.sh >client-secret.txt
 ```
 
 `-i` without `-t`: the script hands the client's definition to
 `kcadm.sh` on its standard input, which a terminal would break.
 
-`--server` is Keycloak's address as people reach it, the host part of
-mcp-gateway's `http.issuer` (`KC_HOSTNAME` and its port): from inside
-the container it reaches the published port. `localhost` with the port
-inside the container works only where Keycloak serves plain HTTP
-(`KC_HTTP_ENABLED`, `start-dev`); `podman port keycloak` shows which
-port is published as which. A Keycloak certificate from a CA of your
-own needs that CA in a truststore for `kcadm.sh`, in the container:
+`--server` names Keycloak as its certificate does (`KC_HOSTNAME`), with
+the port Keycloak listens on in the container: 8443 for HTTPS, which
+`podman port keycloak` shows published as the host's port. Inside the
+container that name may resolve to the container itself (Podman's
+`/etc/hosts`), where the published port is not open. mcp-gateway's
+`http.issuer` keeps the published port, the one Keycloak puts in its
+tokens (`KC_HOSTNAME_PORT`). `http://localhost:8080` works only where
+Keycloak serves plain HTTP (`KC_HTTP_ENABLED`, `start-dev`). A Keycloak
+certificate from a CA of your own needs that CA in a truststore for
+`kcadm.sh`, in the container:
 
 ```bash
 podman cp ca.pem keycloak:/tmp/ca.pem
