@@ -564,7 +564,16 @@ if [ -n "$relay_ok" ]; then
 	# secret and the configuration must be in none.
 	(while :; do cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\0' ' '; echo; done) >"$work/cmdlines" 2>/dev/null &
 	sampler=$!
-	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'"
+	te=$(date +%s)
+	check "agent-admin edit sb (a limit)" bash -c "agent-admin edit sb --from '$work/sb-edited.yaml' >'$work/edit.out'" || {
+		if [ "$runtime" = systemd ]; then
+			# What the driver did with the old sandbox and the new one.
+			journalctl --no-pager -o cat --since "@$te" -u openshell-systemd-helper.service 2>&1 | tail -n 15 | cut -c1-240 | sed 's/^/    | helper: /'
+			journalctl --no-pager -o cat --since "@$te" _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 |
+				grep -iE 'error|warn|sandbox|driver' | tail -n 15 | cut -c1-240 | sed 's/^/    | gateway: /'
+			journalctl --no-pager -o short-precise --since "@$te" -u 'openshell-sandbox-*' 2>&1 | tail -n 25 | cut -c1-240 | sed 's/^/    | units: /'
+		fi
+	}
 	kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null
 	check "the sampler saw openshell's sandbox create (the control)" grep -q "sandbox create --name agent-sb" "$work/cmdlines"
 	check "no command line had the relay secret" not grep -qF "$(cat /etc/custos/agents/sb/relay.secret)" "$work/cmdlines"
