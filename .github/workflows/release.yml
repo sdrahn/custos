@@ -17,15 +17,18 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Before anything is built or published: the spec, the CHANGELOG
       # and _service must name this tag, and the tree must hold sources
       # only (mcp-gateway's process: packaging/suse/README.md).
       - name: Tag matches the files
         run: tools/check-release "$GITHUB_REF_NAME" HEAD
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          # setup-go keys its module cache on go.mod since v6; go.sum
+          # changes with every module version, as the key did before.
+          cache-dependency-path: go.sum
       - name: Check
         run: make check build
       - name: Sources
