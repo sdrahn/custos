@@ -49,7 +49,7 @@ agent and enriches the record.
 
 | Thing | Value |
 |---|---|
-| agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host |
+| agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host; in an OpenShell sandbox at most 13 characters, since its sandbox `agent-<name>` is a name OpenShell takes up to 19 characters (§16a) |
 | agent user | `agent-<name>`: a static system user without a password, member of `mcp-users` and `agent-clients`. The prefix `agent-` is reserved for agents |
 | gateway principal | `sub: agent-<name>`. With the `systemd` backend: `transport: unix`, identified by `SO_PEERCRED`. With the `openshell` backend: `transport: http`, identified by an OAuth bearer token whose subject is `agent-<name>`, from an issuer trusted for agents (§6); the token carries no local-user claim, so the subject stays the principal (§16a). Never by what the agent says |
 | journal identifier | `SYSLOG_IDENTIFIER=agent-<name>`, `AGENT_NAME=<name>` |

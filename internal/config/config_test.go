@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -193,5 +194,24 @@ func TestEvents(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
 		}
+	}
+}
+
+// An OpenShell agent's name fits OpenShell's sandbox name (agent-NAME, at
+// most 19 characters); a systemd agent's may be longer.
+func TestOpenShellNameLength(t *testing.T) {
+	osh := strings.Replace(sample, "gateway: {servers: [zypp, systemd], tools: [zypp__list_updates]}", "gateway: {url: \"https://host.openshell.internal:8443/mcp\", token_env: AGENT_GATEWAY_TOKEN, servers: [zypp]}", 1)
+	named := func(y, n string) []byte {
+		return []byte(regexp.MustCompile(`(?m)^name: .*$`).ReplaceAllString(y, "name: "+n))
+	}
+	if _, err := Parse(append(named(osh, "thirteen-char"), "sandbox: {kind: openshell}\n"...)); err != nil {
+		t.Errorf("13 characters: %v", err)
+	}
+	_, err := Parse(append(named(osh, "triage-openshell"), "sandbox: {kind: openshell, openshell_driver: systemd}\n"...))
+	if err == nil || !strings.Contains(err.Error(), "at most 13") || !strings.Contains(err.Error(), "agent-triage-openshell") {
+		t.Errorf("16 characters: %v", err)
+	}
+	if _, err := Parse(named(sample, "triage-openshell")); err != nil {
+		t.Errorf("systemd, 16 characters: %v", err)
 	}
 }
