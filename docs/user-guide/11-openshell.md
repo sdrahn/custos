@@ -452,7 +452,9 @@ The script
    `client-secret.txt` is the secret for [step 8](#credential); keep it
 root's (`chmod 600`) and delete it once it is set.
 
-A Keycloak in a container has its `kcadm.sh` in the container
+`--apply` above needs none of the following: it reaches Keycloak from
+the host, at its published address. For the script, a Keycloak in a
+container has its `kcadm.sh` in the container
 (`/opt/keycloak/bin/kcadm.sh` in Keycloak's image). Log it in there, and
 let the script call it through `podman exec` (or `docker exec`); the
 script runs on the host, as the user whose container it is (root for a
