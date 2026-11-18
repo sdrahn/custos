@@ -165,12 +165,7 @@ func (s *setup) check() error {
 	}
 	switch s.o.Driver {
 	case "container":
-		switch {
-		case s.program("podman"):
-			s.runtime = "podman"
-		case s.program("docker"):
-			s.runtime = "docker"
-		default:
+		if s.runtime = s.containerRuntime(); s.runtime == "" {
 			missing = append(missing, "podman or docker: neither is installed (the container driver needs one)")
 		}
 	case "systemd":
@@ -194,6 +189,32 @@ func (s *setup) check() error {
 	}
 	s.say("ok", "installed: openshell, openshell-gateway, "+map[string]string{"container": s.runtime, "systemd": "the systemd compute driver"}[s.o.Driver])
 	return nil
+}
+
+// containerRuntime is the runtime the container driver uses: the one
+// gateway.toml already names, else Docker when it runs (OpenShell's own
+// detection prefers it), else Podman, else Docker. The setup never
+// switches a gateway from one runtime to the other.
+func (s *setup) containerRuntime() string {
+	if s.u.home != "" {
+		if b, err := os.ReadFile(s.a.Path(s.userConfig("gateway.toml"))); err == nil {
+			cur, _ := getTOML(string(b), "openshell.gateway", "compute_driver")
+			for _, r := range []string{"docker", "podman"} {
+				if cur == tomlString(r) && s.program(r) {
+					return r
+				}
+			}
+		}
+	}
+	switch {
+	case s.program("docker") && s.a.Probe("docker", "info") == nil:
+		return "docker"
+	case s.program("podman"):
+		return "podman"
+	case s.program("docker"):
+		return "docker"
+	}
+	return ""
 }
 
 func checkCA(path string) error {
@@ -515,7 +536,11 @@ func (s *setup) gatewayConfig() error {
 		text = setTOML(text, "openshell.drivers.systemd", "socket_path", tomlString(s.driverSocket()))
 		text = unsetTOML(text, "openshell.supervisor.network", "additional_ca_bundle")
 	case "container":
-		text = setTOML(text, "openshell.gateway", "compute_driver", tomlString(s.runtime))
+		// Unset, OpenShell detects the runtime itself: left so. Set only
+		// when the gateway used the systemd driver.
+		if cur, _ := getTOML(text, "openshell.gateway", "compute_driver"); cur == tomlString("systemd") {
+			text = setTOML(text, "openshell.gateway", "compute_driver", tomlString(s.runtime))
+		}
 		if s.o.CA != "" {
 			text = setTOML(text, "openshell.supervisor.network", "additional_ca_bundle", tomlString(s.userCA()))
 		}

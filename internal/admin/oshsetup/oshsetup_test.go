@@ -231,6 +231,44 @@ func TestSetupNoGatewayTOML(t *testing.T) {
 	}
 }
 
+// A gateway on Docker stays on Docker, also where Podman is installed:
+// no delegation, no subordinate IDs, gateway.toml's driver left to
+// OpenShell's detection; a gateway coming from the systemd driver gets
+// the runtime named.
+func TestSetupDocker(t *testing.T) {
+	a, r, _ := oshHost(t, "container")
+	put(t, a, "/usr/bin/docker", "")
+	put(t, a, "/home/osh/.config/openshell/gateway.toml", "[openshell]\nversion = 2\n")
+	r.Gone = func(cmd string) error {
+		if strings.HasPrefix(cmd, "openshell -g openshell status") || cmd == "docker info" {
+			return nil
+		}
+		return errors.New("not active")
+	}
+	if err := Setup(a, Options{User: "osh", Driver: "container"}); err != nil {
+		t.Fatal(err)
+	}
+	if ran(r, "user@1001.service") || ran(r, "usermod") || ran(r, "restart openshell-gateway") {
+		t.Errorf("Podman's steps on Docker:\n%s", strings.Join(r.Cmds, "\n"))
+	}
+	if _, err := os.Stat(a.Path(DelegateDropIn)); err == nil {
+		t.Error("a delegation for Docker")
+	}
+	if g := read(t, a, "/home/osh/.config/openshell/gateway.toml"); strings.Contains(g, "compute_driver") {
+		t.Errorf("gateway.toml:\n%s", g)
+	}
+	if out := a.Out.(*strings.Builder).String(); strings.Contains(out, "CUSTOS_OPENSHELL_USER") {
+		t.Errorf("output:\n%s", out)
+	}
+	put(t, a, "/home/osh/.config/openshell/gateway.toml", "[openshell]\nversion = 2\n\n[openshell.gateway]\ncompute_driver = \"systemd\"\n")
+	if err := Setup(a, Options{User: "osh", Driver: "container"}); err != nil {
+		t.Fatal(err)
+	}
+	if g := read(t, a, "/home/osh/.config/openshell/gateway.toml"); !strings.Contains(g, `compute_driver = "docker"`) {
+		t.Errorf("from the systemd driver:\n%s", g)
+	}
+}
+
 // --check says what would change and changes nothing.
 func TestSetupCheck(t *testing.T) {
 	a, r, _ := oshHost(t, "systemd")
