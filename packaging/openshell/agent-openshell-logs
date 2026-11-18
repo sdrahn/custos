@@ -18,9 +18,10 @@ since=${AGENT_LOGS_SINCE:-0}
 user=${OPENSHELL_USER:-}
 
 if [ "${OPENSHELL_DRIVER:-}" = systemd ]; then
-	id=$(openshell -g "${OPENSHELL_GATEWAY:-openshell}" sandbox get "$sandbox" 2>/dev/null | awk '$1 == "Id:" {print $2}')
-	# The id names a unit: nothing but a UUID gets there.
-	echo "$id" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || {
+	id=$(openshell -g "${OPENSHELL_GATEWAY:-openshell}" sandbox get "$sandbox" 2>/dev/null | awk '$1 == "Id:" {print $2; exit}')
+	# The id names a unit: nothing but one UUID gets there (one line: the
+	# first Id: of the output, security review 0.8, S7).
+	[ "$(printf '%s' "$id" | wc -l)" = 0 ] && printf '%s\n' "$id" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || {
 		echo "agent-openshell-logs: no sandbox id for $sandbox from OpenShell gateway ${OPENSHELL_GATEWAY:-openshell}" >&2
 		exit 1
 	}

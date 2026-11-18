@@ -11,6 +11,113 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.8.0 — 2026-11-18
+
+OpenShell agents on OpenShell's systemd compute driver, and the
+OpenShell side set up by `agent-admin`. An agent in an OpenShell
+sandbox can now run on the OpenShell systemd compute driver as well as
+on Docker or Podman (`sandbox.openshell_driver: systemd`). Its sandbox
+is then systemd units on the host, with no image to build: the
+workload runs the host's `agent-launcher` as a user of its own, and
+the relay reads the agent's records from the journal. `agent-admin openshell-setup`
+checks what OpenShell needs on the host and configures it, for either
+driver, where chapter 11 had steps by hand. Agent templates choose
+where they run at creation (`--sandbox openshell
+--openshell-driver …`, and in Cockpit's new-agent form). The shipped
+playbooks are tested on every backend and driver, which found that the
+OpenShell agent image lacked them. Every SELinux check of the
+functional tests now reads the audit log itself: `ausearch` had found
+nothing on Leap 16, and the denials it had hidden are fixed. The
+security review before 0.8 (`docs/security-review-0.8.md`) went
+through what changed since 0.7.0; it found that `openshell-setup`, as
+root, followed links in the OpenShell user's home, which is fixed
+before this release. The systemd driver is a technology
+preview: new, and not yet tested on SLES 16 itself.
+
+Upgrading from 0.7.x needs no change to configurations or gateway
+data; the contract gains names and fields (`sandbox.openshell_driver`,
+`driver` in `/v1/status`'s `lifecycle`, `backends` in a template),
+renames none, and mcp-gateway 1.16 stays the minimum. To know:
+
+- The OpenShell backend needs OpenShell 0.1.8 or later, and the systemd
+  driver 0.1.4 or later.
+- OpenShell agents in containers: rebuild the agent image with the
+  playbooks in its build context (chapter 11, step 2), then set each
+  agent's gateway credential again, so that its sandbox has them.
+- An OpenShell agent's `gateway.oauth.refresh_before_seconds` should be
+  at least 90; `agent-admin check` notes a shorter one.
+- With the systemd driver, the relay's `journalctl` may read the whole
+  journal, not only the sandbox's unit (security review 0.8, S6), and
+  the CA given to `openshell-setup --ca` is trusted host-wide.
+- Known and accepted, as in 0.7.0: five vulnerabilities in the HTTP/2
+  of `golang.org/x/net` v0.58.0 (GO-2026-6603, -6610, -6611, -6612,
+  -6617), whose fix needs Go 1.26. The agent serves no HTTP/2
+  (security review 0.7, R2).
+
+### Added
+
+- `agent-admin check`, `create` and `edit` note an OpenShell agent's
+  `gateway.oauth.refresh_before_seconds` below 90: OpenShell's gateway
+  renews tokens once a minute, so such a token can expire before it is
+  renewed, and a sandbox started then has no token. The guide's example
+  uses 120, where it used 60.
+- `agent-admin openshell-setup --user USER --driver container|systemd
+  [--ca FILE] [--check]` sets up OpenShell on the host for OpenShell
+  agents, for either compute driver. It installs nothing: it checks
+  that OpenShell, Podman or Docker, or the systemd compute driver are
+  installed, and names what is missing. It then configures the driver,
+  registers OpenShell's gateway for root as root's own files, and puts
+  mcp-gateway's CA where the driver needs it. Before, these were steps
+  by hand in chapter 11.
+- OpenShell agents can run on OpenShell's systemd compute driver:
+  `sandbox.openshell_driver: systemd` in `agent.yaml` creates the
+  sandbox without an image (`--from host`), and the relay reads the
+  agent's records from the journal of the sandbox's workload unit.
+  The default, `container`, is Docker or Podman, as before.
+- Root's copy of the OpenShell gateway's registration
+  (`/root/.config/openshell`) must be root's own files: the guide's
+  `cp -a` is followed by `chown -R root:root`. The relay reads it under
+  SELinux to follow the systemd driver's journal.
+- The guide's chapter 11 compares the two ways OpenShell runs an
+  agent's sandbox, containers or the OpenShell systemd compute driver,
+  says when to choose which, and what changes in each setup step with
+  the systemd driver (no image, the CA in the host's trust store, the
+  agent's records from the workload unit's journal). Chapter 2 lists the
+  driver among the requirements.
+- An agent created from a template can run in an OpenShell sandbox:
+  `agent-admin create NAME --template T --sandbox openshell
+  [--openshell-driver container|systemd]` (and `draft`) add
+  `gateway.url`, the agent's OAuth client and the `sandbox` line from
+  mcp-gateway's HTTPS settings. A template says where it may run
+  (`backends` in `template.yaml`); `patch-pilot` and `triage` allow
+  OpenShell. Cockpit's new-agent form offers the choice. Before, every
+  agent from a template ran as a systemd service.
+
+### Changed
+
+- The OpenShell backend needs OpenShell 0.1.8 or later, where it needed
+  0.1.7: the tests run with 0.1.8, and 0.1.7 is no longer tried.
+
+### Fixed
+
+- An agent in an OpenShell container sandbox can run the shipped
+  diagnostic playbooks: the agent image has them in
+  `/usr/share/custos/playbooks`. Before, it answered `no playbook "…" on
+  this host` for every one. Rebuild the image with the playbooks in its
+  build context (chapter 11, step 2), then set each agent's gateway
+  credential again, which recreates its sandbox from the new image.
+- Stopping an agent in an OpenShell sandbox on rootless Podman no longer
+  logs an SELinux denial (`kill` in `cap_userns` for `agent_relay_t`):
+  the relay leaves its log command (`podman logs`, run in the OpenShell
+  user's user namespace) to the unit's stop, which ends it with the
+  unit's other processes. Before, the relay tried to signal it itself
+  and was refused.
+- With OpenShell's systemd compute driver, the relay's `journalctl` may
+  read the runtime journal (`/run/log/journal`) and look at the journal's
+  file systems. SELinux refused both before, without a message from
+  `journalctl`: on a host whose journal is not (yet) persistent, the
+  agent's records did not reach the host's journal.
+
 ## v0.7.0 — 2026-11-16
 
 The code reworked so that several people can work on it, with nothing

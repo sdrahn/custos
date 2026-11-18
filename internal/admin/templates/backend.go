@@ -100,7 +100,11 @@ func WithBackend(a *admin.Admin, cfg []byte, name string, b Backend) ([]byte, er
 		}
 		o := []string{"token_url: " + strconv.Quote(tokenURL), "client_id: agent-" + name}
 		if len(h.Scopes) > 0 {
-			o = append(o, "scopes: ["+strings.Join(h.Scopes, ", ")+"]")
+			q := make([]string, len(h.Scopes))
+			for i, sc := range h.Scopes {
+				q[i] = strconv.Quote(sc)
+			}
+			o = append(o, "scopes: ["+strings.Join(q, ", ")+"]")
 		}
 		lines = append(lines, "  oauth: {"+strings.Join(o, ", ")+"}   # agent-admin idp-client "+name+" says what the client must be")
 	}
@@ -119,7 +123,9 @@ func WithBackend(a *admin.Admin, cfg []byte, name string, b Backend) ([]byte, er
 	if driver == "" {
 		driver = "container"
 	}
-	sb := fmt.Sprintf("sandbox: {kind: openshell, openshell_gateway: %s, openshell_driver: %s}\n", gw, driver)
+	// Quoted: the values are mcp-gateway's and the command line's, and
+	// must stay values in the YAML (security review 0.8, S8).
+	sb := fmt.Sprintf("sandbox: {kind: openshell, openshell_gateway: %s, openshell_driver: %s}\n", strconv.Quote(gw), strconv.Quote(driver))
 	if loc := sandboxBlock.FindIndex(out); loc != nil {
 		out = append(append(append([]byte{}, out[:loc[0]]...), sb...), out[loc[1]:]...)
 	} else {
