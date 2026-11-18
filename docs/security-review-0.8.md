@@ -1,7 +1,7 @@
 # Security review before 0.8.0
 
 A focused review of what 0.8.0 changes since `v0.7.0`. It covers `main`
-at `642eb69`:
+at `642eb69`, and the fixes of S1–S4 (#235):
 
 - OpenShell agents on OpenShell's systemd compute driver (#216): the
   setting, `agent-openshell-logs` reading the workload unit's journal,
@@ -48,7 +48,7 @@ two high ones with tests that fail on `642eb69`.
 ## S1 — high — root's writes in the gateway user's home followed links
 
 *Where:* `internal/admin/oshsetup/oshsetup.go`, `driver()` and `write()`
-at `642eb69`.
+at `642eb69`, and the fixes of S1–S4 (#235).
 
 The setup wrote the systemd driver's drop-in to
 `~/.config/systemd/user/openshell-driver-systemd.service.d/custos.conf`
@@ -70,7 +70,7 @@ setup writes into it; with the fix it refuses.
 
 ## S2 — high — root read files through a linked gateway.toml
 
-*Where:* `oshsetup.go`, `gatewayConfig()` at `642eb69`.
+*Where:* `oshsetup.go`, `gatewayConfig()` at `642eb69`, and the fixes of S1–S4 (#235).
 
 `gateway.toml` was read with `os.ReadFile` and written back, changed,
 as the user's file. With a link to `/etc/shadow` (or to root's SSH key,
@@ -88,7 +88,7 @@ it refuses, and the link stays.
 
 ## S3 — medium — the chown after the rename
 
-*Where:* `oshsetup.go`, `write()` at `642eb69`.
+*Where:* `oshsetup.go`, `write()` at `642eb69`, and the fixes of S1–S4 (#235).
 
 The new file was renamed into place and then given to the user by a
 `chown` process. The user owns the directory, so in between they could
@@ -100,7 +100,7 @@ rename.
 
 ## S4 — low — root's copy of the registration
 
-*Where:* `oshsetup.go`, `registration()` at `642eb69`.
+*Where:* `oshsetup.go`, `registration()` at `642eb69`, and the fixes of S1–S4 (#235).
 
 The copy of `~/.config/openshell` to `/root/.config/openshell` followed
 links, and a FIFO in the tree held the setup up. What a link led to
