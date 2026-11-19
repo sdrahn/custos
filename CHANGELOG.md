@@ -11,6 +11,28 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.4 — 2026-11-19
+
+A fix for Cockpit's new-agent form: an OpenShell agent renamed there
+gets the OAuth client of its own name, so `idp-client --keycloak --apply`
+and its form make the client for it.
+
+Upgrading from 0.9.3 needs no change to configurations or gateway data,
+and no agent needs a restart: reload the page in the browser. An agent
+created with the wrong client id before keeps it: change
+`gateway.oauth.client_id` to `agent-NAME` with `agent-admin edit`, then
+make its client.
+
+### Fixed
+
+- Cockpit's new-agent form names an OpenShell agent's OAuth client after
+  the agent's name as typed (`client_id: agent-NAME`). Before, a
+  configuration drafted from a template kept the client id of the
+  template's name after the agent was renamed, and `idp-client --keycloak
+  --apply` (and its form) then refused the agent: "gateway.oauth.client_id
+  is agent-health-check: --apply makes and replaces only agent-NAME". A
+  client id written by hand stays as it is.
+
 ## v0.9.3 — 2026-11-19
 
 A fix for Cockpit's page: it stays quick while an agent does not
