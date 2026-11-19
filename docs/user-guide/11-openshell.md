@@ -43,6 +43,60 @@ not yet verified by this project's tests ([below](#idp-status)).
 The steps below are in order. Each names what it needs from the earlier
 ones.
 
+## The identity flow at a glance {#identity-flow}
+
+The setup makes the agent an OAuth client of the identity provider, here
+Keycloak; at run time, OpenShell gets the agent's token and puts it into
+each call. The steps below give the details. The names are examples: the
+agent `triage-osh`, the realm `mcp`, the gateway `gw.example.com`.
+
+### The setup {#identity-setup}
+
+```mermaid
+flowchart TD
+  A["OpenShell for its user osh, gateway running and registered<br/>(systemd driver: its packages; transactional: reboot)"]
+  B["agent-admin openshell-setup --user osh --driver … --ca ca.pem<br/>driver, gateway.toml, the CA, root's registration"]
+  C["mcp-gateway's HTTPS listener<br/>http.issuer = the realm, http.audience = the agent's gateway.url"]
+  D["agent-admin create triage-osh … --sandbox openshell<br/>gateway.oauth: token_url, client_id agent-triage-osh, scopes"]
+  E{"Keycloak reachable<br/>over HTTPS from this host?"}
+  F["agent-admin idp-client triage-osh --keycloak --apply --admin admin<br/>or Cockpit: the agent's Credentials section"]
+  G["idp-client --keycloak: script for kcadm.sh<br/>then agent-admin issuers --add, check-token"]
+  H["set-credential triage-osh gateway-client-secret"]
+  I["OpenShell: provider agent-triage-osh-gateway, first token,<br/>sandbox agent-triage-osh, relay socket"]
+  A --> B --> C --> D --> E
+  E -- yes --> F
+  E -- no --> G --> H
+  F -- "logs in, makes the client agent-triage-osh,<br/>lists the issuer, checks a token" --> H
+  H --> I
+```
+
+`--apply` does in one run what the script, `issuers --add`, `check-token`
+and `set-credential` do by hand ([step 5](#keycloak)).
+
+### At run time {#identity-runtime}
+
+```mermaid
+sequenceDiagram
+  participant K as Keycloak (realm mcp)
+  participant O as OpenShell gateway (osh)
+  participant P as supervisor's proxy
+  participant A as agent-launcher (sandbox)
+  participant G as mcp-gateway :8443
+  O->>K: client credentials grant: agent-triage-osh + secret
+  K-->>O: token (5 min), renewed refresh_before_seconds before it expires
+  A->>P: MCP request, Authorization: Bearer $AGENT_GATEWAY_TOKEN
+  P->>O: the provider's current token
+  P->>G: the same request, with the real token (TLS, gateway's certificate checked)
+  G->>G: signature with the issuer's keys; iss listed for agents; aud, scope, exp
+  G-->>A: answer, under the mode, permissions and approvals of sub agent-triage-osh
+```
+
+The agent never holds the token: OpenShell's proxy swaps the placeholder
+for it on the way out, and only toward the gateway. The token's claims
+and where they come from are in [step 5](#idp). The systemd compute
+driver (0.2.0 and later) takes no part in this exchange: with either
+driver, the token is OpenShell's gateway's and its supervisor's.
+
 ## Two ways to run the sandbox: containers or systemd units {#drivers}
 
 OpenShell's gateway runs its sandboxes with a compute driver. Custos
