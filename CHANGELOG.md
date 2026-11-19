@@ -11,6 +11,33 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.1 — 2026-11-19
+
+A fix for agents whose model is an OpenAI-compatible endpoint
+(`provider: openai`): a model call no longer fails in the middle of a
+run with `EOF` when a server or proxy closed the connection the
+previous call had left open. This was reported with an OpenShell agent
+and LiteLLM in front of the model.
+
+Upgrading from 0.9.0 needs no change to configurations or gateway data.
+An agent uses the fixed client from its next start: on the host and on
+OpenShell's systemd compute driver, restart it, or let its next activity
+start it. OpenShell agents in containers: rebuild the agent image, then
+set each agent's gateway credential again to recreate its sandbox
+(guide, chapter 11).
+
+### Fixed
+
+- An agent's model calls to an OpenAI-compatible endpoint
+  (`provider: openai`) no longer fail in the middle of a run with
+  `model endpoint: Post ".../chat/completions": EOF`. Each call now goes
+  on a new connection. Before, a call reused the previous call's
+  connection, which the server or a proxy between could have closed
+  meanwhile: LiteLLM, for one, closes a connection idle for 5 seconds,
+  and a tool call between two model calls often takes longer. It
+  showed most in OpenShell sandboxes, whose proxy keeps the agent's side
+  of such a connection open.
+
 ## v0.9.0 — 2026-11-19
 
 OpenShell agents easier to set up, from the experience of the first
