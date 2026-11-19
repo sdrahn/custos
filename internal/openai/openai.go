@@ -298,11 +298,12 @@ func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, []o
 			out.Messages = append(out.Messages, oai.UserMessage(t))
 			continue
 		}
-		// An assistant message with tool calls only has no content.
+		// An assistant message always has content, "" with tool calls only.
+		// The API lets it out, but the chat templates of local servers
+		// read it from every message: Gemma's in LM Studio, for one, fails
+		// with "Cannot perform operation in on undefined values".
 		msg := oai.ChatCompletionAssistantMessageParam{ToolCalls: calls}
-		if t != "" {
-			msg.Content.OfString = param.NewOpt(t)
-		}
+		msg.Content.OfString = param.NewOpt(t)
 		out.Messages = append(out.Messages, oai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
 	}
 	return out, schemas, nil

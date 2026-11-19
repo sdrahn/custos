@@ -100,9 +100,10 @@ func TestRoundTrip(t *testing.T) {
 	if got.Messages[2].ToolCalls[0].ID != "c0" || got.Messages[3].ToolCallID != "c0" {
 		t.Error("tool call ids not carried")
 	}
-	// The assistant's message with tool calls only has no content; the
+	// The assistant's message with tool calls only has the content "",
+	// not none (a local server's chat template reads it); the
 	// temperature is the configured decimal.
-	if got.Messages[2].Content != nil || got.Messages[2].ToolCalls[0].Type != "function" || got.Model != "qwen" || got.Temperature != "0.2" {
+	if got.Messages[2].Content == nil || *got.Messages[2].Content != "" || got.Messages[2].ToolCalls[0].Type != "function" || got.Model != "qwen" || got.Temperature != "0.2" {
 		t.Errorf("request: %s", sent)
 	}
 	p := got.Tools[1].Function.Parameters.(map[string]any)
