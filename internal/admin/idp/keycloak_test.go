@@ -84,6 +84,9 @@ func TestKeycloak(t *testing.T) {
 // new realm, the token checked with the new secret, the credential set
 // (OpenShell's commands recorded, not run).
 func TestKeycloakApplyReal(t *testing.T) {
+	// CI's Keycloak (start-dev) speaks plain http on loopback, which
+	// agent-admin itself never sends a password over (T1).
+	plainHTTPLoopback = true
 	base, kcadm := os.Getenv("KEYCLOAK_URL"), os.Getenv("KCADM")
 	if base == "" || kcadm == "" {
 		t.Fatal("KEYCLOAK_URL and KCADM are not set (the keycloak tag needs a Keycloak)")

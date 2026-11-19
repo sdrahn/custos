@@ -10,7 +10,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/host"
 )
+
+// The fake Keycloaks speak plain http on loopback, which agent-admin
+// itself never sends a password over (T1).
+func init() { plainHTTPLoopback = true }
 
 // fakeKeycloak answers the admin API calls of KeycloakApply for realm mcp
 // (a client agent-sb there already, the realm's scope basic, no scope
@@ -132,5 +139,66 @@ func TestKeycloakApplyRefused(t *testing.T) {
 	kc2, _, _ := fakeKeycloak(t, true)
 	if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc2.URL}, strings.NewReader("pw\n")); err == nil || !strings.Contains(err.Error(), "manage-clients") {
 		t.Errorf("forbidden: %v", err)
+	}
+}
+
+// Security review 0.9: T1, plain http only in this package's tests; T2,
+// only the agent's own client is replaced; T3, a redirect is not followed
+// with the password; T4, an issuer listed for a token that fails goes again.
+func TestKeycloakApplyHardening(t *testing.T) {
+	a, _, _ := idpHost(t, goodClaims())
+	os.WriteFile(filepath.Join(a.AgentDir("sb"), "relay.secret"), []byte("relay\n"), 0o600)
+	kc, calls, _ := fakeKeycloak(t, false)
+
+	plainHTTPLoopback = false
+	err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc.URL}, strings.NewReader("pw\n"))
+	plainHTTPLoopback = true
+	if err == nil || !strings.Contains(err.Error(), "https only") || len(*calls) != 0 {
+		t.Errorf("T1: plain http to loopback: %v, %v", err, *calls)
+	}
+
+	cfg := filepath.Join(a.AgentDir("sb"), "agent.yaml")
+	orig, _ := os.ReadFile(cfg)
+	os.WriteFile(cfg, []byte(strings.Replace(string(orig), "client_id: agent-sb", "client_id: account", 1)), 0o640)
+	if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc.URL}, strings.NewReader("pw\n")); err == nil || !strings.Contains(err.Error(), "only agent-sb") {
+		t.Errorf("T2: another client id: %v", err)
+	}
+	if strings.Contains(strings.Join(*calls, "\n"), "DELETE") {
+		t.Errorf("T2: something was deleted: %v", *calls)
+	}
+	os.WriteFile(cfg, orig, 0o640)
+
+	var got string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		got = r.Form.Get("password")
+	}))
+	t.Cleanup(elsewhere.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+	if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: redirect.URL}, strings.NewReader("pw\n")); err == nil || got != "" {
+		t.Errorf("T3: redirected: %v, the password reached %q", err, got)
+	}
+}
+
+func TestKeycloakApplyUnlistsOnFailure(t *testing.T) {
+	bad := goodClaims()
+	bad["sub"] = "someone-else"
+	a, _, _ := idpHost(t, bad)
+	os.WriteFile(filepath.Join(a.AgentDir("sb"), "relay.secret"), []byte("relay\n"), 0o600)
+	host.WriteFile(a.Path(admin.GatewayHTTPIssuers), []byte("_http:\n  issuers: []\n"), 0o644)
+	kc, _, _ := fakeKeycloak(t, false)
+	var out strings.Builder
+	a.Out = &out
+	if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc.URL}, strings.NewReader("pw\n")); err == nil {
+		t.Fatal("a token with another sub was taken")
+	}
+	if issuers, _ := a.AgentIssuers(); len(issuers) != 0 {
+		t.Errorf("T4: the issuer stayed listed: %v\n%s", issuers, out.String())
+	}
+	if !strings.Contains(out.String(), "no longer listed") {
+		t.Errorf("output:\n%s", out.String())
 	}
 }

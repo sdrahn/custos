@@ -56,8 +56,8 @@ func KeycloakApply(a *admin.Admin, name string, o Apply, password io.Reader) err
 	if o.URL != "" {
 		base = strings.TrimRight(o.URL, "/")
 	}
-	if u, err := url.Parse(base); err != nil || (u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Hostname()))) {
-		return fmt.Errorf("Keycloak at %s: the administrator's password goes over https only (http for this host's loopback)", base)
+	if u, err := url.Parse(base); err != nil || (u.Scheme != "https" && !(plainHTTPLoopback && u.Scheme == "http" && loopback(u.Hostname()))) {
+		return fmt.Errorf("Keycloak at %s: the administrator's password goes over https only (security review 0.9, T1: on plain http, whoever holds the port gets it)", base)
 	}
 	if o.AdminRealm == "" {
 		o.AdminRealm = "master"
@@ -73,28 +73,46 @@ func KeycloakApply(a *admin.Admin, name string, o Apply, password io.Reader) err
 	if pw == "" {
 		return fmt.Errorf("no password for Keycloak user %s on standard input", o.Admin)
 	}
-	kc := &keycloakAPI{http: a.HTTP, base: base, realm: realm}
-	if kc.http == nil {
-		kc.http = &http.Client{Timeout: 30 * time.Second}
+	// No redirect is followed: a 307 or 308 would send the password's
+	// form on, to wherever it points (security review 0.9, T3).
+	hc := &http.Client{Timeout: 30 * time.Second}
+	if a.HTTP != nil {
+		*hc = *a.HTTP
 	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	kc := &keycloakAPI{http: hc, base: base, realm: realm}
 	if err := kc.login(o.AdminRealm, o.Admin, pw); err != nil {
 		return err
 	}
 	clientID := cfg.Gateway.OAuth.ClientID
+	// --apply replaces the client of that id: only the agent's own
+	// (security review 0.9, T2), never another agent's or an application's.
+	if clientID != "agent-"+name {
+		return fmt.Errorf("agent %s's gateway.oauth.client_id is %s: --apply makes and replaces only agent-%s; make another client as agent-admin idp-client %s says", name, clientID, name, name)
+	}
 	secret, err := kc.makeClient(keycloakClient(clientID, "agent-"+name, h), clientID, h.Scopes)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(a.Out, "set  Keycloak client %s in realm %s (%s)\n", clientID, realm, base)
+	listed := false
 	if trusted, untrusted := a.TrustedIssuers(); untrusted != "" {
 		return fmt.Errorf("the issuers for agents: %s", untrusted)
 	} else if !slices.Contains(trusted, h.Issuer) {
 		if err := a.Issuers([]string{h.Issuer}, nil); err != nil {
 			return err
 		}
+		listed = true
 		fmt.Fprintf(a.Out, "set  %s listed for agents (%s)\n", h.Issuer, admin.GatewayHTTPIssuers)
 	}
 	if err := CheckToken(a, name, strings.NewReader(secret)); err != nil {
+		// The issuer listed here goes again when its token is not what the
+		// gateway expects (security review 0.9, T4).
+		if listed {
+			if uerr := a.Issuers(nil, []string{h.Issuer}); uerr == nil {
+				fmt.Fprintf(a.Out, "set  %s no longer listed for agents: the token is not right yet\n", h.Issuer)
+			}
+		}
 		return err
 	}
 	return a.SetCredential(name, "gateway-client-secret", strings.NewReader(secret))
@@ -182,7 +200,7 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 	}
 	scopeID := map[string]string{}
 	for _, s := range have {
-		scopeID[s.Name] = s.ID
+		scopeID[s.Name] = url.PathEscape(s.ID)
 	}
 	// The gateway's scopes, made where the realm lacks them, in the token's scope.
 	for _, sc := range scopes {
@@ -194,7 +212,7 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 		if err != nil {
 			return "", err
 		}
-		scopeID[sc] = loc[strings.LastIndex(loc, "/")+1:]
+		scopeID[sc] = url.PathEscape(loc[strings.LastIndex(loc, "/")+1:])
 	}
 	var old []struct {
 		ID string `json:"id"`
@@ -211,7 +229,7 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 	if err != nil {
 		return "", err
 	}
-	id := loc[strings.LastIndex(loc, "/")+1:]
+	id := url.PathEscape(loc[strings.LastIndex(loc, "/")+1:])
 	if id == "" {
 		return "", errors.New("Keycloak made the client but did not say where")
 	}
@@ -223,7 +241,7 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 	}
 	for _, d := range defaults {
 		if !slices.Contains(scopes, d.Name) {
-			if _, err := k.call("DELETE", "/clients/"+id+"/default-client-scopes/"+d.ID, nil, nil); err != nil {
+			if _, err := k.call("DELETE", "/clients/"+id+"/default-client-scopes/"+url.PathEscape(d.ID), nil, nil); err != nil {
 				return "", err
 			}
 		}
@@ -244,6 +262,10 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 	}
 	return secret.Value, nil
 }
+
+// plainHTTPLoopback lets the package's tests reach a Keycloak on this
+// host's loopback over plain http; agent-admin never does (T1).
+var plainHTTPLoopback = false
 
 func loopback(h string) bool {
 	if h == "localhost" {

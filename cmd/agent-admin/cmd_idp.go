@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/admin/idp"
@@ -65,10 +67,26 @@ func password(user string) (*bytes.Reader, error) {
 	}
 	tty := fi.Mode()&os.ModeCharDevice != 0
 	if tty {
+		stty := func(arg string) error { c := exec.Command("stty", arg); c.Stdin = os.Stdin; return c.Run() }
+		// Not without echo off: the password would show (security review
+		// 0.9, T5); and echo comes back on after Ctrl-C too.
+		if err := stty("-echo"); err != nil {
+			return nil, fmt.Errorf("the terminal's echo could not be turned off (stty: %v): give the password on standard input instead", err)
+		}
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-sig:
+				stty("echo")
+				fmt.Fprintln(os.Stderr)
+				os.Exit(130)
+			case <-done:
+			}
+		}()
+		defer func() { signal.Stop(sig); close(done); stty("echo"); fmt.Fprintln(os.Stderr) }()
 		fmt.Fprintf(os.Stderr, "Keycloak password of %s: ", user)
-		stty := func(arg string) { c := exec.Command("stty", arg); c.Stdin = os.Stdin; c.Run() }
-		stty("-echo")
-		defer func() { stty("echo"); fmt.Fprintln(os.Stderr) }()
 	}
 	var line []byte
 	b := make([]byte, 1)
