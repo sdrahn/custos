@@ -11,6 +11,32 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.2 — 2026-11-19
+
+A fix for agents whose model is an OpenAI-compatible endpoint served by
+a local server with its own chat template (`provider: openai`): a
+model's message that only calls tools now has the content `""`, so a
+template that reads the content of every message, as Gemma's in
+LM Studio does, no longer fails the request.
+
+Upgrading from 0.9.1 needs no change to configurations or gateway data.
+An agent uses the fixed client from its next start: on the host and on
+OpenShell's systemd compute driver, restart it, or let its next activity
+start it. OpenShell agents in containers: rebuild the agent image, then
+set each agent's gateway credential again to recreate its sandbox
+(guide, chapter 11). A session whose conversation failed this way
+continues once the agent runs the fixed client.
+
+### Fixed
+
+- An agent's requests to an OpenAI-compatible endpoint (`provider:
+  openai`) give a model's message with tool calls only the content `""`,
+  where they left the field out. The API allows both, but the chat
+  templates of local servers read it from every message: with Gemma in
+  LM Studio, a conversation with such a message failed with `Error
+  rendering prompt with jinja template: "Cannot perform operation in on
+  undefined values"`.
+
 ## v0.9.1 — 2026-11-19
 
 A fix for agents whose model is an OpenAI-compatible endpoint
