@@ -416,8 +416,9 @@ password are kept nowhere. The user must be allowed to manage the
 realm's clients (*realm-management*: *manage-clients*). A client of the
 agent's id already there is replaced, with a new secret: run it again to
 set a new one. This host must reach Keycloak at that address over HTTPS
-and trust its certificate (`--keycloak-url` for another address; plain
-HTTP only on this host's loopback). The password can
+and trust its certificate (`--keycloak-url` for another address); the
+password never goes over plain HTTP. Only the agent's own client
+`agent-NAME` is made or replaced. The password can
 also come on standard input, as its first line.
 
 The steps by hand, or for a Keycloak this host cannot reach: in the
