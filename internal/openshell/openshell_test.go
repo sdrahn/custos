@@ -58,6 +58,26 @@ func TestPolicy(t *testing.T) {
 	if p.Network_policies["model"].Binaries[0]["path"] != Launcher {
 		t.Error("binaries")
 	}
+	// Uninspected by default: no protocol, enforcement or access, so
+	// OpenShell passes the connection through (L4).
+	for _, k := range []string{"protocol", "enforcement", "access"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("the model endpoint is inspected by default (%s): %v", k, m)
+		}
+	}
+	// sandbox.openshell_inspect_model keeps OpenShell's HTTP inspection.
+	c := cfg(t)
+	c.Sandbox.OpenShellInspectModel = true
+	b, err = Policy(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(b, &p); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.Network_policies["model"].Endpoints[0]; m["protocol"] != "rest" || m["enforcement"] != "enforce" || m["access"] != "full" {
+		t.Errorf("openshell_inspect_model: %v", m)
+	}
 }
 
 func TestProfile(t *testing.T) {
