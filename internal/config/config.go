@@ -228,6 +228,12 @@ type Sandbox struct {
 	// or systemd (the OpenShell systemd compute driver: no image, the
 	// host's agent-launcher).
 	OpenShellDriver string `yaml:"openshell_driver"`
+	// OpenShellInspectModel has OpenShell's proxy inspect the model
+	// endpoint's HTTP (openshell only). Without it the connection to the
+	// model passes through at the TCP level, for agent-launcher only: the
+	// proxy then neither parses nor relays the model's requests, which
+	// are the agent's largest and longest.
+	OpenShellInspectModel bool `yaml:"openshell_inspect_model,omitempty"`
 }
 
 // Lifecycle is /v1/status's lifecycle (CONTRACT.md §3a).
@@ -496,6 +502,9 @@ func (c *Config) Check() error {
 		}
 		if c.Sandbox.OpenShellDriver != "" {
 			bad("sandbox.openshell_driver: only for kind openshell")
+		}
+		if c.Sandbox.OpenShellInspectModel {
+			bad("sandbox.openshell_inspect_model: only for kind openshell")
 		}
 	case "openshell":
 		switch c.Sandbox.OpenShellDriver {

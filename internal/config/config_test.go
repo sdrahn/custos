@@ -109,7 +109,8 @@ func TestSandbox(t *testing.T) {
 		t.Errorf("openshell_driver systemd: %+v %v", c.Sandbox, c.Lifecycle())
 	}
 	for _, bad := range []string{"sandbox: {kind: docker}\n", "sandbox: {kind: systemd, openshell_gateway: x}\n",
-		"sandbox: {kind: systemd, openshell_driver: systemd}\n", "sandbox: {kind: openshell, openshell_driver: podman}\n"} {
+		"sandbox: {kind: systemd, openshell_driver: systemd}\n", "sandbox: {kind: openshell, openshell_driver: podman}\n",
+		"sandbox: {kind: systemd, openshell_inspect_model: true}\n"} {
 		if _, err := Parse([]byte(sample + bad)); err == nil || !strings.Contains(err.Error(), "sandbox.") {
 			t.Errorf("%q: %v", bad, err)
 		}
