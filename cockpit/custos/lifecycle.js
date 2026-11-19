@@ -112,7 +112,18 @@ function setCreateNote(text, cls, fix) {
 
 /* withName puts name into the configuration's top-level name: line. */
 function withName(yaml, name) {
-    return /^name:.*$/m.test(yaml) ? yaml.replace(/^name:.*$/m, "name: " + (name || "NAME")) : "name: " + name + "\n" + yaml;
+    // The OAuth client agent-admin draft names after the agent (client_id
+    // agent-NAME, and its idp-client comment) follows a new name: drafted
+    // under a template's name, it would stay the template's, which
+    // idp-client --apply refuses for the agent. A client id written by
+    // hand stays.
+    const old = (yaml.match(/^name:[ \t]*([A-Za-z0-9-]+)[ \t]*$/m) || [])[1];
+    const n = name || "NAME";
+    if (old && old !== n) {
+        yaml = yaml.replace(new RegExp("(client_id:[ \\t]*\"?)agent-" + old + "(?=[\"\\s,}])", "g"), "$1agent-" + n)
+                   .replace(new RegExp("(# agent-admin idp-client )" + old + "(?= )", "g"), "$1" + n);
+    }
+    return /^name:.*$/m.test(yaml) ? yaml.replace(/^name:.*$/m, "name: " + n) : "name: " + name + "\n" + yaml;
 }
 
 /* checkConfig checks a configuration and says so: "valid", with what

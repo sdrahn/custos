@@ -469,7 +469,10 @@
                     if (model()) text = text.replace(/^model:\n(?:  .*\n)*/m, model());
                     if (args.includes("--sandbox")) {
                         const drv = args[args.indexOf("--openshell-driver") + 1];
-                        text = text.replace(/^gateway:\n/m, "gateway:\n  url: \"https://gw.example.com:8443/mcp\"\n") +
+                        // As agent-admin draft: the agent's OAuth client is agent-NAME.
+                        text = text.replace(/^gateway:\n/m, "gateway:\n  url: \"https://gw.example.com:8443/mcp\"\n" +
+                            "  oauth: {token_url: \"https://idp.example.com/realms/mcp/protocol/openid-connect/token\", client_id: agent-" + name +
+                            ", scopes: [\"mcp-agents\"]}   # agent-admin idp-client " + name + " says what the client must be\n") +
                             "sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: " + drv + "}\n";
                     }
                     return Promise.resolve(text);
