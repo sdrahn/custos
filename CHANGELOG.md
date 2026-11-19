@@ -11,6 +11,23 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.3 — 2026-11-19
+
+A fix for Cockpit's page: it stays quick while an agent does not
+answer, for example one whose service fails to start again and again.
+
+Upgrading from 0.9.2 needs no change to configurations or gateway data,
+and no agent needs a restart: reload the page in the browser.
+
+### Fixed
+
+- Cockpit stays quick while an agent does not answer, for example one
+  whose service fails to start again and again while systemd holds its
+  socket. Such an agent is shown as not answering, with the time it is
+  asked again, after 30 seconds and then at growing intervals up to
+  5 minutes; Start and Restart ask it again at once. Before, every
+  refresh of the Agents and Activity views waited 8 seconds for it.
+
 ## v0.9.2 — 2026-11-19
 
 A fix for agents whose model is an OpenAI-compatible endpoint served by
