@@ -672,6 +672,18 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check((await spawned("agent-admin draft service-doctor --template service-doctor --sandbox openshell --openshell-driver systemd")).length === 1,
           "the draft for OpenShell is agent-admin draft --sandbox openshell --openshell-driver systemd's");
     check((await page.textContent("#create-template")).includes("In an OpenShell sandbox, also"), "what OpenShell needs is shown");
+    // The OAuth client drafted under the template's name follows the
+    // agent's name (idp-client --apply makes agent-NAME only).
+    check((await page.inputValue("#create-agent textarea")).includes("client_id: agent-service-doctor,"), "the draft's OAuth client is the agent's");
+    await page.fill("#create-name", "doc-osh");
+    const renamed = await page.inputValue("#create-agent textarea");
+    check(renamed.includes("client_id: agent-doc-osh,") && renamed.includes("idp-client doc-osh says") &&
+          !renamed.includes("agent-service-doctor"), "renaming the agent renames its OAuth client");
+    check(await page.evaluate(() => withName("name: a\ngateway:\n  oauth: {client_id: shared-client}\n", "b").includes("client_id: shared-client}")),
+          "a client id written by hand stays");
+    check(await page.evaluate(() => withName(withName("name: a\ngateway:\n  oauth: {client_id: agent-a}\n", ""), "b").includes("client_id: agent-b}")),
+          "the client follows the name after the name was emptied");
+    await page.fill("#create-name", "service-doctor");
     await page.selectOption("#create-backend", "systemd");
     await page.waitForFunction(() => !document.querySelector("#create-agent textarea").value.includes("openshell"));
     await page.fill("#create-name", "web-doctor");
