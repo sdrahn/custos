@@ -11,6 +11,116 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.0 — 2026-11-19
+
+OpenShell agents easier to set up, from the experience of the first
+deployment on SLES 16.1. An agent's OAuth client in Keycloak is one
+command, `agent-admin idp-client NAME --keycloak --apply`, or one form
+in the agent's Credentials section in Cockpit: no `kcadm.sh`, no
+container commands and no secret in a file. Every shipped template can
+run in an OpenShell sandbox, so a transactional host has templates for
+it. `agent-admin openshell-setup` names the helper's journal when the
+systemd compute driver's helper does not start, an OpenShell agent's
+name is checked against OpenShell's limit when it is created, and the
+guide gives the systemd driver's setup in order, explains which
+certificate `--ca` takes and covers a Keycloak in a container. The
+relay's SELinux domain reads root's OpenShell registration only, no
+longer every user's `~/.config` (security review 0.8, S5). The security
+review before 0.9 (`docs/security-review-0.9.md`) went through what
+changed since 0.8.0; it found that `--apply` allowed the Keycloak
+administrator's password over plain HTTP to this host's loopback and
+could replace another client than the agent's, which is fixed before
+this release.
+
+Upgrading from 0.8.x needs no change to configurations or gateway data;
+mcp-gateway 1.16 stays the minimum. To know:
+
+- An OpenShell agent's name has at most 13 characters. One with a
+  longer name never got a sandbox (OpenShell refused it) and its
+  configuration is now refused: delete it and create it again with a
+  shorter name.
+- The package restores the label of `/root/.config/openshell` on
+  update. After copying OpenShell's registration there by hand, run
+  `restorecon -R /root/.config/openshell`, or `agent-admin
+  openshell-setup`.
+- `idp-client --keycloak --apply` logs in as a Keycloak user that may
+  manage the realm's clients, over HTTPS; this host must trust
+  Keycloak's certificate. It replaces a client of the agent's id, with a
+  new secret.
+- On a transactional system, use the systemd compute driver 0.2.0 or
+  later: it ships the mount points that 0.1.4 had to make on the
+  read-only root.
+- Known and accepted, as in 0.8.0: five vulnerabilities in the HTTP/2
+  of `golang.org/x/net` v0.58.0 (GO-2026-6603, -6610, -6611, -6612,
+  -6617), whose fix needs Go 1.26. The agent serves no HTTP/2
+  (security review 0.7, R2).
+
+### Added
+
+- Cockpit makes an OpenShell agent's OAuth client in Keycloak and sets
+  its secret, in the agent's Credentials section: a Keycloak user that
+  may manage the realm's clients, its password, and **Make the client
+  and set the credential** (`agent-admin idp-client NAME --keycloak
+  --apply`). The page keeps neither the password nor the secret.
+- `agent-admin idp-client NAME --keycloak --apply --admin USER` sets up
+  an OpenShell agent's OAuth client in one command: it logs in to
+  Keycloak's admin API (the password asked for, or on standard input),
+  makes the client, lists the issuer for agents, checks a token and sets
+  the agent's `gateway-client-secret`. No `kcadm.sh`, no container
+  command and no secret in a file. Before, this took a `kcadm.sh` script
+  and four more commands. The password goes over HTTPS only, with no
+  redirect followed; only the agent's own client `agent-NAME` is made or
+  replaced; an issuer it listed is taken off again when the token check
+  fails (security review 0.9).
+- Every shipped agent template can run in an OpenShell sandbox:
+  `patch-pilot-transactional`, `disk-watch`, `disk-watch-transactional`,
+  `health-check`, `service-doctor` and `exposure-watch` as well as
+  `patch-pilot` and `triage`. On a transactional host, Cockpit's
+  new-agent form now offers OpenShell for its templates. Before, only
+  `patch-pilot` and `triage` allowed it. Each template's
+  `needs_openshell` names the limit of 13 characters for the agent's
+  name.
+
+### Changed
+
+- The guide's chapter 11 gives the systemd compute driver's setup as
+  commands, in order: OpenShell for its user, its gateway running and
+  registered (with OpenShell's package: `systemctl --user … enable
+  --now openshell-gateway` and `openshell gateway add`), the driver's
+  packages, a reboot on a transactional system, then
+  `agent-admin openshell-setup --driver systemd`. It says which
+  certificate `--ca` takes and when it is not needed, and that with the
+  systemd driver that CA is trusted host-wide.
+- The guide's chapter 11 says how to run the Keycloak client script
+  against a Keycloak in a container:
+  `KCADM="podman exec -i keycloak /opt/keycloak/bin/kcadm.sh"`, with
+  `kcadm.sh` logged in inside the container.
+
+### Fixed
+
+- `agent-admin check`, `create`, `draft` and Cockpit's new-agent form
+  refuse an OpenShell agent's name longer than 13 characters: its
+  sandbox, `agent-<name>`, would exceed OpenShell's 19 characters for a
+  sandbox's name. Before, the name was taken, and setting the agent's
+  gateway credential failed after creating its provider
+  (`name exceeds maximum length (22 > 19)`).
+- `agent-admin openshell-setup --driver systemd` checks that the
+  driver's helper runs after starting it (its socket,
+  `/run/openshell-systemd-helper/helper.sock`), and otherwise stops and
+  names the helper's journal. Before, it went on, and failed waiting for
+  the driver's socket, pointing at the driver's journal, which only said
+  that there was no helper.
+
+### Security
+
+- The relay of an OpenShell agent reads root's OpenShell registration
+  (`/root/.config/openshell`) by a type of its own,
+  `agent_openshell_home_t`, where its SELinux domain could read every
+  user's `~/.config` (`config_home_t`; security review 0.8, S5). The
+  package and `agent-admin openshell-setup` restore the label; after
+  copying the registration by hand, run
+  `restorecon -R /root/.config/openshell`.
+
 ## v0.8.0 — 2026-11-18
 
 OpenShell agents on OpenShell's systemd compute driver, and the
