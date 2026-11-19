@@ -558,8 +558,20 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
           (await page.textContent("#agent-row-hung")).includes("see its Logs"), "an agent that does not answer says so");
     check(await page.isVisible("#agent-row-patch-pilot") && await page.isVisible("#agent-row-triage"), "the other agents are listed");
     check((await calls()).some(c => c[0] === "close" && c[1] === "hung"), "the unanswered request is closed");
-    await page.waitForFunction(() => window.__calls.filter(c => c[0] === "GET" && c[1] === "/run/agents/hung/api.sock").length >= 2, null, { timeout: 30000 });
-    check(true, "the page keeps refreshing");
+    check((await page.textContent("#agent-row-hung")).includes("asked again at"), "it says when it is asked again");
+    // It is not asked on every refresh, which would hold up each one (and
+    // the page) for the 8 s of the timeout; the others are refreshed as usual.
+    const gets = async n => (await calls()).filter(c => c[0] === "GET" && c[1] === "/run/agents/" + n + "/api.sock").length;
+    const hungGets = await gets("hung"), triageGets = await gets("triage");
+    await page.waitForTimeout(12000);
+    check(await gets("hung") === hungGets, "an agent that does not answer is not asked on every refresh");
+    check(await gets("triage") >= triageGets + 2, "the page keeps refreshing the other agents meanwhile");
+    // Restart asks it again at once.
+    await page.evaluate(() => cockpit.location.go(["agents", "hung"]));
+    await page.waitForSelector("#agent-detail button:text-is('Restart')");
+    await page.click("#agent-detail button:text-is('Restart')");
+    await page.waitForFunction(n => window.__calls.filter(c => c[0] === "GET" && c[1] === "/run/agents/hung/api.sock").length > n, hungGets, { timeout: 15000 });
+    check(true, "Restart asks the agent again at once");
 
     // Creating and deleting agents.
     await page.goto(url + "?create#/agents");
