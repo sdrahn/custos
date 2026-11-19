@@ -11,6 +11,37 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.5 — 2026-11-19
+
+A change for agents in OpenShell sandboxes: the connection to the
+model endpoint passes OpenShell's proxy uninspected, so long model calls
+with large requests no longer end in `EOF` there.
+
+Upgrading from 0.9.4 needs no change to configurations or gateway data.
+An existing OpenShell agent gets the new sandbox policy when its
+configuration is applied again:
+`agent-admin edit NAME --from /etc/custos/agents/NAME/agent.yaml`
+recreates its sandbox (its sessions go). Systemd agents are not
+affected. With an `https://` model endpoint whose certificate a private
+CA issued, an agent in a container needs that CA in the agent image, or
+`sandbox.openshell_inspect_model: true`.
+
+### Changed
+
+- In an OpenShell sandbox, the connection to the agent's model endpoint
+  passes OpenShell's proxy at the TCP level, uninspected, still for
+  `agent-launcher` only. Before, the proxy parsed and relayed every model
+  request and answer as HTTP, though the agent's rule allowed them all,
+  and long model calls with large requests failed there with
+  `model endpoint: Post ".../chat/completions": EOF`, where the same agent
+  outside OpenShell worked. `sandbox.openshell_inspect_model: true` keeps
+  the inspection, with OpenShell's record of each request. An existing
+  agent gets the new policy with `agent-admin edit` (its sandbox is
+  recreated). An `https://` model endpoint's certificate is now checked
+  by the agent, in a container against the agent image's trust store: a
+  model server with a private CA's certificate needs that CA in the
+  image, or `openshell_inspect_model: true`.
+
 ## v0.9.4 — 2026-11-19
 
 A fix for Cockpit's new-agent form: an OpenShell agent renamed there
