@@ -47,9 +47,9 @@ mcp-gateway 1.16 stays the minimum. To know:
   manage the realm's clients, over HTTPS; this host must trust
   Keycloak's certificate. It replaces a client of the agent's id, with a
   new secret.
-- On a transactional system the systemd compute driver 0.1.4 needs its
-  mount points made once (the driver's guide, troubleshooting), until a
-  driver release that ships them.
+- On a transactional system, use the systemd compute driver 0.2.0 or
+  later: it ships the mount points that 0.1.4 had to make on the
+  read-only root.
 - Known and accepted, as in 0.8.0: five vulnerabilities in the HTTP/2
   of `golang.org/x/net` v0.58.0 (GO-2026-6603, -6610, -6611, -6612,
   -6617), whose fix needs Go 1.26. The agent serves no HTTP/2
