@@ -78,7 +78,7 @@ type answer struct {
 func (m *Model) service(got *answer) oai.ChatCompletionService {
 	c := m.HTTP
 	if c == nil {
-		c = &http.Client{Timeout: m.Timeout}
+		c = &http.Client{Timeout: m.Timeout, Transport: transport}
 	}
 	opts := []option.RequestOption{
 		option.WithBaseURL(strings.TrimRight(m.Endpoint, "/") + "/"),
@@ -112,6 +112,20 @@ func (m *Model) service(got *answer) oai.ChatCompletionService {
 	}
 	return oai.NewChatCompletionService(opts...)
 }
+
+// transport sends each request on a connection of its own, without
+// keep-alive. A server or proxy closes a connection that is idle for its
+// own time (uvicorn, under LiteLLM: 5 seconds), and a tool call between
+// two model calls often takes longer. The next request, sent on a
+// connection closed meanwhile, fails with "EOF" and is not sent again
+// (a POST), and a proxy between (OpenShell's) can keep the agent's side
+// of it open after the server closed its own. A model call takes seconds
+// to minutes; a new connection costs a few milliseconds.
+var transport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DisableKeepAlives = true
+	return t
+}()
 
 func (m *Model) generate(ctx context.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 	params, schemas, err := m.request(req)

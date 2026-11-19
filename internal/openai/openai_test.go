@@ -1,10 +1,12 @@
 package openai
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,6 +175,58 @@ func TestTimeouts(t *testing.T) {
 	err = first(&Model{Endpoint: srv.URL, Name: "x"}, ctx)
 	if err == nil || !strings.Contains(err.Error(), "the activity's time limit (limits.max_invocation_seconds) ran out") {
 		t.Errorf("the activity's deadline: %v", err)
+	}
+}
+
+// Each model call goes on a new connection. The server here answers the
+// first request on a connection and then, like a proxy whose model server
+// closed the idle connection behind it (OpenShell's, before LiteLLM),
+// takes the next request on that connection and closes it unanswered:
+// with keep-alive, the second call failed with "model endpoint: … EOF".
+func TestFreshConnection(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	conns := make(chan struct{}, 10)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns <- struct{}{}
+			go func(c net.Conn) {
+				defer c.Close()
+				br := bufio.NewReader(c)
+				req, err := http.ReadRequest(br)
+				if err != nil {
+					return
+				}
+				io.Copy(io.Discard, req.Body)
+				body := `{"choices":[{"message":{"role":"assistant","content":"fine"},"finish_reason":"stop"}]}`
+				fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+				// The next request on this connection: read, then closed.
+				if req, err := http.ReadRequest(br); err == nil {
+					io.Copy(io.Discard, req.Body)
+				}
+			}(c)
+		}
+	}()
+	m := &Model{Endpoint: "http://" + ln.Addr().String() + "/v1", Name: "x"}
+	for i := 1; i <= 3; i++ {
+		for resp, err := range m.LLM().GenerateContent(context.Background(), &model.LLMRequest{}, false) {
+			if err != nil {
+				t.Fatalf("call %d: %v", i, err)
+			}
+			if got := resp.Content.Parts[0].Text; got != "fine" {
+				t.Errorf("call %d: %q", i, got)
+			}
+		}
+	}
+	if n := len(conns); n != 3 {
+		t.Errorf("%d connections for 3 calls, not one each", n)
 	}
 }
 
