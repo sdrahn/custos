@@ -56,11 +56,12 @@ func ProviderName(agent string) string { return "agent-" + agent + "-gateway" }
 func ProfileID(agent string) string    { return "custos-gateway-" + agent }
 
 type endpoint struct {
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	Path        string `yaml:"path,omitempty"`
-	Protocol    string `yaml:"protocol"`
-	Enforcement string `yaml:"enforcement"`
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+	Path string `yaml:"path,omitempty"`
+	// Protocol and Enforcement: none for an uninspected (L4) endpoint.
+	Protocol    string `yaml:"protocol,omitempty"`
+	Enforcement string `yaml:"enforcement,omitempty"`
 	Access      string `yaml:"access,omitempty"`
 	// MCP: OpenShell inspects the traffic as MCP; which tools are allowed
 	// is the gateway's decision, so every known MCP method may pass.
@@ -91,16 +92,29 @@ func Policy(cfg *config.Config) ([]byte, error) {
 	// the profile's endpoint, with the credential bound, when the provider
 	// is attached, and refuses a second rule for the same endpoint.
 	rules := map[string]rule{}
+	// The model endpoint, for agent-launcher only. Uninspected by default:
+	// the connection passes through at the TCP level, and OpenShell's
+	// proxy neither parses nor relays the model's requests and answers,
+	// the agent's largest and longest (calls that ended in EOF through
+	// it, #274). Its rule allows every request anyway (access: full).
+	// sandbox.openshell_inspect_model keeps OpenShell's HTTP inspection,
+	// with its per-request records.
+	model := func(host string, port int) endpoint {
+		if cfg.Sandbox.OpenShellInspectModel {
+			return endpoint{Host: host, Port: port, Protocol: "rest", Enforcement: "enforce", Access: "full"}
+		}
+		return endpoint{Host: host, Port: port}
+	}
 	if cfg.Model.Provider == "openai" {
 		m, err := hostPort(cfg.Model.Endpoint)
 		if err != nil {
 			return nil, fmt.Errorf("model.endpoint: %w", err)
 		}
-		rules["model"] = rule{Name: "model", Endpoints: []endpoint{{Host: m.host, Port: m.port, Protocol: "rest", Enforcement: "enforce", Access: "full"}}, Binaries: []binary{{Launcher}}}
+		rules["model"] = rule{Name: "model", Endpoints: []endpoint{model(m.host, m.port)}, Binaries: []binary{{Launcher}}}
 	} else {
 		rules["model"] = rule{Name: "model", Endpoints: []endpoint{
-			{Host: "generativelanguage.googleapis.com", Port: 443, Protocol: "rest", Enforcement: "enforce", Access: "full"},
-			{Host: "*-aiplatform.googleapis.com", Port: 443, Protocol: "rest", Enforcement: "enforce", Access: "full"},
+			model("generativelanguage.googleapis.com", 443),
+			model("*-aiplatform.googleapis.com", 443),
 		}, Binaries: []binary{{Launcher}}}
 	}
 	p := map[string]any{

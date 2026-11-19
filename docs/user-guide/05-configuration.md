@@ -54,7 +54,7 @@ sandbox: {kind: systemd}
 | `interaction` | no | [chat](#interaction) |
 | `schedules` | no | [scheduled runs](#schedules) |
 | `sessions` | no | `retention_days`: chat sessions untouched this long are deleted (default 30) |
-| `sandbox` | no | `kind: systemd` (default) or `kind: openshell` ([chapter 11](11-openshell.md)); for `openshell`, `openshell_gateway` (default `openshell`) and `openshell_driver`: `container` (default) or `systemd` |
+| `sandbox` | no | `kind: systemd` (default) or `kind: openshell` ([chapter 11](11-openshell.md)); for `openshell`, `openshell_gateway` (default `openshell`), `openshell_driver`: `container` (default) or `systemd`, and `openshell_inspect_model` (default `false`: the connection to the model passes OpenShell's proxy uninspected; `true`: OpenShell inspects its HTTP) |
 
 ## Models {#models}
 
