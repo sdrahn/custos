@@ -137,14 +137,19 @@ async function renderAgentDetail() {
     pause.addEventListener("click", () => act(pause, (paused ? "Resuming " : "Pausing ") + a.name,
         () => admin([paused ? "resume" : "pause", a.name])));
     const stop = el("button", { class: a.stopped ? "secondary" : "danger" }, a.stopped ? "Start" : "Stop");
-    stop.addEventListener("click", () => act(stop, (a.stopped ? "Starting " : "Stopping ") + a.name,
-        () => systemctl(a.stopped ? "start" : "stop", ...(a.stopped ? units.start : units.stop))));
+    stop.addEventListener("click", () => act(stop, (a.stopped ? "Starting " : "Stopping ") + a.name, () => {
+        forgetQuiet(a.name);
+        return systemctl(a.stopped ? "start" : "stop", ...(a.stopped ? units.start : units.stop));
+    }));
 
     // Restart: the agent's service (an OpenShell agent's relay, with its
     // sandbox). Its running activities end, as with agent-admin edit.
     const restart = el("button", { class: "secondary" }, "Restart");
     restart.hidden = !!a.stopped;
-    restart.addEventListener("click", () => act(restart, "Restarting " + a.name, () => systemctl("restart", units.service)));
+    restart.addEventListener("click", () => act(restart, "Restarting " + a.name, () => {
+        forgetQuiet(a.name);
+        return systemctl("restart", units.service);
+    }));
     // Logs: Cockpit's journal for the agent's unit, which holds the unit's
     // messages and the agent's own records (agent-<name>, §10).
     const logs = el("button", { class: "secondary" }, "Logs");

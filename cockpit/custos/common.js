@@ -234,6 +234,24 @@ function originText(a) {
     }
 }
 
+/* An agent that gave no answer within GET_TIMEOUT_MS (its socket held by
+ * systemd while its service fails to start, again and again) is not asked
+ * on every refresh: each refresh would wait that long for it, and every
+ * view with it. It is shown as not answering, and asked again after a
+ * pause that doubles from QUIET_FIRST_MS to QUIET_MAX_MS while it stays
+ * silent. Start and Restart in the page ask again at once (forgetQuiet). */
+const QUIET_FIRST_MS = 30000;
+const QUIET_MAX_MS = 300000;
+const quiet = new Map(); // name → { error, until, pause }
+
+function forgetQuiet(name) {
+    quiet.delete(name);
+}
+
+function quietError(q) {
+    return q.error + "; asked again at " + new Date(q.until).toLocaleTimeString();
+}
+
 /* listAgents finds the agents on this host (§3): the directories of
  * /run/agents whose socket answers /v1/status with contract 1. */
 async function listAgents() {
@@ -246,10 +264,20 @@ async function listAgents() {
     }
     names = names.map(n => n.trim()).filter(n => NAME_RE.test(n)).sort();
     return Promise.all(names.map(async name => {
+        const q = quiet.get(name);
+        if (q && Date.now() < q.until) return { name, error: quietError(q) };
         try {
             const status = await agentApi(name).get("/v1/status");
+            quiet.delete(name);
             return status.contract === 1 ? { name, status } : { name, error: "speaks contract " + status.contract };
         } catch (ex) {
+            if (ex && ex.problem === "timeout") {
+                const pause = q ? Math.min(q.pause * 2, QUIET_MAX_MS) : QUIET_FIRST_MS;
+                const next = { error: describeAgentFailure(ex), until: Date.now() + pause, pause };
+                quiet.set(name, next);
+                return { name, error: quietError(next) };
+            }
+            quiet.delete(name);
             // No socket file: its socket unit is stopped. systemd removes
             // the file (RemoveOnStop=) and leaves the directory, so the
             // directory alone does not mean the agent runs.
