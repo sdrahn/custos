@@ -652,7 +652,16 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
   Custos does not detect it: it must match the gateway's configuration.
   What else differs with the systemd driver is [above](#systemd-driver).
 - The sandbox's policy allows the model endpoint, for `agent-launcher`
-  only.
+  only. OpenShell passes that connection through without inspecting its
+  HTTP: the model's requests are the agent's largest and longest, and
+  its rule allows every request anyway. `sandbox.openshell_inspect_model:
+  true` has OpenShell inspect them, with a record of each request in the
+  sandbox's log. The connection to the gateway is always inspected.
+  Uninspected, an `https://` model endpoint's certificate is checked by
+  the agent: with the systemd driver against the host's trust store, in a
+  container against the agent image's. A model server whose certificate
+  a private CA issued then needs that CA in the image, or
+  `openshell_inspect_model: true`.
 
 ## Step 8: creating the agent and its credential {#credential}
 
@@ -731,7 +740,7 @@ rm /root/agent.jwt
 | The edit changes | `edit` does |
 |---|---|
 | nothing the sandbox gets | restarts the relay (`try-restart agent-openshell@NAME.service`) |
-| the configuration, the model endpoint, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
+| the configuration, the model endpoint, `sandbox.openshell_inspect_model`, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
 | `gateway.oauth` added or removed, or its `client_id` | stops the agent, deletes the sandbox and provider, and asks for `set-credential` again |
 | `sandbox.kind`, `sandbox.openshell_gateway` or `sandbox.openshell_driver` | refused: delete and create the agent |
 

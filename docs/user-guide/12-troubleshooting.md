@@ -56,7 +56,7 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
 | `limits.…: N: must be positive`, `sessions.retention_days: must be positive` | a positive number, or leave it out for the default |
 | `client_tools: "…": want deny or {allow: [...]}` | `client_tools: deny` |
 | `sandbox.kind: "…": want systemd or openshell` | fix the kind |
-| `sandbox.openshell_gateway: only for kind openshell`, `sandbox.openshell_driver: only for kind openshell` | remove it for a systemd agent |
+| `sandbox.openshell_gateway: only for kind openshell`, `sandbox.openshell_driver: only for kind openshell`, `sandbox.openshell_inspect_model: only for kind openshell` | remove it for a systemd agent |
 | `sandbox.openshell_driver: "…": want container or systemd` | `container` (Docker or Podman) or `systemd` (the OpenShell systemd compute driver) |
 | an unknown key (`field … not found`) | remove or correct the key: unknown keys are errors |
 
