@@ -153,7 +153,9 @@ model, endpoint (for `openai`), credential (a name) and temperature.
 **Save** writes them, **Remove the defaults** removes them; existing
 agents keep their model ([chapter 5](05-configuration.md#model-defaults)).
 
-Selecting an agent shows:
+Selecting an agent shows, under its name, the view's contents: a link
+to each section below, kept at the top of the window while the view
+scrolls. The sections:
 
 - its state and mode, its units, with **Pause**/**Resume**,
   **Restart**, **Stop**/**Start**, **Logs** and **Delete…**. **Restart**

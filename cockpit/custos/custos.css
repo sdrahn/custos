@@ -248,3 +248,8 @@ button.danger-text { color: var(--danger); }
 .template-diff { max-height: 24em; overflow: auto; padding: 0.5em; border: 1px solid var(--border); white-space: pre-wrap; }
 .template-diff .diff-add { color: var(--ok); }
 .template-diff .diff-del { color: var(--danger); }
+
+/* The agent view's contents (sectionsNav): one line of links, kept at the
+ * top while the view scrolls; a section scrolled to stays below it. */
+.agent-toc { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.5rem 1.25rem; }
+#agent-detail > section.card { scroll-margin-top: 4rem; }
