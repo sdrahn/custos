@@ -554,6 +554,33 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
         await page.$eval("#chat-patch-pilot", e => e.scrollIntoView());
         await page.screenshot({ path: path.join(shots, "chat.png") });
     }
+    // The chat in a popup from the list (#/agents/<name>/chat): the list
+    // stays, the conversation is the agent's own, its details a click
+    // away, and Esc closes it.
+    await page.goto(url + "?chat#/agents");
+    await page.reload(); // the same page with another hash: load it anew
+    await page.waitForSelector("#agent-row-patch-pilot button:has-text('Chat')");
+    check(!(await page.$("#agent-row-triage button:has-text('Chat')")), "an agent without AG-UI has no Chat button");
+    await page.click("#agent-row-patch-pilot button:has-text('Chat')");
+    await page.waitForSelector("#chat-popup:not([hidden]) .chat-input");
+    check((await page.evaluate(() => location.hash)) === "#/agents/patch-pilot/chat", "the Chat button opens #/agents/<name>/chat");
+    check(await page.isVisible("#agents-list") && !(await page.isVisible("#agent-detail")), "the popup is over the list, without the agent's details");
+    check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains("chat-input")), "the message field has the focus");
+    await page.fill("#chat-popup .chat-input", "Patch the host.");
+    await page.press("#chat-popup .chat-input", "Enter");
+    await page.waitForSelector("#chat-popup .msg-approval");
+    await page.waitForTimeout(5500); // a refresh keeps the conversation in the popup
+    check((await page.textContent("#chat-popup .chat-log")).includes("Installing 1 patch."), "the conversation survives a refresh in the popup");
+    if (shots) await page.screenshot({ path: path.join(shots, "chat-popup.png") });
+    await page.click("#chat-popup button:has-text('Details')");
+    await page.waitForSelector("#agent-detail #chat-patch-pilot");
+    check(await page.isHidden("#chat-popup") && (await page.textContent("#chat-patch-pilot .chat-log")).includes("Installing 1 patch."),
+          "Details shows the agent, with the same conversation");
+    await page.click("#agent-detail button:has-text('Chat')");
+    await page.waitForSelector("#chat-popup:not([hidden])");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => location.hash === "#/agents");
+    check(await page.isHidden("#chat-popup"), "Esc closes the popup, back to the list");
     await page.goto(url + "?nochat#/agents/triage");
     await page.waitForSelector("#agent-detail h2");
     check((await page.textContent("#agent-detail")).includes("does not offer chat"), "an agent without AG-UI says so");
