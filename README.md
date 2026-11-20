@@ -52,6 +52,8 @@ Agents are started by people (chat over AG-UI or the ADK REST API), by
 schedules (systemd timers), by events, or by other agents. Delegation
 goes through the gateway, where it is governed and traceable.
 
+![Chat with an agent in a popup over the list of agents: the person's question, the gateway tool the agent called, and its answer](docs/screenshots/chat.png)
+
 ![The Approvals tab: the call as the gateway sees it, next to the agent's self-asserted reason, delegation chain and evidence](docs/screenshots/approvals.png)
 
 ## The contract
