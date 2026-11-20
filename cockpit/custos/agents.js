@@ -11,6 +11,18 @@ function selectedAgent() {
     return p[0] === "agents" && p[1] ? p[1] : null;
 }
 
+/* chatView: #/agents/<name>/chat, the agent's chat in a popup over the
+ * list of agents. */
+function chatView() {
+    const p = cockpit.location.path;
+    return p[0] === "agents" && !!p[1] && p[2] === "chat";
+}
+
+/* offersChat: the agent serves AG-UI (interaction.agui). */
+function offersChat(a) {
+    return !!(a.status && a.status.interaction && a.status.interaction.agui);
+}
+
 /* agentState is [text, state for the badge] of an agent. */
 function agentState(a) {
     const data = state.posture && state.posture.agents[a.name];
@@ -91,7 +103,7 @@ function renderAgentList() {
     const sel = selectedAgent();
     body.replaceChildren();
     if (state.agents.length === 0) {
-        body.append(el("tr", null, el("td", { colspan: "6", class: "muted" },
+        body.append(el("tr", null, el("td", { colspan: "7", class: "muted" },
             "No agents on this host. Administrators create them with agent-admin create NAME --from agent.yaml.")));
         return;
     }
@@ -107,7 +119,11 @@ function renderAgentList() {
             el("td", null, modeBadge(data && data.mode)),
             el("td", null, a.status ? [a.status.implementation, el("div", { class: "muted" }, a.status.model)] : "–"),
             el("td", { class: "muted" }, scheds.length ? scheds.map(s => s.name).join(", ") : "none"),
-            el("td", { class: "muted" }, now ? now.summary || shortId(now.id) : a.error || "")));
+            el("td", { class: "muted" }, now ? now.summary || shortId(now.id) : a.error || ""),
+            el("td", null, offersChat(a)
+                ? el("button", { class: "secondary", "aria-label": "Chat with " + a.name,
+                                 onclick: () => cockpit.location.go(["agents", a.name, "chat"]) }, "Chat")
+                : null)));
     }
 }
 
@@ -132,6 +148,11 @@ async function renderAgentDetail() {
     const [text, st] = agentState(a);
     const paused = st === "paused";
     const units = unitsOf(a);
+    if (chatView()) {
+        box.hidden = true;
+        renderChatPopup(a, data, text, st);
+        return;
+    }
 
     const pause = el("button", { class: "secondary" }, paused ? "Resume" : "Pause");
     pause.addEventListener("click", () => act(pause, (paused ? "Resuming " : "Pausing ") + a.name,
@@ -163,7 +184,9 @@ async function renderAgentDetail() {
               el("div", { class: "mono muted" }, [units.stop.join(" · "),
                   a.status ? a.status.implementation + " · contract " + a.status.contract : null,
                   a.status && a.status.model ? "model " + a.status.model : null].filter(Boolean).join(" · "))),
-           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }), pause, restart, stop, logs, del.open)),
+           el("span", { class: "actions" }, el("span", { id: "agent-action", class: "muted" }),
+              offersChat(a) ? el("button", { class: "secondary", onclick: () => cockpit.location.go(["agents", a.name, "chat"]) }, "Chat") : null,
+              pause, restart, stop, logs, del.open)),
         data && data.paused && data.paused_by ? el("p", { class: "muted" }, "Paused by " + data.paused_by + ".") : null,
         data && data.tampered ? el("p", { class: "error-text", id: "agent-tampered" },
             "Its gateway data was changed outside agent-admin: " + data.tampered + ".") : null,
@@ -279,11 +302,56 @@ async function renderAgentDetail() {
     if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
 }
 
+/* renderChatPopup: the agent's chat in a window over the list of agents,
+ * with its name, state and mode, its details a click away, and a close
+ * button (or Esc) back to the list. The conversation is the one of its
+ * details (chatOf): opening and closing keep it. */
+function renderChatPopup(a, data, text, st) {
+    const pop = document.getElementById("chat-popup");
+    const close = () => cockpit.location.go(["agents"]);
+    const head = el("div", { class: "toolbar chat-popup-head" },
+        el("div", { class: "head-line" }, el("h2", { id: "chat-popup-title" }, a.name), stateBadgeText(text, st), modeBadge(data && data.mode)),
+        el("span", { class: "actions" },
+           el("button", { class: "secondary", onclick: () => cockpit.location.go(["agents", a.name]) }, "Details"),
+           el("button", { class: "link chat-popup-close", "aria-label": "Close the chat", title: "Close (Esc)", onclick: close }, "✕")));
+    const chat = chatSection(a);
+    const first = pop.hidden || pop.dataset.agent !== a.name;
+    const logs = [...pop.querySelectorAll(".chat-log")].map(l => [l, l.scrollTop]);
+    pop.replaceChildren(head, chat);
+    pop.dataset.agent = a.name;
+    pop.hidden = false;
+    for (const [l, top] of logs) {
+        if (l.isConnected) l.scrollTop = top;
+    }
+    if (first) {
+        const input = chat.querySelector(".chat-input");
+        if (input) input.focus({ preventScroll: true });
+        const log = chat.querySelector(".chat-log");
+        if (log) log.scrollTop = log.scrollHeight;
+    }
+}
+
+/* hideChatPopup closes the popup when the location no longer names it. */
+function hideChatPopup() {
+    const pop = document.getElementById("chat-popup");
+    if (pop.hidden) return;
+    pop.hidden = true;
+    pop.replaceChildren();
+    delete pop.dataset.agent;
+}
+
 tabs.agents = {
     intervalMs: 5000,
-    init: initCreate,
+    init() {
+        initCreate();
+        // Esc closes the chat popup, back to the list.
+        document.addEventListener("keydown", ev => {
+            if (ev.key === "Escape" && chatView()) cockpit.location.go(["agents"]);
+        });
+    },
     async refresh() {
         await refreshState();
+        if (!chatView()) hideChatPopup();
         renderAgentList();
         const fe = document.activeElement;
         if (!(fe && fe.closest(".enablement-edit"))) renderEnablement();
