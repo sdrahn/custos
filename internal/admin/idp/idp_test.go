@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sdrahn/custos/internal/admin"
+	"github.com/sdrahn/custos/internal/config"
 	"github.com/sdrahn/custos/internal/gatewayconf"
 	"github.com/sdrahn/custos/internal/host"
 	"github.com/sdrahn/custos/internal/host/hosttest"
@@ -126,7 +127,7 @@ func TestIDPClient(t *testing.T) {
 	a, _, _ := idpHost(t, goodClaims())
 	var out strings.Builder
 	a.Out = &out
-	if err := Client(a, "sb", false); err != nil {
+	if err := Client(a, "sb", false, 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"client id     agent-sb", "sub    agent-sb", "aud    https://gw.example.com:8443/mcp", "scope  mcp",
@@ -136,7 +137,7 @@ func TestIDPClient(t *testing.T) {
 		}
 	}
 	out.Reset()
-	if err := Client(a, "sb", true); err != nil {
+	if err := Client(a, "sb", true, 0); err != nil {
 		t.Fatal(err)
 	}
 	s := out.String()
@@ -159,7 +160,7 @@ func TestIDPClient(t *testing.T) {
 	}
 	// A gateway without its HTTPS listener: nothing to say.
 	os.WriteFile(a.Path(gatewayconf.Config), []byte("listen: /run/mcp-gateway/mcp.sock\n"), 0o644)
-	if err := Client(a, "sb", false); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
+	if err := Client(a, "sb", false, 0); err == nil || !strings.Contains(err.Error(), "http.issuer and http.audience are not set") {
 		t.Errorf("no listener: %v", err)
 	}
 }
@@ -180,3 +181,41 @@ gateway:
   oauth: {token_url: "https://idp.example.com/token", client_id: agent-sb, scopes: [mcp]}
 sandbox: {kind: openshell}
 `
+
+// --token-lifetime: whole seconds, at most an hour, and a minute longer
+// than the agent's renewal window (a drafted one's, 120 s, without an
+// agent); for --keycloak only, in its script.
+func TestTokenLifetime(t *testing.T) {
+	for _, c := range []struct {
+		o    *config.OAuth
+		d    time.Duration
+		fail string
+	}{
+		{nil, 30 * time.Minute, ""},
+		{nil, 4 * time.Minute, ""},
+		{nil, 3 * time.Minute, "renews it every minute"},
+		{&config.OAuth{}, 5 * time.Minute, "renews it every minute"}, // OpenShell's 300 s
+		{&config.OAuth{RefreshBefore: 120}, time.Hour, ""},
+		{nil, 2 * time.Hour, "at most 1h0m0s"},
+		{nil, 1500 * time.Millisecond, "whole seconds"},
+		{nil, -time.Minute, "whole seconds"},
+	} {
+		err := tokenLifetime(c.o, c.d)
+		if (c.fail == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.fail)) {
+			t.Errorf("%v %s: %v, want %q", c.o, c.d, err, c.fail)
+		}
+	}
+	a, _, _ := idpHost(t, goodClaims())
+	var out strings.Builder
+	a.Out = &out
+	if err := Client(a, "sb", true, 30*time.Minute); err != nil || !strings.Contains(out.String(), `"access.token.lifespan": "1800"`) {
+		t.Errorf("script: %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if err := Client(a, "sb", true, 0); err != nil || !strings.Contains(out.String(), `"access.token.lifespan": "300"`) {
+		t.Errorf("script, default: %v\n%s", err, out.String())
+	}
+	if err := Client(a, "sb", false, 30*time.Minute); err == nil || !strings.Contains(err.Error(), "for --keycloak") {
+		t.Errorf("without --keycloak: %v", err)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sdrahn/custos/internal/admin"
 	"github.com/sdrahn/custos/internal/host"
@@ -18,6 +19,10 @@ import (
 // The fake Keycloaks speak plain http on loopback, which agent-admin
 // itself never sends a password over (T1).
 func init() { plainHTTPLoopback = true }
+
+// oldLifespan is the access.token.lifespan of the client fakeKeycloak has
+// already ("": none set).
+var oldLifespan string
 
 // fakeKeycloak answers the admin API calls of KeycloakApply for realm mcp
 // (a client agent-sb there already, the realm's scope basic, no scope
@@ -62,7 +67,7 @@ func fakeKeycloak(t *testing.T, forbid bool) (*httptest.Server, *[]string, *map[
 			w.Header().Set("Location", "http://kc"+p+"/client-scopes/s2")
 			w.WriteHeader(201)
 		case "GET " + p + "/clients?clientId=agent-sb":
-			reply([]map[string]string{{"id": "old"}})
+			reply([]map[string]any{{"id": "old", "attributes": map[string]string{"access.token.lifespan": oldLifespan}}})
 		case "DELETE " + p + "/clients/old", "DELETE " + p + "/clients/c1/default-client-scopes/s1",
 			"PUT " + p + "/clients/c1/default-client-scopes/s2":
 			w.WriteHeader(204)
@@ -200,5 +205,47 @@ func TestKeycloakApplyUnlistsOnFailure(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no longer listed") {
 		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+// The token lifetime: --token-lifetime's; without it, the replaced
+// client's (set in Keycloak's admin console, say); without either, 5
+// minutes.
+func TestKeycloakApplyTokenLifetime(t *testing.T) {
+	t.Cleanup(func() { oldLifespan = "" })
+	for _, c := range []struct {
+		old  string
+		set  time.Duration
+		want string
+		says string
+	}{
+		{"", 0, "300", "tokens valid for 5m0s"},
+		{"1800", 0, "1800", "tokens valid for 30m0s"},
+		{"1800", 10 * time.Minute, "600", "tokens valid for 10m0s"},
+		{"junk", 0, "300", "tokens valid for 5m0s"},
+	} {
+		oldLifespan = c.old
+		a, _, _ := idpHost(t, goodClaims())
+		os.WriteFile(filepath.Join(a.AgentDir("sb"), "relay.secret"), []byte("relay\n"), 0o600)
+		kc, _, created := fakeKeycloak(t, false)
+		var out strings.Builder
+		a.Out = &out
+		if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc.URL, TokenLifetime: c.set}, strings.NewReader("pw\n")); err != nil {
+			t.Fatalf("%+v: %v\n%s", c, err, out.String())
+		}
+		attrs, _ := (*created)["attributes"].(map[string]any)
+		if attrs["access.token.lifespan"] != c.want || !strings.Contains(out.String(), c.says) {
+			t.Errorf("%+v: lifespan %v\n%s", c, attrs["access.token.lifespan"], out.String())
+		}
+	}
+	// One that does not suit the agent's renewal window is refused before
+	// Keycloak is asked.
+	a, _, _ := idpHost(t, goodClaims())
+	kc, calls, _ := fakeKeycloak(t, false)
+	if err := KeycloakApply(a, "sb", Apply{Admin: "admin", URL: kc.URL, TokenLifetime: 2 * time.Hour}, strings.NewReader("pw\n")); err == nil || !strings.Contains(err.Error(), "at most 1h0m0s") {
+		t.Errorf("2h: %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("Keycloak was asked: %v", *calls)
 	}
 }

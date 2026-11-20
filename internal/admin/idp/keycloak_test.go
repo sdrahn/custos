@@ -64,7 +64,7 @@ func TestKeycloak(t *testing.T) {
 
 	var script strings.Builder
 	a.Out = &script
-	if err := Client(a, "sb", true); err != nil {
+	if err := Client(a, "sb", true, 0); err != nil {
 		t.Fatal(err)
 	}
 	secret := strings.TrimSpace(run(script.String()))
@@ -110,11 +110,15 @@ func TestKeycloakApplyReal(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "relay.secret"), []byte("relay\n"), 0o600)
 	var out strings.Builder
 	a.Out = &out
-	// Twice: the second replaces the client the first made.
-	for range 2 {
-		if err := KeycloakApply(a, "sb", Apply{Admin: "admin"}, strings.NewReader("admin\n")); err != nil {
+	// Twice: the second replaces the client the first made, and keeps its
+	// token lifetime (--token-lifetime 30m) without being given one.
+	for _, d := range []time.Duration{30 * time.Minute, 0} {
+		if err := KeycloakApply(a, "sb", Apply{Admin: "admin", TokenLifetime: d}, strings.NewReader("admin\n")); err != nil {
 			t.Fatalf("%v\n%s", err, out.String())
 		}
+	}
+	if n := strings.Count(out.String(), "tokens valid for 30m0s"); n != 2 {
+		t.Errorf("the lifetime was not kept (%d of 2):\n%s", n, out.String())
 	}
 	if !strings.Contains(out.String(), "token is what the gateway expects") || !strings.Contains(strings.Join(r.Cmds, "\n"), "provider") {
 		t.Errorf("output:\n%s\nran:\n%s", out.String(), strings.Join(r.Cmds, "\n"))
