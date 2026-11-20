@@ -59,6 +59,10 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(order.indexOf("activity-patch-pilot-e-7c21beef") === order.indexOf("activity-triage-e-5a10f00d") + 1 &&
           await page.$eval("#activity-patch-pilot-e-7c21beef", e => e.classList.contains("child")),
           "the delegated activity is under the one that delegated it");
+    // The activities and the one shown side by side start at the same height.
+    const tops = await page.evaluate(() => [document.querySelector("#tab-activity .split > .list").getBoundingClientRect().top,
+                                            document.querySelector("#activity-detail").getBoundingClientRect().top]);
+    check(Math.abs(tops[0] - tops[1]) < 1, "the activity's details are level with the list of activities (" + tops.join(", ") + ")");
     const detail = await page.textContent("#activity-detail");
     check(detail.includes("schedule · morning-check") && detail.includes("triage e-5a10") && detail.includes("patch-pilot e-7c21"),
           "the chain back to the schedule");
@@ -587,6 +591,22 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => location.hash === "#/agents");
     check(await page.isHidden("#chat-popup"), "Esc closes the popup, back to the list");
+    // The agent view's contents: a link to each section by its heading,
+    // kept at the top while the view scrolls; a link scrolls its section
+    // into view, below the bar.
+    await page.goto(url + "?chat#/agents/patch-pilot");
+    await page.reload(); // the same page with another hash: load it anew
+    await page.waitForSelector("#agent-detail .agent-toc button");
+    const toc = await page.$$eval("#agent-detail .agent-toc button", bs => bs.map(b => b.textContent));
+    check(["Autonomy mode", "Tool boundaries", "Schedules", "Credentials", "Chat"].every(t => toc.includes(t)) && toc[0] === "Autonomy mode",
+          "the agent view lists its sections (" + toc.join(", ") + ")");
+    await page.click("#agent-detail .agent-toc button:has-text('Credentials')");
+    await page.waitForTimeout(1000); // the smooth scroll
+    const pos = await page.evaluate(() => [document.querySelector("#credentials").getBoundingClientRect().top,
+                                           document.querySelector("#agent-detail .agent-toc").getBoundingClientRect()]);
+    check(pos[0] > pos[1].bottom - 1 && pos[0] < pos[1].bottom + 80 && Math.abs(pos[1].top) < 2,
+          "a link scrolls its section to just below the bar, which stays at the top (" + Math.round(pos[0]) + ", bar " +
+          Math.round(pos[1].top) + "–" + Math.round(pos[1].bottom) + ")");
     await page.goto(url + "?nochat#/agents/triage");
     await page.waitForSelector("#agent-detail h2");
     check((await page.textContent("#agent-detail")).includes("does not offer chat"), "an agent without AG-UI says so");
