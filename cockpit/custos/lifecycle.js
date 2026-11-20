@@ -157,14 +157,23 @@ async function draft(tmpl, n) {
     }
 }
 
+/* drafting counts the drafts asked for: only the last one asked for fills
+ * the form. Choosing a template and then a sandbox at once asks for two,
+ * and the template's own draft (for systemd) may answer second. */
+let drafting = 0;
+
 async function useTemplate(name, yaml, nameInput) {
     showBackends(name);
     describeTemplate(name);
     if (name && !nameInput.value.trim()) nameInput.value = name;
+    const mine = ++drafting;
     try {
-        yaml.value = withName(await draft(name, nameInput.value.trim()), nameInput.value.trim());
+        const d = await draft(name, nameInput.value.trim());
+        if (mine !== drafting) return;
+        yaml.value = withName(d, nameInput.value.trim());
         setCreateNote("");
     } catch (ex) {
+        if (mine !== drafting) return;
         setCreateNote("Reading the template: " + ((ex && ex.message) || ex.problem || String(ex)), "error-text");
     }
 }
