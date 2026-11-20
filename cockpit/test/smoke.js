@@ -488,14 +488,20 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     // The page keeps its place while the agent view refreshes (every 5 s)
     // with commands that answer slowly, as on a host: scrolled down to the
     // chat, it stays there.
-    await page.goto(url + "?slow&chat#/agents/patch-pilot");
-    await page.waitForSelector("#chat-patch-pilot .chat-input");
-    await page.waitForTimeout(3000); // the first loads are in
-    await page.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, document.documentElement.scrollHeight) });
-    const y0 = await page.evaluate(() => window.scrollY);
-    await page.waitForTimeout(6500); // one refresh and its slow loads
-    const y1 = await page.evaluate(() => window.scrollY);
-    check(y0 > 200 && Math.abs(y1 - y0) < 40, "the agent view keeps its scroll position across a refresh (" + y0 + " → " + y1 + ")");
+    // Also narrower: where the page's layout differs, a layout read during
+    // the refresh moved the scroll position (fixed in tabs.agents.refresh).
+    for (const width of [1350, 1400]) {
+        await page.setViewportSize({ width, height: 960 });
+        await page.goto(url + "?slow&chat#/agents/patch-pilot");
+        await page.reload(); // anew, also when only the hash differs
+        await page.waitForSelector("#chat-patch-pilot .chat-input");
+        await page.waitForTimeout(3000); // the first loads are in
+        await page.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, document.documentElement.scrollHeight) });
+        const y0 = await page.evaluate(() => window.scrollY);
+        await page.waitForTimeout(6500); // one refresh and its slow loads
+        const y1 = await page.evaluate(() => window.scrollY);
+        check(y0 > 200 && Math.abs(y1 - y0) < 40, "the agent view keeps its scroll position across a refresh, " + width + " px wide (" + y0 + " → " + y1 + ")");
+    }
     // So does the chat's own message area, longer than its box and
     // scrolled to its end, while the chat is idle.
     await page.evaluate(() => {
@@ -558,6 +564,33 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
         await page.$eval("#chat-patch-pilot", e => e.scrollIntoView());
         await page.screenshot({ path: path.join(shots, "chat.png") });
     }
+    // The chat in a popup from the list (#/agents/<name>/chat): the list
+    // stays, the conversation is the agent's own, its details a click
+    // away, and Esc closes it.
+    await page.goto(url + "?chat#/agents");
+    await page.reload(); // the same page with another hash: load it anew
+    await page.waitForSelector("#agent-row-patch-pilot button:has-text('Chat')");
+    check(!(await page.$("#agent-row-triage button:has-text('Chat')")), "an agent without AG-UI has no Chat button");
+    await page.click("#agent-row-patch-pilot button:has-text('Chat')");
+    await page.waitForSelector("#chat-popup:not([hidden]) .chat-input");
+    check((await page.evaluate(() => location.hash)) === "#/agents/patch-pilot/chat", "the Chat button opens #/agents/<name>/chat");
+    check(await page.isVisible("#agents-list") && !(await page.isVisible("#agent-detail")), "the popup is over the list, without the agent's details");
+    check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains("chat-input")), "the message field has the focus");
+    await page.fill("#chat-popup .chat-input", "Patch the host.");
+    await page.press("#chat-popup .chat-input", "Enter");
+    await page.waitForSelector("#chat-popup .msg-approval");
+    await page.waitForTimeout(5500); // a refresh keeps the conversation in the popup
+    check((await page.textContent("#chat-popup .chat-log")).includes("Installing 1 patch."), "the conversation survives a refresh in the popup");
+    if (shots) await page.screenshot({ path: path.join(shots, "chat-popup.png") });
+    await page.click("#chat-popup button:has-text('Details')");
+    await page.waitForSelector("#agent-detail #chat-patch-pilot");
+    check(await page.isHidden("#chat-popup") && (await page.textContent("#chat-patch-pilot .chat-log")).includes("Installing 1 patch."),
+          "Details shows the agent, with the same conversation");
+    await page.click("#agent-detail button:has-text('Chat')");
+    await page.waitForSelector("#chat-popup:not([hidden])");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => location.hash === "#/agents");
+    check(await page.isHidden("#chat-popup"), "Esc closes the popup, back to the list");
     // The agent view's contents: a link to each section by its heading,
     // kept at the top while the view scrolls; a link scrolls its section
     // into view, below the bar.

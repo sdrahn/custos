@@ -177,6 +177,20 @@ td.details { overflow-wrap: anywhere; }
 .msg-approval { align-self: stretch; max-width: none; background: var(--warn-bg); border-color: var(--warn-border); }
 .msg-error { align-self: stretch; max-width: none; background: var(--error-bg); border-color: var(--danger); }
 .chat-form { display: flex; gap: 0.5rem; }
+/* The chat popup (#/agents/<name>/chat), over the list of agents: on the
+ * right, as tall as the window allows; the whole width on a narrow one. */
+.chat-popup { position: fixed; right: 1rem; bottom: 1rem; z-index: 20; width: min(36rem, calc(100vw - 2rem));
+    height: min(44rem, calc(100vh - 2rem)); display: flex; flex-direction: column; margin: 0;
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.25); }
+.chat-popup[hidden] { display: none; }
+.chat-popup-head { flex: none; }
+.chat-popup > .chat { flex: 1; display: flex; flex-direction: column; min-height: 0; border: 0; box-shadow: none; padding: 0; margin: 0; }
+.chat-popup > .chat > .toolbar h2, .chat-popup > .chat > p.muted { display: none; }
+.chat-popup .chat-log { flex: 1; max-height: none; min-height: 0; }
+.chat-popup-close { font-size: 1.2em; padding: 0 0.4rem; }
+/* The list's Chat button, next to the agent's name, no taller than a line. */
+td.agent-name { white-space: nowrap; }
+.chat-open { margin-left: 0.5rem; padding: 0 0.5rem; font-size: 0.85em; line-height: 1.5; }
 .chat-input { flex: 1; }
 
 #create-agent { margin-top: 1rem; }

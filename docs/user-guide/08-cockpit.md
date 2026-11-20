@@ -227,7 +227,12 @@ scrolls. The sections:
 
 ## Chat {#chat}
 
-The chat in an agent's view is the person's own thread: the agent knows
+**Chat** in an agent's row of the list, or in its view, opens the chat in
+a window over the list (`#/agents/NAME/chat`); **✕** or Esc closes it,
+**Details** shows the agent's view, where the chat is at the end. Both
+are the same conversation.
+
+The chat is the person's own thread: the agent knows
 the person by their account, and each message is an activity with the
 origin `chat · <person>`. The agent's answer streams in, with its tool
 calls. A call waiting for approval shows as a notice with **Review in
