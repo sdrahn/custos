@@ -271,6 +271,13 @@ func CheckToken(a *admin.Admin, name string, secretIn io.Reader) error {
 	default:
 		say(true, fmt.Sprintf("exp in %s", time.Unix(int64(exp), 0).Sub(now).Round(time.Second)), "")
 	}
+	// Not a failure: the gateway accepts the token. OpenShell's renewal
+	// window, though, decides how often the sandbox's connections close.
+	if iat > 0 && exp > iat {
+		if n := admin.RenewalNote(o, time.Duration(exp-iat)*time.Second); n != "" {
+			fmt.Fprintf(a.Out, "note %s\n", n)
+		}
+	}
 	if c := h.LocalUserClaim; c != "" {
 		_, has := claims[c]
 		say(!has, "no "+c+" (the gateway's local_user_claim)", "an agent's token must not name a local account")

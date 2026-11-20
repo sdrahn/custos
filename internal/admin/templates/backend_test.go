@@ -115,6 +115,9 @@ func TestDraftOnRefusals(t *testing.T) {
 		t.Errorf("no token URL: %v", err)
 	}
 	b, err := DraftOn(a, "pp", "patch-pilot", Backend{Kind: "openshell", TokenURL: "https://login.example.com/oauth2/token"})
+	if c := parseDraft(t, b, err); c.Gateway.OAuth.RefreshBefore != admin.DraftRefreshBefore {
+		t.Errorf("the draft's renewal window: %+v", c.Gateway.OAuth)
+	}
 	if c := parseDraft(t, b, err); c.Gateway.OAuth.TokenURL != "https://login.example.com/oauth2/token" {
 		t.Errorf("token URL %+v", c.Gateway.OAuth)
 	}
