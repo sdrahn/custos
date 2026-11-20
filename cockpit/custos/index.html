@@ -100,7 +100,6 @@
 
         <div id="tab-agents" class="tab" hidden>
             <section id="enablement" class="card" hidden></section>
-            <div id="chat-popup" class="card chat-popup" role="dialog" aria-labelledby="chat-popup-title" hidden></div>
             <section class="card" id="agents-list">
                 <div class="toolbar">
                     <h2>Agents on this host</h2>
@@ -111,7 +110,7 @@
                 contract 1 shows up here. Changing an agent needs administrative access.</p>
                 <table id="agents">
                     <thead><tr><th>Agent</th><th>State</th><th>Autonomy</th><th>Host · model</th>
-                        <th>Schedules</th><th>Now</th><th><span class="sr-only">Chat</span></th></tr></thead>
+                        <th>Schedules</th><th>Now</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </section>
@@ -169,6 +168,8 @@
             </form>
             <div id="agent-created" class="note" hidden></div>
             <div id="agent-detail" hidden></div>
+            <!-- The chat popup (#/agents/<name>/chat): fixed over the page, so last. -->
+            <div id="chat-popup" class="card chat-popup" role="dialog" aria-labelledby="chat-popup-title" hidden></div>
         </div>
 
         <div id="tab-policy" class="tab" hidden>

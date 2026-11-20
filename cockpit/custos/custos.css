@@ -185,6 +185,9 @@ td.details { overflow-wrap: anywhere; }
 .chat-popup > .chat > .toolbar h2, .chat-popup > .chat > p.muted { display: none; }
 .chat-popup .chat-log { flex: 1; max-height: none; min-height: 0; }
 .chat-popup-close { font-size: 1.2em; padding: 0 0.4rem; }
+/* The list's Chat button, next to the agent's name, no taller than a line. */
+td.agent-name { white-space: nowrap; }
+.chat-open { margin-left: 0.5rem; padding: 0 0.5rem; font-size: 0.85em; line-height: 1.5; }
 .chat-input { flex: 1; }
 
 #create-agent { margin-top: 1rem; }
