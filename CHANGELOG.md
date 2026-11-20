@@ -11,6 +11,43 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.8 — 2026-11-20
+
+Two fixes for agents in OpenShell sandboxes. Their OAuth tokens can live
+longer, so that they are renewed less often: each renewal closes the
+sandbox's open connections, and a long call that spans one ends in
+`EOF`. And Cockpit's form for a new agent shows the configuration for
+the sandbox chosen last.
+
+Upgrading from 0.9.7 needs no change to configuration or gateway data.
+To renew an agent's token every 28 minutes instead of every 3, make its
+client with tokens of 30 minutes:
+`agent-admin idp-client NAME --keycloak --apply --admin USER --token-lifetime 30m`.
+
+### Added
+
+- `agent-admin idp-client NAME --keycloak [--apply] --token-lifetime D`
+  sets the lifetime of the agent's OAuth tokens in Keycloak (default 5
+  minutes, at most an hour). Each renewal of an OpenShell agent's token
+  closes its sandbox's connections; with 30 minutes and
+  `refresh_before_seconds: 120`, that happens every 28 minutes instead
+  of every 3.
+
+### Changed
+
+- `idp-client --keycloak --apply` (and Cockpit's "Make the client and
+  set the credential") keeps the token lifetime of the client it
+  replaces, also one set in Keycloak's admin console. Before, it reset
+  the lifetime to 5 minutes.
+
+### Fixed
+
+- Cockpit's form for a new agent shows the configuration for the
+  template and sandbox chosen last. Choosing a template and then at once
+  an OpenShell sandbox could leave the template's configuration for
+  systemd in the form, whichever draft answered last. Choosing the
+  sandbox again was needed.
+
 ## v0.9.7 — 2026-11-20
 
 A fix for chat with an agent whose stream breaks off, as an OpenShell
