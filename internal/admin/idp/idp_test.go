@@ -75,7 +75,10 @@ func TestCheckToken(t *testing.T) {
 		t.Errorf("the token request: %q", *auth)
 	}
 	for _, want := range []string{"ok   sub agent-sb", "ok   aud includes https://gw.example.com:8443/mcp", "ok   scope mcp",
-		"ok   exp in 5m0s", "ok   no preferred_username", "is what the gateway expects"} {
+		"ok   exp in 5m0s", "ok   no preferred_username", "is what the gateway expects",
+		// The agent sets no refresh_before_seconds: OpenShell's 300 s
+		// renews this 5-minute token at every sweep.
+		"note the token lives 5m0s and gateway.oauth.refresh_before_seconds is unset"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %q in\n%s", want, out.String())
 		}
