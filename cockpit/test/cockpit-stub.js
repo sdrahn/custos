@@ -712,7 +712,10 @@
     // ?slow: what fills the agent view's sections after it is drawn
     // (agent-admin's journal reads) answers after 1.5 s, as on a host.
     function slowCommand(args) {
-        return query.has("slow") && args[0] === "agent-admin" && ["readiness", "review", "credentials", "playbooks"].includes(args[1]);
+        return (query.has("slow") && args[0] === "agent-admin" && ["readiness", "review", "credentials", "playbooks"].includes(args[1])) ||
+            // ?slowdraft: a draft for systemd answers late, after one
+            // asked for later (OpenShell) has answered.
+            (query.has("slowdraft") && args[0] === "agent-admin" && args[1] === "draft" && !args.includes("--sandbox"));
     }
 
     function cockpitPromise(r, slow) {
