@@ -11,6 +11,30 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.7 — 2026-11-20
+
+A fix for chat with an agent whose stream breaks off, as an OpenShell
+agent's does at each token renewal. The message was sent again while
+the first run still worked; both runs mixed the conversation's history,
+and the model then read only part of it and answered as if it had not
+read the question. A thread now has one run at a time, and the history
+the model gets has each tool result after its call.
+
+Upgrading from 0.9.6 needs no change to configuration or gateway data.
+A conversation mixed before is read in order again.
+
+### Fixed
+
+- A chat thread has one run at a time: a message sent while the
+  thread's previous run still works is refused (`409`), and Cockpit says
+  so. Before, both ran and mixed the conversation's history, as after a
+  dropped connection of an OpenShell agent; the model then answered as
+  if it had not read the question.
+- The history sent to an OpenAI-compatible model has each tool result
+  right after its call: a call without a result gets a "no result"
+  answer, a result without a call is left out. A history mixed before
+  can be read again. A call without arguments sends `{}`, not `null`.
+
 ## v0.9.6 — 2026-11-20
 
 A fix for agents in OpenShell sandboxes with an OAuth client: their
