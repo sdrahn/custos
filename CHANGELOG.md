@@ -11,6 +11,34 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.9 — 2026-11-20
+
+Three changes to Cockpit's pages. An agent's chat opens in a window
+over the list of agents, from a Chat button next to the agent's name,
+without scrolling through the agent's whole view. That view starts with
+its contents, a link to each section, kept at the top while it scrolls.
+And in the Activity tab, the activity shown is level with the list.
+
+Upgrading from 0.9.8 needs no change to configuration or gateway data.
+
+### Added
+
+- An agent's view in Cockpit starts with its contents: a link to each
+  section (autonomy mode, tool boundaries, schedules, credentials,
+  configuration, chat, …), kept at the top of the window while the view
+  scrolls. A link scrolls its section into view.
+- Cockpit's list of agents has a **Chat** button for each agent that
+  offers chat. It opens the agent's chat in a window over the list
+  (`#/agents/NAME/chat`), without scrolling through the agent's whole
+  view. The agent's view has the button too. Esc closes the window, and
+  the conversation is the same in both places.
+
+### Fixed
+
+- In Cockpit's Activity tab, the activity shown on the right starts
+  level with the list of activities on the left, where it started 1rem
+  lower.
+
 ## v0.9.8 — 2026-11-20
 
 Two fixes for agents in OpenShell sandboxes. Their OAuth tokens can live
