@@ -110,12 +110,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if in.RunID == "" {
 		in.RunID = uuid.NewString()
 	}
-	release, ok := h.claim(caller.Name + "\x00" + in.ThreadID)
+	claimed, ok := h.claim(caller.Name + "\x00" + in.ThreadID)
 	if !ok {
 		http.Error(w, ErrThreadBusy, http.StatusConflict)
 		return
 	}
-	// Held until the runner has stopped, not only until the client left.
+	// Held until the runner has stopped, not only until the client left;
+	// released before the run's last event, so that a client that sees
+	// it (and answers a client tool, or sends the next message) finds
+	// the thread free.
+	var once sync.Once
+	release := func() { once.Do(claimed) }
 	defer release()
 	ctx := r.Context()
 	sess, err := h.session(ctx, caller.Name, in.ThreadID)
@@ -208,6 +213,8 @@ loop:
 		}
 		break
 	}
+	// The runner has stopped (events is closed): the thread is free.
+	release()
 	s.endText()
 	if runErr == nil && ctx.Err() != nil {
 		runErr = ctx.Err()
