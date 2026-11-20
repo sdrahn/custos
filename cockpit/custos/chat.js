@@ -131,7 +131,11 @@ function run(name, c, text) {
         c.send.disabled = false;
     };
     req.then(done, ex => {
-        bubble(c, "msg-error", "The agent did not answer: " + describeAgentFailure(ex));
+        // One run per thread (§11): the previous message's run still
+        // works, as when its stream broke off.
+        bubble(c, "msg-error", ex && ex.status === 409
+            ? "The agent is still working on your previous message: its answer is in Activity. Send again when it has finished."
+            : "The agent did not answer: " + describeAgentFailure(ex));
         done();
     });
 }

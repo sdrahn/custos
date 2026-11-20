@@ -231,7 +231,10 @@ origin `chat · <person>`. The agent's answer streams in, with its tool
 calls. A call waiting for approval shows as a notice with **Review in
 Approvals**. Approvals still go through the gateway: chat gives no
 extra rights. The thread lasts as long as the page is open; the agent
-keeps the conversation's history. An agent shows chat only with
+keeps the conversation's history. A thread has one run at a time: when
+the answer's stream broke off (a dropped connection), the agent still
+works on it, and a new message waits until it has finished. Its answer
+is in **Activity**. An agent shows chat only with
 `interaction.agui: true` ([chapter 5](05-configuration.md#interaction)).
 
 ## Policy tab {#policy}

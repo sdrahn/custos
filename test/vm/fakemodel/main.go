@@ -30,6 +30,7 @@
 //	user text with THINK           → with reasoning_effort none: text "thinking
 //	                                   off"; without: the thinking in reasoning
 //	                                   (as Ollama's), then text "thought about it"
+//	user text with SLOW            → the answer after 6 s
 //	anything else                  → text "ok"
 //
 // Except when obeying an injection, a tool the request does not offer is
@@ -49,6 +50,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 type message struct {
@@ -335,6 +337,16 @@ func (m *Model) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":{"message":"bad request"}}`, http.StatusBadRequest)
 		return
+	}
+	// SLOW: the answer takes 6 s, so that a run is still going when a
+	// test sends again on its thread.
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "user" && req.Messages[n-1].Content != nil &&
+		strings.Contains(*req.Messages[n-1].Content, "SLOW") {
+		select {
+		case <-time.After(6 * time.Second):
+		case <-r.Context().Done():
+			return
+		}
 	}
 	msg, finish, out := m.Respond(&req), "stop", 5
 	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "user" && req.Messages[n-1].Content != nil &&
