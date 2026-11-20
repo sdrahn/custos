@@ -98,7 +98,8 @@ func WithBackend(a *admin.Admin, cfg []byte, name string, b Backend) ([]byte, er
 				return nil, fmt.Errorf("mcp-gateway's issuer %s is not a Keycloak realm: give the issuer's token endpoint with --token-url, or --static-token", h.Issuer)
 			}
 		}
-		o := []string{"token_url: " + strconv.Quote(tokenURL), "client_id: agent-" + name}
+		o := []string{"token_url: " + strconv.Quote(tokenURL), "client_id: agent-" + name,
+			"refresh_before_seconds: " + strconv.Itoa(admin.DraftRefreshBefore)}
 		if len(h.Scopes) > 0 {
 			q := make([]string, len(h.Scopes))
 			for i, sc := range h.Scopes {

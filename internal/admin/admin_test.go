@@ -625,11 +625,15 @@ func TestEditOpenShellStopped(t *testing.T) {
 	}
 }
 
-// A change of the gateway's URL changes the provider's endpoint: the
-// profile is imported again before the sandbox is recreated.
+// A change of the gateway's URL changes the provider's profile. OpenShell
+// imports a profile only under a new id and keeps one a provider uses: the
+// sandbox and the provider go, the profile is imported anew, and the agent
+// waits for set-credential, which makes the provider again.
 func TestEditOpenShellProfile(t *testing.T) {
 	a, r := openShellRunning(t, oshYml)
 	dir := a.AgentDir("sb")
+	var out strings.Builder
+	a.Out = &out
 	if err := edit(t, a, strings.Replace(oshYml, "gw.example.com:8443", "gw2.example.com:9443", 1)); err != nil {
 		t.Fatal(err)
 	}
@@ -637,8 +641,39 @@ func TestEditOpenShellProfile(t *testing.T) {
 		t.Errorf("profile not rewritten:\n%s", b)
 	}
 	if w := inOrder(r.Cmds,
+		"systemctl disable --now agent-openshell@sb.socket agent-openshell@sb.service",
+		"openshell -g openshell sandbox delete agent-sb",
+		"openshell -g openshell provider delete agent-sb-gateway",
+		"openshell -g openshell profile delete custos-gateway-sb --global",
 		"openshell -g openshell profile import -f "+filepath.Join(dir, "openshell-profile.yaml")+" --global",
+	); w != "" {
+		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
+	}
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "sandbox create") || strings.Contains(all, "provider create") {
+		t.Errorf("a sandbox or provider without the credential:\n%s", all)
+	}
+	if !strings.Contains(out.String(), "it is stopped until: agent-admin set-credential sb gateway-token < token") {
+		t.Errorf("the next step: %q", out.String())
+	}
+}
+
+// set-credential on an agent that has a sandbox: OpenShell keeps a provider
+// that a sandbox uses, so the relay stops and the sandbox goes (and is
+// gone) before the provider is made again, then the sandbox.
+func TestSetCredentialOpenShellRunning(t *testing.T) {
+	a, r := openShellRunning(t, oshOAuthYml)
+	r.Cmds = nil
+	if err := a.SetCredential("sb", "gateway-client-secret", strings.NewReader("new-secret\n")); err != nil {
+		t.Fatal(err)
+	}
+	if w := inOrder(r.Cmds,
+		"systemctl stop agent-openshell@sb.socket agent-openshell@sb.service",
+		"openshell -g openshell sandbox delete agent-sb",
+		"openshell -g openshell sandbox get agent-sb",
+		"openshell -g openshell provider delete agent-sb-gateway",
+		"openshell -g openshell provider create --name agent-sb-gateway",
 		"openshell -g openshell sandbox create --name agent-sb",
+		"systemctl enable --now agent-openshell@sb.socket",
 	); w != "" {
 		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
@@ -689,26 +724,27 @@ func TestEditOpenShellCredentialKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	if w := inOrder(r.Cmds,
-		"openshell -g openshell profile import",
 		"systemctl disable --now agent-openshell@sb.socket agent-openshell@sb.service",
 		"openshell -g openshell sandbox delete agent-sb",
 		"openshell -g openshell provider delete agent-sb-gateway",
+		"openshell -g openshell profile import",
 	); w != "" {
 		t.Errorf("missing or out of order %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
 	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "sandbox create") {
 		t.Errorf("a sandbox without a provider:\n%s", all)
 	}
-	// An OAuth agent whose scopes change keeps its client: recreated.
+	// An OAuth agent whose scopes change has a new profile: its provider
+	// is made again with set-credential (TestEditOpenShellProfile).
 	a, r = openShellRunning(t, oshOAuthYml)
 	if err := edit(t, a, strings.Replace(oshOAuthYml, "scopes: [mcp]", "scopes: [mcp, more]", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if w := inOrder(r.Cmds, "profile import", "sandbox create --name agent-sb", "systemctl start"); w != "" {
+	if w := inOrder(r.Cmds, "provider delete agent-sb-gateway", "profile delete custos-gateway-sb", "profile import"); w != "" {
 		t.Errorf("missing %q:\n%s", w, strings.Join(r.Cmds, "\n"))
 	}
-	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "provider delete") {
-		t.Errorf("the provider was deleted:\n%s", all)
+	if all := strings.Join(r.Cmds, "\n"); strings.Contains(all, "sandbox create") {
+		t.Errorf("a sandbox without its provider:\n%s", all)
 	}
 }
 

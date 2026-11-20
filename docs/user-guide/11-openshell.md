@@ -647,6 +647,18 @@ seconds, a token can expire before it is renewed, and a sandbox that
 starts then gets no token at all (its calls to the gateway fail with
 `401`, "no bearer token", until it is restarted). `agent-admin check`
 notes such a value.
+
+Each renewal closes the sandbox's open connections, so it must not
+happen at every sweep: `refresh_before_seconds` must be at least a
+minute shorter than the token's lifetime. OpenShell's default, 300, is
+not, for Keycloak's 5-minute tokens: the token is due as soon as it is
+issued, it is renewed every minute, and the agent's calls to the model
+and the gateway end in `EOF`. Agents drafted for OpenShell
+(`agent-admin create --template … --sandbox openshell`, Cockpit's form)
+get `refresh_before_seconds: 120`: a renewal every 3 minutes.
+`agent-admin check` notes an agent without it, and `check-token` (and
+`idp-client --keycloak --apply`) says when the token's lifetime does not
+suit it.
 While a renewal happens, OpenShell's proxy can answer a request with
 `500`; the agent retries for a few seconds and reconnects. Check the
 renewal:
@@ -686,7 +698,8 @@ rm /root/agent.jwt
 | The edit changes | `edit` does |
 |---|---|
 | nothing the sandbox gets | restarts the relay (`try-restart agent-openshell@NAME.service`) |
-| the configuration, the model endpoint, `sandbox.openshell_inspect_model`, `gateway.url` or the OAuth token URL, scopes or `refresh_before_seconds` | rewrites the policy and profile, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
+| the configuration, the model endpoint or `sandbox.openshell_inspect_model` | rewrites the policy, and recreates the sandbox with its provider and image (up to 2 minutes). The state inside it (sessions) goes. It then starts what ran before |
+| `gateway.url`, or the OAuth token URL, scopes or `refresh_before_seconds` (the provider's profile) | stops the agent, deletes the sandbox and provider, imports the new profile, and asks for `set-credential` again (or `idp-client --keycloak --apply`): OpenShell does not replace a profile that a provider uses |
 | `gateway.oauth` added or removed, or its `client_id` | stops the agent, deletes the sandbox and provider, and asks for `set-credential` again |
 | `sandbox.kind`, `sandbox.openshell_gateway` or `sandbox.openshell_driver` | refused: delete and create the agent |
 
