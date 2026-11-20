@@ -18,7 +18,8 @@ over the list of agents, from a Chat button next to the agent's name,
 without scrolling through the agent's whole view. That view starts with
 its contents, a link to each section, kept at the top while it scrolls.
 And in the Activity tab, the activity shown is level with the list;
-an agent's view keeps its place across a refresh at any width.
+an agent's view keeps its place across a refresh at any width. A chat
+thread is free again as soon as its run has ended.
 
 Upgrading from 0.9.8 needs no change to configuration or gateway data.
 
@@ -42,6 +43,11 @@ Upgrading from 0.9.8 needs no change to configuration or gateway data.
 - An agent's view in Cockpit keeps its place across the refresh every
   5 seconds at any window width. At some widths, scrolled to the end of
   the view, the refresh moved it up by a few lines.
+- A chat thread is free again as soon as a client sees its run's end.
+  Since 0.9.7, an answer to a client tool, or the next message, sent at
+  once could be refused with `409` ("a run is in progress on this
+  thread"), because the thread was released only after the stream had
+  ended.
 
 ## v0.9.8 — 2026-11-20
 
