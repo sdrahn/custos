@@ -103,7 +103,7 @@ function renderAgentList() {
     const sel = selectedAgent();
     body.replaceChildren();
     if (state.agents.length === 0) {
-        body.append(el("tr", null, el("td", { colspan: "7", class: "muted" },
+        body.append(el("tr", null, el("td", { colspan: "6", class: "muted" },
             "No agents on this host. Administrators create them with agent-admin create NAME --from agent.yaml.")));
         return;
     }
@@ -113,17 +113,17 @@ function renderAgentList() {
         const scheds = (a.status && a.status.schedules) || [];
         const now = state.activities.filter(x => x.agent === a.name && isOpen(x))[0];
         body.append(el("tr", { class: sel === a.name ? "current" : null, id: "agent-row-" + a.name },
-            el("td", null, el("button", { class: "link", onclick: () => cockpit.location.go(["agents", a.name]) }, a.name)),
+            // Chat next to the name, not a column of its own: the
+            // table keeps its columns' widths, so cells do not wrap anew.
+            el("td", { class: "agent-name" }, el("button", { class: "link", onclick: () => cockpit.location.go(["agents", a.name]) }, a.name),
+               offersChat(a) ? el("button", { class: "secondary chat-open", "aria-label": "Chat with " + a.name,
+                                              onclick: () => cockpit.location.go(["agents", a.name, "chat"]) }, "Chat") : null),
             el("td", null, stateBadgeText(text, st), missingCredentials(a.name).length
                 ? [" ", el("span", { class: "badge badge-bad", title: "Missing: " + missingCredentials(a.name).join(", ") }, "credential missing")] : null),
             el("td", null, modeBadge(data && data.mode)),
             el("td", null, a.status ? [a.status.implementation, el("div", { class: "muted" }, a.status.model)] : "–"),
             el("td", { class: "muted" }, scheds.length ? scheds.map(s => s.name).join(", ") : "none"),
-            el("td", { class: "muted" }, now ? now.summary || shortId(now.id) : a.error || ""),
-            el("td", null, offersChat(a)
-                ? el("button", { class: "secondary", "aria-label": "Chat with " + a.name,
-                                 onclick: () => cockpit.location.go(["agents", a.name, "chat"]) }, "Chat")
-                : null)));
+            el("td", { class: "muted" }, now ? now.summary || shortId(now.id) : a.error || "")));
     }
 }
 
