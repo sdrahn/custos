@@ -1102,6 +1102,11 @@ driver-style tasks. It is not its basis. Hosts that offer it serve
 - **History is the host's.** Only the last `user` message (or the
   trailing `tool` messages, below) is new input. A frontend cannot
   rewrite history.
+- **One run per thread.** A request on a thread whose run has not ended
+  is refused with `409 Conflict` before anything runs, and the run
+  goes on. A run ends with its runner, not with its stream: a client
+  whose stream broke off waits for the run (its activity, §5) before it
+  sends on that thread again, or starts a new thread.
 - `state` is merged into the session state under keys prefixed `ui:`.
 - The run is an activity with `origin.kind: chat`.
 

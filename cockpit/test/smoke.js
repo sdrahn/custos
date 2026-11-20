@@ -534,6 +534,14 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const aguis = (await calls()).filter(c => c[2] === "/agui").map(c => JSON.parse(c[3]));
     check(aguis.length === 2 && aguis[0].threadId === aguis[1].threadId && aguis[0].runId !== aguis[1].runId,
           "the next message continues the thread in a new run");
+    // A thread whose previous run still works refuses the next one (409):
+    // the chat says why and takes messages again.
+    await page.fill("#chat-patch-pilot .chat-input", "busy");
+    await page.click("#chat-patch-pilot button:has-text('Send')");
+    await page.waitForSelector("#chat-patch-pilot .msg-error");
+    check((await page.textContent("#chat-patch-pilot .msg-error")).includes("still working on your previous message"),
+          "a busy thread is explained in the chat");
+    check(!(await page.$eval("#chat-patch-pilot button:has-text('Send')", b => b.disabled)), "the chat takes messages again");
     await page.click("#chat-patch-pilot .msg-approval button:has-text('Review in Approvals')");
     await page.waitForSelector("#approval-a-42");
     check(await page.$eval("#approval-a-42", e => e.classList.contains("highlight")), "Review in Approvals opens the approval");

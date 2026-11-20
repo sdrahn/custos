@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,6 +59,34 @@ type Handler struct {
 	Governor    *governance.Governor
 	ClientTools *clienttools.Registry
 	Log         journal.Logger
+
+	mu     sync.Mutex
+	active map[string]bool // the caller's threads with a run
+}
+
+// ErrThreadBusy is the answer to a request on a thread that has a run.
+const ErrThreadBusy = "a run is in progress on this thread: wait for it to end (see the agent's activities), or start a new thread"
+
+// claim takes the caller's thread for one run. Two runs on one thread
+// would write into the same session at once, and its history would mix
+// the two: a tool result after another run's call, which a model's chat
+// template cannot place. A frontend whose stream broke (a dropped
+// connection) sends again while the first run still works.
+func (h *Handler) claim(key string) (release func(), ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.active[key] {
+		return nil, false
+	}
+	if h.active == nil {
+		h.active = map[string]bool{}
+	}
+	h.active[key] = true
+	return func() {
+		h.mu.Lock()
+		delete(h.active, key)
+		h.mu.Unlock()
+	}, true
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +110,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if in.RunID == "" {
 		in.RunID = uuid.NewString()
 	}
+	release, ok := h.claim(caller.Name + "\x00" + in.ThreadID)
+	if !ok {
+		http.Error(w, ErrThreadBusy, http.StatusConflict)
+		return
+	}
+	// Held until the runner has stopped, not only until the client left.
+	defer release()
 	ctx := r.Context()
 	sess, err := h.session(ctx, caller.Name, in.ThreadID)
 	if err != nil {
