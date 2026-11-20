@@ -368,6 +368,11 @@ tabs.agents = {
     },
     async refresh() {
         await refreshState();
+        // The page's place, before anything is rebuilt: a layout read while
+        // the list or the view is rebuilt (renderAgentDetail's) can see the
+        // page shorter for a moment, and the browser then moves the scroll
+        // position up, at the bottom of the page. It is put back at the end.
+        const pageY = window.scrollY;
         if (!chatView()) hideChatPopup();
         renderAgentList();
         const fe = document.activeElement;
@@ -377,6 +382,7 @@ tabs.agents = {
         const editing = f && (f.id === "permissions-yaml" || f.id === "owners-input" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
             f.closest(".credentials-edit") || f.closest(".playbook-run") || f.closest("#agent-template"));
         if (!editing) await renderAgentDetail();
+        if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
     },
 };
 
