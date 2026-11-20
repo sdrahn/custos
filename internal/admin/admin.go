@@ -332,6 +332,9 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 // and starts the relay.
 func (a *Admin) startOpenShell(cfg *config.Config, token string) error {
 	g := cfg.Sandbox.OpenShellGateway
+	if err := a.dropSandbox(cfg); err != nil {
+		return err
+	}
 	a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(cfg.Name))
 	if err := a.RunEnv([]string{openshell.TokenEnv + "=" + token}, "openshell", "-g", g, "provider", "create",
 		"--name", openshell.ProviderName(cfg.Name), "--type", openshell.ProfileID(cfg.Name), "--credential", openshell.TokenEnv); err != nil {
@@ -351,6 +354,9 @@ const clientSecretEnv = "CUSTOS_GATEWAY_CLIENT_SECRET"
 func (a *Admin) startOpenShellOAuth(cfg *config.Config, secret string) error {
 	g := cfg.Sandbox.OpenShellGateway
 	p := openshell.ProviderName(cfg.Name)
+	if err := a.dropSandbox(cfg); err != nil {
+		return err
+	}
 	a.Run(nil, "openshell", "-g", g, "provider", "delete", p)
 	if err := a.Run(nil, "openshell", "-g", g, "provider", "create", "--name", p, "--type", openshell.ProfileID(cfg.Name), "--runtime-credentials"); err != nil {
 		return fmt.Errorf("creating the provider: %w", err)
@@ -366,6 +372,16 @@ func (a *Admin) startOpenShellOAuth(cfg *config.Config, secret string) error {
 		return fmt.Errorf("minting the first token (the issuer refused the client?): %w", err)
 	}
 	return a.startSandbox(cfg)
+}
+
+// dropSandbox stops the relay and deletes the sandbox, waiting until it is
+// gone: OpenShell refuses to delete a provider attached to a sandbox, so
+// setting the credential again (a new secret or token) takes the sandbox
+// down first; startSandbox makes it again with the new provider.
+func (a *Admin) dropSandbox(cfg *config.Config) error {
+	a.Run(nil, "systemctl", "stop", "agent-openshell@"+cfg.Name+".socket", "agent-openshell@"+cfg.Name+".service")
+	a.Run(nil, "openshell", "-g", cfg.Sandbox.OpenShellGateway, "sandbox", "delete", openshell.SandboxName(cfg.Name))
+	return a.waitSandboxGone(cfg)
 }
 
 // startSandbox creates the sandbox with the provider attached and starts
@@ -504,15 +520,37 @@ func (a *Admin) editOpenShell(old *config.Config, name string) error {
 			return err
 		}
 	}
+	socket, service := "agent-openshell@"+name+".socket", "agent-openshell@"+name+".service"
 	if profChanged {
 		if err := host.WriteFile(profFile, prof, 0o644); err != nil {
 			return err
 		}
+		// OpenShell imports a profile only under an id it does not have,
+		// updates one only with the resource version of its own copy, and
+		// keeps one a provider uses: the provider goes, and with it the
+		// sandbox it is attached to, and the profile is imported anew. The
+		// provider is made again with the credential, which agent-admin
+		// does not keep (set-credential), as for a change of client_id.
+		hadSandbox := a.Run(nil, "systemctl", "-q", "is-enabled", socket) == nil
+		a.Run(nil, "systemctl", "disable", "--now", socket, service)
+		a.Run(nil, "openshell", "-g", g, "sandbox", "delete", openshell.SandboxName(name))
+		if err := a.waitSandboxGone(cfg); err != nil {
+			return err
+		}
+		a.Run(nil, "openshell", "-g", g, "provider", "delete", openshell.ProviderName(name))
+		a.Run(nil, "openshell", "-g", g, "profile", "delete", openshell.ProfileID(name), "--global")
 		if err := a.Run(nil, "openshell", "-g", g, "profile", "import", "-f", profFile, "--global"); err != nil {
 			return fmt.Errorf("importing the provider profile: %w", err)
 		}
+		if hadSandbox {
+			cred := "gateway-token < token"
+			if cfg.Gateway.OAuth != nil {
+				cred = "gateway-client-secret < secret"
+			}
+			fmt.Fprintf(a.Out, "agent %s: its provider profile changed (gateway.url or gateway.oauth); it is stopped until: agent-admin set-credential %s %s\n", name, name, cred)
+		}
+		return nil
 	}
-	socket, service := "agent-openshell@"+name+".socket", "agent-openshell@"+name+".service"
 	// set-credential enables the socket once it has created the sandbox:
 	// before that, it creates the sandbox from the files written here.
 	if a.Run(nil, "systemctl", "-q", "is-enabled", socket) != nil {
