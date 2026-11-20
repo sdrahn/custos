@@ -376,6 +376,11 @@
                           value: { approval_id: "a-42", tool: "zypp__install_patches", call_id: "c9", approval_url: "" } },
                     ];
                     const wire = events.map(e => "data: " + JSON.stringify(e) + "\n\n").join("");
+                    // A thread whose previous run still works (§11).
+                    if (text === "busy") {
+                        const r = Promise.reject(Object.assign(new Error("Conflict"), { status: 409, reason: "Conflict" }));
+                        return { stream() { return this; }, then: (ok, bad) => r.then(ok, bad) };
+                    }
                     const p = new Promise(resolve => setTimeout(() => {
                         for (let i = 0; i < wire.length; i += 37) onData(wire.slice(i, i + 37));
                         resolve("");
