@@ -1,13 +1,24 @@
 package agui
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/plugin"
+	"google.golang.org/adk/runner"
+	"google.golang.org/adk/session"
+
+	"github.com/sdrahn/custos/internal/clienttools"
+	"github.com/sdrahn/custos/internal/config"
+	"github.com/sdrahn/custos/internal/governance"
+	"github.com/sdrahn/custos/internal/journal"
 	"github.com/sdrahn/custos/internal/peercred"
+	"github.com/sdrahn/custos/internal/testutil"
 )
 
 func TestTextOf(t *testing.T) {
@@ -73,5 +84,71 @@ func TestOneRunPerThread(t *testing.T) {
 		t.Error("the thread stayed busy after its run")
 	} else {
 		r()
+	}
+}
+
+// endWatch calls atEnd when the run's last event is written: what a
+// client sees as the end of the run.
+type endWatch struct {
+	*httptest.ResponseRecorder
+	atEnd func()
+	seen  bool
+}
+
+func (w *endWatch) Write(p []byte) (int, error) {
+	if !w.seen && bytes.Contains(p, []byte(`"RUN_FINISHED"`)) {
+		w.seen = true
+		w.atEnd()
+	}
+	return w.ResponseRecorder.Write(p)
+}
+
+// The thread is free when the client sees the run's end: a client tool's
+// answer, or the next message, sent at once is not refused (409).
+func TestThreadFreeAtRunEnd(t *testing.T) {
+	cfg, err := config.Parse([]byte(`version: 1
+name: tt
+model: {provider: openai, name: test, endpoint: "http://127.0.0.1:1"}
+instruction: Answer.
+gateway: {socket: /run/mcp-gateway/mcp.sock, servers: [zypp]}
+interaction: {agui: true}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := &journal.Memory{}
+	gov := governance.New(cfg, log)
+	plug, err := gov.Plugin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := llmagent.New(llmagent.Config{Name: "t", Model: &testutil.Model{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := session.InMemoryService()
+	r, err := runner.New(runner.Config{AppName: "t", Agent: a, SessionService: sessions, PluginConfig: runner.PluginConfig{Plugins: []*plugin.Plugin{plug}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{App: "t", Config: cfg, Runner: r, Sessions: sessions, Governor: gov, ClientTools: clienttools.NewRegistry(), Log: log}
+	w := &endWatch{ResponseRecorder: httptest.NewRecorder()}
+	w.atEnd = func() {
+		if release, ok := h.claim("alice\x00t1"); !ok {
+			t.Error("the thread is still taken when the client sees RUN_FINISHED")
+		} else {
+			release()
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/agui", strings.NewReader(`{"threadId":"t1","messages":[{"role":"user","content":"hi"}]}`))
+	req = req.WithContext(peercred.WithCaller(req.Context(), peercred.Caller{Name: "alice", UID: 1000}))
+	h.ServeHTTP(w, req)
+	if !w.seen {
+		t.Fatalf("no RUN_FINISHED:\n%s", w.Body.String())
+	}
+	if release, ok := h.claim("alice\x00t1"); !ok {
+		t.Error("the thread stayed taken after the run")
+	} else {
+		release()
 	}
 }
