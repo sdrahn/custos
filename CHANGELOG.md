@@ -13,11 +13,12 @@ The sections below are released and stay as they are.
 
 ## v0.9.9 — 2026-11-20
 
-Three changes to Cockpit's pages. An agent's chat opens in a window
+Changes to Cockpit's pages. An agent's chat opens in a window
 over the list of agents, from a Chat button next to the agent's name,
 without scrolling through the agent's whole view. That view starts with
 its contents, a link to each section, kept at the top while it scrolls.
-And in the Activity tab, the activity shown is level with the list.
+And in the Activity tab, the activity shown is level with the list;
+an agent's view keeps its place across a refresh at any width.
 
 Upgrading from 0.9.8 needs no change to configuration or gateway data.
 
@@ -38,6 +39,9 @@ Upgrading from 0.9.8 needs no change to configuration or gateway data.
 - In Cockpit's Activity tab, the activity shown on the right starts
   level with the list of activities on the left, where it started 1rem
   lower.
+- An agent's view in Cockpit keeps its place across the refresh every
+  5 seconds at any window width. At some widths, scrolled to the end of
+  the view, the refresh moved it up by a few lines.
 
 ## v0.9.8 — 2026-11-20
 
