@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,10 @@ type Apply struct {
 	// URL is Keycloak's address as this host reaches it; "": the gateway
 	// issuer's (…/realms/<realm> without the realm).
 	URL string
+	// TokenLifetime is the lifetime of the client's access tokens; 0: the
+	// lifetime of the client replaced, else DefaultTokenLifetime. A
+	// lifetime set in Keycloak survives making the client again.
+	TokenLifetime time.Duration
 }
 
 // KeycloakApply makes agent NAME's OAuth client in the Keycloak realm of
@@ -44,6 +49,11 @@ func KeycloakApply(a *admin.Admin, name string, o Apply, password io.Reader) err
 	}
 	if cfg.Sandbox.Kind != "openshell" || cfg.Gateway.OAuth == nil {
 		return fmt.Errorf("agent %s has no OAuth client (gateway.oauth in an OpenShell sandbox): nothing to make", name)
+	}
+	if o.TokenLifetime != 0 {
+		if err := tokenLifetime(cfg.Gateway.OAuth, o.TokenLifetime); err != nil {
+			return err
+		}
 	}
 	h, err := gatewayconf.ReadHTTP(a.Root, a.GatewayConfig)
 	if err != nil {
@@ -90,11 +100,15 @@ func KeycloakApply(a *admin.Admin, name string, o Apply, password io.Reader) err
 	if clientID != "agent-"+name {
 		return fmt.Errorf("agent %s's gateway.oauth.client_id is %s: --apply makes and replaces only agent-%s; make another client as agent-admin idp-client %s says", name, clientID, name, name)
 	}
-	secret, err := kc.makeClient(keycloakClient(clientID, "agent-"+name, h), clientID, h.Scopes)
+	client := keycloakClient(clientID, "agent-"+name, h, DefaultTokenLifetime)
+	if o.TokenLifetime != 0 {
+		client = keycloakClient(clientID, "agent-"+name, h, o.TokenLifetime)
+	}
+	secret, lifetime, err := kc.makeClient(client, clientID, h.Scopes, o.TokenLifetime == 0)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "set  Keycloak client %s in realm %s (%s)\n", clientID, realm, base)
+	fmt.Fprintf(a.Out, "set  Keycloak client %s in realm %s (%s), tokens valid for %s\n", clientID, realm, base, lifetime)
 	listed := false
 	if trusted, untrusted := a.TrustedIssuers(); untrusted != "" {
 		return fmt.Errorf("the issuers for agents: %s", untrusted)
@@ -192,11 +206,11 @@ type named struct {
 }
 
 // makeClient makes the client (replacing one of that client id), its
-// scopes as the script does, and returns its secret.
-func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes []string) (string, error) {
+// scopes as the script does, and returns its secret and its tokens' lifetime.
+func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes []string, keep bool) (string, time.Duration, error) {
 	var have []named
 	if _, err := k.call("GET", "/client-scopes", nil, &have); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	scopeID := map[string]string{}
 	for _, s := range have {
@@ -210,57 +224,68 @@ func (k *keycloakAPI) makeClient(client map[string]any, clientID string, scopes 
 		loc, err := k.call("POST", "/client-scopes", map[string]any{"name": sc, "protocol": "openid-connect",
 			"attributes": map[string]string{"include.in.token.scope": "true"}}, nil)
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
 		scopeID[sc] = url.PathEscape(loc[strings.LastIndex(loc, "/")+1:])
 	}
 	var old []struct {
-		ID string `json:"id"`
+		ID         string            `json:"id"`
+		Attributes map[string]string `json:"attributes"`
 	}
 	if _, err := k.call("GET", "/clients?clientId="+url.QueryEscape(clientID), nil, &old); err != nil {
-		return "", err
+		return "", 0, err
 	}
+	// keep: the replaced client's token lifetime stays, as set with
+	// --token-lifetime or in Keycloak's admin console.
+	attrs := client["attributes"].(map[string]string)
+	for _, c := range old {
+		if n, err := strconv.Atoi(c.Attributes[lifespanAttr]); keep && err == nil && n > 0 {
+			attrs[lifespanAttr] = strconv.Itoa(n)
+		}
+	}
+	n, _ := strconv.Atoi(attrs[lifespanAttr])
+	lifetime := time.Duration(n) * time.Second
 	for _, c := range old {
 		if _, err := k.call("DELETE", "/clients/"+url.PathEscape(c.ID), nil, nil); err != nil {
-			return "", err
+			return "", 0, err
 		}
 	}
 	loc, err := k.call("POST", "/clients", client, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	id := url.PathEscape(loc[strings.LastIndex(loc, "/")+1:])
 	if id == "" {
-		return "", errors.New("Keycloak made the client but did not say where")
+		return "", 0, errors.New("Keycloak made the client but did not say where")
 	}
 	// The realm's default client scopes go ("basic" maps a sub of its
 	// own, the service account's id); the gateway's scopes are the defaults.
 	var defaults []named
 	if _, err := k.call("GET", "/clients/"+id+"/default-client-scopes", nil, &defaults); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	for _, d := range defaults {
 		if !slices.Contains(scopes, d.Name) {
 			if _, err := k.call("DELETE", "/clients/"+id+"/default-client-scopes/"+url.PathEscape(d.ID), nil, nil); err != nil {
-				return "", err
+				return "", 0, err
 			}
 		}
 	}
 	for _, sc := range scopes {
 		if _, err := k.call("PUT", "/clients/"+id+"/default-client-scopes/"+scopeID[sc], nil, nil); err != nil {
-			return "", err
+			return "", 0, err
 		}
 	}
 	var secret struct {
 		Value string `json:"value"`
 	}
 	if _, err := k.call("GET", "/clients/"+id+"/client-secret", nil, &secret); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if secret.Value == "" {
-		return "", errors.New("Keycloak gave the client no secret")
+		return "", 0, errors.New("Keycloak gave the client no secret")
 	}
-	return secret.Value, nil
+	return secret.Value, lifetime, nil
 }
 
 // plainHTTPLoopback lets the package's tests reach a Keycloak on this
