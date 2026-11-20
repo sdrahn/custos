@@ -702,6 +702,22 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     const tc = await spawned("agent-admin create web-doctor --template service-doctor --from -");
     check(tc.length === 1 && tc[0][4] === "require", "create from a template runs agent-admin create --template --from - through the root bridge");
     check((await page.textContent("#agent-created")).includes("from the template Service doctor"), "the new agent says where it came from");
+    // The draft asked for last fills the form, whichever answers last:
+    // a template chosen, then at once an OpenShell sandbox, while the
+    // template's own draft (systemd) still runs.
+    {
+        const race = await browser.newPage();
+        await race.goto(url + "?template&slowdraft#/agents");
+        await race.waitForSelector("#agents tbody tr");
+        await race.click("#create-open");
+        await race.waitForSelector("#create-from-row:not([hidden])");
+        await race.selectOption("#create-from", "service-doctor");
+        await race.selectOption("#create-backend", "openshell-systemd");
+        await race.waitForTimeout(2500); // the template's slow draft has answered too
+        check((await race.inputValue("#create-agent textarea")).includes("openshell_driver: systemd"),
+              "a late draft for an earlier choice does not replace the one asked for last");
+        await race.close();
+    }
     await page.click("#create-open");
     // A template for systemd only (offered disabled here, as it is for
     // transactional systems: chosen from the page's script).
