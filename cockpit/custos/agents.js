@@ -265,7 +265,8 @@ async function renderAgentDetail() {
     const pageY = window.scrollY;
     const focused = box.contains(document.activeElement) ? document.activeElement : null;
     const caret = focused && typeof focused.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd, focused.scrollTop] : null;
-    box.replaceChildren(head, mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), templateSection(a), configEditor(a), chatSection(a));
+    const sections = [mode, bounds, categoriesSection(a, data), schedules, events, playbookSection(a), credentialsSection(a), templateSection(a), configEditor(a), chatSection(a)];
+    box.replaceChildren(head, sectionsNav(a, sections), ...sections);
     for (const [l, top] of chatLogs) {
         if (l.isConnected) l.scrollTop = top;
     }
@@ -277,6 +278,22 @@ async function renderAgentDetail() {
         }
     }
     if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
+}
+
+/* sectionsNav: the agent view's contents, under its head and kept at the
+ * top of the window while the view scrolls: a link to each section, by
+ * its heading, that scrolls it into view (the location's hash is
+ * Cockpit's path, so no #anchors). */
+function sectionsNav(a, sections) {
+    const links = [];
+    for (const s of sections) {
+        const h = s && s.querySelector("h2");
+        if (!h || !h.textContent.trim()) continue;
+        const b = el("button", { type: "button", class: "link" }, h.textContent.trim());
+        b.addEventListener("click", () => s.scrollIntoView({ behavior: "smooth", block: "start" }));
+        links.push(b);
+    }
+    return el("nav", { class: "card agent-toc", "aria-label": "Sections of " + a.name }, ...links);
 }
 
 tabs.agents = {
