@@ -56,11 +56,14 @@ const usage = `usage: agent-admin COMMAND …
   edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
   delete NAME [--keep-state]             remove an agent (its user stays)
   set-credential NAME CRED               encrypt a secret read from stdin
-  idp-client NAME [--keycloak]           the OAuth client an OpenShell agent needs at the gateway's identity
-                                         provider; --keycloak: a script that creates it there (kcadm.sh)
-  idp-client NAME --keycloak --apply --admin USER [--admin-realm R] [--keycloak-url URL]
+  idp-client NAME [--keycloak [--token-lifetime D]]
+                                         the OAuth client an OpenShell agent needs at the gateway's identity
+                                         provider; --keycloak: a script that creates it there (kcadm.sh), its
+                                         tokens valid for D (default 5m, at most 1h)
+  idp-client NAME --keycloak --apply --admin USER [--admin-realm R] [--keycloak-url URL] [--token-lifetime D]
                                          make it in Keycloak through its admin API (USER's password asked for,
-                                         or on stdin), list the issuer for agents, check a token, set the secret
+                                         or on stdin), list the issuer for agents, check a token, set the secret;
+                                         without --token-lifetime, the replaced client's token lifetime stays
   fence NAME                             let a systemd agent's unit reach its model endpoint, for this start
                                          (agent@.service runs it; the unit denies every other address)
   check-token NAME < secret              mint a token with the agent's OAuth client and check its claims
