@@ -100,7 +100,7 @@
 
         <div id="tab-agents" class="tab" hidden>
             <section id="enablement" class="card" hidden></section>
-            <section class="card">
+            <section class="card" id="agents-list">
                 <div class="toolbar">
                     <h2>Agents on this host</h2>
                     <span class="actions"><button id="defaults-open" class="secondary">Model defaults</button>
@@ -168,6 +168,8 @@
             </form>
             <div id="agent-created" class="note" hidden></div>
             <div id="agent-detail" hidden></div>
+            <!-- The chat popup (#/agents/<name>/chat): fixed over the page, so last. -->
+            <div id="chat-popup" class="card chat-popup" role="dialog" aria-labelledby="chat-popup-title" hidden></div>
         </div>
 
         <div id="tab-policy" class="tab" hidden>
