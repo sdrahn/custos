@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,31 @@ import (
 // without a warning: OpenShell renews tokens, so they can be short.
 const MaxTokenLifetime = time.Hour
 
+// DefaultTokenLifetime is the lifetime of the access tokens of a client
+// idp-client --keycloak makes, without --token-lifetime.
+const DefaultTokenLifetime = 5 * time.Minute
+
+// tokenLifetime checks a lifetime given with --token-lifetime for the
+// agent's OAuth client o (nil: one drafted for OpenShell): whole seconds,
+// at most MaxTokenLifetime, and long enough for OpenShell's renewal
+// window not to renew it at every sweep. Each renewal closes the
+// sandbox's open connections, so a longer lifetime means fewer of them.
+func tokenLifetime(o *config.OAuth, d time.Duration) error {
+	if o == nil {
+		o = &config.OAuth{RefreshBefore: admin.DraftRefreshBefore}
+	}
+	switch {
+	case d <= 0 || d%time.Second != 0:
+		return fmt.Errorf("--token-lifetime %s: whole seconds, such as 30m", d)
+	case d > MaxTokenLifetime:
+		return fmt.Errorf("--token-lifetime %s: at most %s; a token outlives its client's revocation in Keycloak by its lifetime", d, MaxTokenLifetime)
+	}
+	if n := admin.RenewalNote(o, d); n != "" {
+		return fmt.Errorf("--token-lifetime %s: %s", d, n)
+	}
+	return nil
+}
+
 // keycloakRealm is the realm of a Keycloak issuer URL (…/realms/<realm>).
 func keycloakRealm(issuer string) (base, realm string, ok bool) {
 	i := strings.Index(issuer, "/realms/")
@@ -43,8 +69,9 @@ func keycloakRealm(issuer string) (base, realm string, ok bool) {
 
 // Client prints what the agent's OAuth client must be, from the
 // gateway's settings; keycloak prints a script that creates it in the
-// gateway's Keycloak realm instead.
-func Client(a *admin.Admin, name string, keycloak bool) error {
+// gateway's Keycloak realm instead, its tokens valid for lifetime (0:
+// DefaultTokenLifetime).
+func Client(a *admin.Admin, name string, keycloak bool, lifetime time.Duration) error {
 	if err := host.CheckName(name); err != nil {
 		return err
 	}
@@ -53,15 +80,29 @@ func Client(a *admin.Admin, name string, keycloak bool) error {
 		return err
 	}
 	clientID := "agent-" + name
-	if cfg, err := config.Load(a.AgentDir(name)); err == nil && cfg.Gateway.OAuth != nil && cfg.Gateway.OAuth.ClientID != "" {
-		clientID = cfg.Gateway.OAuth.ClientID
+	var oauth *config.OAuth
+	if cfg, err := config.Load(a.AgentDir(name)); err == nil && cfg.Gateway.OAuth != nil {
+		oauth = cfg.Gateway.OAuth
+		if oauth.ClientID != "" {
+			clientID = oauth.ClientID
+		}
+	}
+	if lifetime != 0 {
+		if !keycloak {
+			return errors.New("--token-lifetime is for --keycloak: another provider sets the lifetime itself")
+		}
+		if err := tokenLifetime(oauth, lifetime); err != nil {
+			return err
+		}
+	} else {
+		lifetime = DefaultTokenLifetime
 	}
 	if keycloak {
 		base, realm, ok := keycloakRealm(h.Issuer)
 		if !ok {
 			return fmt.Errorf("the gateway's issuer %s is no Keycloak realm (…/realms/<realm>)", h.Issuer)
 		}
-		fmt.Fprint(a.Out, keycloakScript(base, realm, clientID, "agent-"+name, h))
+		fmt.Fprint(a.Out, keycloakScript(base, realm, clientID, "agent-"+name, h, lifetime))
 		return nil
 	}
 	issuers, untrusted := a.TrustedIssuers()
@@ -110,25 +151,29 @@ func localUserNote(claim string) string {
 // keycloakScript creates the agent's client in a Keycloak realm with
 // kcadm.sh (KCADM overrides the command; it must be logged in): a
 // confidential client with the service account only, the subject agent-<name>
-// by a hardcoded claim, the gateway's audience, its scopes, a 5-minute
-// token lifetime. The realm's default client scopes are left out, "basic"
+// by a hardcoded claim, the gateway's audience, its scopes, the token
+// lifetime given. The realm's default client scopes are left out, "basic"
 // with its own sub mapper among them, so that the hardcoded sub is the only
 // one.
-func keycloakScript(base, realm, clientID, sub string, h *gatewayconf.HTTP) string {
-	cj, _ := json.MarshalIndent(keycloakClient(clientID, sub, h), "", "  ")
+func keycloakScript(base, realm, clientID, sub string, h *gatewayconf.HTTP, lifetime time.Duration) string {
+	cj, _ := json.MarshalIndent(keycloakClient(clientID, sub, h, lifetime), "", "  ")
 	return keycloakScriptWith(base, realm, clientID, sub, string(cj), h)
 }
 
+// lifespanAttr is the client attribute of its access tokens' lifetime, in
+// seconds (the admin console's Advanced, Access Token Lifespan).
+const lifespanAttr = "access.token.lifespan"
+
 // keycloakClient is the agent's client as Keycloak's admin API takes it
 // (the script's kcadm.sh and --apply alike).
-func keycloakClient(clientID, sub string, h *gatewayconf.HTTP) map[string]any {
+func keycloakClient(clientID, sub string, h *gatewayconf.HTTP, lifetime time.Duration) map[string]any {
 	return map[string]any{
 		"clientId": clientID, "enabled": true, "protocol": "openid-connect",
 		"publicClient": false, "clientAuthenticatorType": "client-secret",
 		"serviceAccountsEnabled": true, "standardFlowEnabled": false, "directAccessGrantsEnabled": false,
 		"implicitFlowEnabled": false, "fullScopeAllowed": false,
 		"defaultClientScopes": []string{}, "optionalClientScopes": []string{},
-		"attributes": map[string]string{"access.token.lifespan": "300"},
+		"attributes": map[string]string{lifespanAttr: strconv.Itoa(int(lifetime / time.Second))},
 		"protocolMappers": []map[string]any{
 			{"name": "agent subject", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
 				"config": map[string]string{"claim.name": "sub", "claim.value": sub, "jsonType.label": "String",
