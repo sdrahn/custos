@@ -25,13 +25,14 @@ var idpCommands = []command{
 		fs.StringVar(&o.Admin, "admin", "", "")
 		fs.StringVar(&o.AdminRealm, "admin-realm", "master", "")
 		fs.StringVar(&o.URL, "keycloak-url", "", "")
+		fs.DurationVar(&o.TokenLifetime, "token-lifetime", 0, "")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
 		}
 		a.GatewayConfig = *gw
 		if !*apply {
-			return idp.Client(a, pos[0], *keycloak)
+			return idp.Client(a, pos[0], *keycloak, o.TokenLifetime)
 		}
 		if !*keycloak {
 			return errors.New("idp-client: --apply is for --keycloak")

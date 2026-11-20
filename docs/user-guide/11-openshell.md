@@ -475,6 +475,9 @@ password never goes over plain HTTP. Only the agent's own client
 `agent-NAME` is made or replaced. The password can
 also come on standard input, as its first line.
 
+Its tokens live 5 minutes, or `--token-lifetime` ([step 8](#oauth));
+made again, it keeps the replaced client's lifetime.
+
 The steps by hand, or for a Keycloak this host cannot reach: in the
 realm the gateway's `http.issuer` names (mcp-gateway user guide,
 chapter 15, sets one up for people), `agent-admin idp-client NAME
@@ -496,7 +499,7 @@ The script
 2. creates the client `agent-patch-pilot`: *Client authentication* and
    *Service accounts roles* on, *Standard flow*, *Direct access grants*
    and *Implicit flow* off, *Full scope allowed* off, *Access Token
-   Lifespan* 5 minutes;
+   Lifespan* 5 minutes (`--token-lifetime` for another);
 3. gives it two mappers: a *Hardcoded claim* `sub` = `agent-patch-pilot`
    (without it, Keycloak's `sub` is the service account's id) and an
    *Audience* with the gateway's `http.audience`;
@@ -710,6 +713,16 @@ issued, it is renewed every minute, and the agent's calls to the model
 and the gateway end in `EOF`. Agents drafted for OpenShell
 (`agent-admin create --template … --sandbox openshell`, Cockpit's form)
 get `refresh_before_seconds: 120`: a renewal every 3 minutes.
+
+Fewer renewals, fewer closed connections: a longer token lifetime.
+`agent-admin idp-client NAME --keycloak --apply --admin USER
+--token-lifetime 30m` makes the client with tokens of 30 minutes (at
+most `1h`, and at least a minute longer than `refresh_before_seconds`):
+with 120, a renewal every 28 minutes. A token stays valid that long
+after its client is disabled in Keycloak, too. Making the client again
+without `--token-lifetime` keeps the replaced client's lifetime, also
+one set in Keycloak's admin console (the client's **Advanced** tab,
+**Advanced settings**, **Access Token Lifespan**).
 `agent-admin check` notes an agent without it, and `check-token` (and
 `idp-client --keycloak --apply`) says when the token's lifetime does not
 suit it.
