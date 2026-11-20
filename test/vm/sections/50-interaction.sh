@@ -19,6 +19,18 @@ if [ -z "$agui_ok" ]; then
 	journalctl --since -60s --no-pager -o cat -u agent@t1.service 2>/dev/null | tail -n 20 | sed 's/^/    | t1: /'
 fi
 check "a client tool not allowed is journaled" eventually 10 journal_has t1 tool.denied.local '.AGENT_TOOL == "evil"'
+# One run per thread: a second request while the first still runs is
+# refused, and the thread takes the next one once the run has ended.
+slow=$(mktemp)
+api t1 /agui -N -X POST -d '{"threadId":"custos-test-busy","messages":[{"role":"user","content":"SLOW"}]}' >"$slow" &
+slow_pid=$!
+sleep 2
+check "a second run on a busy thread is refused (409)" code_is 409 api t1 /agui -X POST -d '{"threadId":"custos-test-busy","messages":[{"role":"user","content":"again"}]}'
+check "another thread runs meanwhile" bash -c "$(declare -f api); api t1 /agui -N -X POST -d '{\"threadId\":\"custos-test-other\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}' | grep -q RUN_FINISHED"
+wait "$slow_pid"
+check "the slow run finished" grep -q RUN_FINISHED "$slow"
+check "then the thread takes the next run" bash -c "$(declare -f api); api t1 /agui -N -X POST -d '{\"threadId\":\"custos-test-busy\",\"messages\":[{\"role\":\"user\",\"content\":\"after\"}]}' | grep -q RUN_FINISHED"
+rm -f "$slow"
 
 section "Access to the socket"
 id custos-tester >/dev/null 2>&1 || useradd -m custos-tester

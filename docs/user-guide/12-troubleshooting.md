@@ -105,6 +105,17 @@ journalctl -u mcp-gateway.service --since -30min                 # the gateway: 
   the session predates the group membership. Log in again.
 - **The agent answers `409` to a new activity**: it is paused
   (`agent-admin show NAME`); `agent-admin resume NAME`.
+- **The chat says "The agent is still working on your previous
+  message"** (`409` from `/agui`): the thread's run has not ended, as
+  when its stream broke off. Wait for it in **Activity**, or reload the
+  page for a new thread.
+- **The agent answers as if it had not read the question**, in a chat
+  that went on for a while: before 0.9.7, two runs on one thread could
+  mix the conversation's history (a tool result after another call),
+  and some chat templates then read only part of it (GPT OSS's in LM
+  Studio reports the same small prompt for every call, in
+  `AGENT_TOKENS_IN`). Reload the page for a new thread; 0.9.7 keeps one
+  run per thread and puts each tool result after its call.
 
 ## The agent cannot reach the gateway {#gateway}
 

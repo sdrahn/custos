@@ -272,20 +272,46 @@ func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, []o
 			}
 		}
 	}
+	// Each tool result goes right after the call it answers, wherever
+	// the history has it. A history can be out of order: a run that was
+	// cut off left a call without a result, and two runs on one thread
+	// (before a thread allowed one run at a time) left results after
+	// another run's calls. The API refuses such a history, and the chat
+	// templates of local servers misplace it: GPT OSS's in LM Studio
+	// then reads only a part of the conversation.
+	results := map[string]*genai.FunctionResponse{}
+	for _, c := range req.Contents {
+		for _, p := range c.Parts {
+			if r := p.FunctionResponse; r != nil && r.ID != "" && results[r.ID] == nil {
+				results[r.ID] = r
+			}
+		}
+	}
+	answered := map[string]bool{}
 	for _, c := range req.Contents {
 		var calls []oai.ChatCompletionMessageToolCallUnionParam
+		var ids []string
 		var texts []string
 		for _, p := range c.Parts {
 			switch {
 			case p.FunctionCall != nil:
-				a, _ := json.Marshal(p.FunctionCall.Args)
+				// No arguments are {}, not null: templates read them as
+				// an object.
+				a := []byte("{}")
+				if len(p.FunctionCall.Args) > 0 {
+					a, _ = json.Marshal(p.FunctionCall.Args)
+				}
 				calls = append(calls, oai.ChatCompletionMessageToolCallUnionParam{OfFunction: &oai.ChatCompletionMessageFunctionToolCallParam{
 					ID:       p.FunctionCall.ID,
 					Function: oai.ChatCompletionMessageFunctionToolCallFunctionParam{Name: p.FunctionCall.Name, Arguments: string(a)},
 				}})
+				ids = append(ids, p.FunctionCall.ID)
 			case p.FunctionResponse != nil:
-				r, _ := json.Marshal(p.FunctionResponse.Response)
-				out.Messages = append(out.Messages, oai.ToolMessage(string(r), p.FunctionResponse.ID))
+				// Without an ID it cannot be matched: kept where it is.
+				if p.FunctionResponse.ID == "" {
+					r, _ := json.Marshal(p.FunctionResponse.Response)
+					out.Messages = append(out.Messages, oai.ToolMessage(string(r), ""))
+				}
 			case p.Text != "" && !p.Thought:
 				texts = append(texts, p.Text)
 			}
@@ -305,9 +331,23 @@ func (m *Model) request(req *model.LLMRequest) (oai.ChatCompletionNewParams, []o
 		msg := oai.ChatCompletionAssistantMessageParam{ToolCalls: calls}
 		msg.Content.OfString = param.NewOpt(t)
 		out.Messages = append(out.Messages, oai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
+		for _, id := range ids {
+			r := results[id]
+			if r == nil || answered[id] {
+				out.Messages = append(out.Messages, oai.ToolMessage(NoResult, id))
+				continue
+			}
+			answered[id] = true
+			b, _ := json.Marshal(r.Response)
+			out.Messages = append(out.Messages, oai.ToolMessage(string(b), id))
+		}
 	}
 	return out, schemas, nil
 }
+
+// NoResult answers, in the history sent to the model, a call whose run
+// ended before its tool did.
+const NoResult = `{"error":"no result: the run ended before this tool answered"}`
 
 func text(c *genai.Content) string {
 	var b []string

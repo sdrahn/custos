@@ -388,3 +388,75 @@ func TestSchemaOrder(t *testing.T) {
 		t.Errorf("%+v", f)
 	}
 }
+
+// A history out of order, as two runs on one thread or a run cut off
+// left it: each tool result goes right after its call, a call without a
+// result gets NoResult, a result without a call is left out, and a call
+// without arguments has {}.
+func TestHistoryOrder(t *testing.T) {
+	call := func(id, name string, args map[string]any) *genai.Content {
+		return &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{FunctionCall: &genai.FunctionCall{ID: id, Name: name, Args: args}}}}
+	}
+	result := func(id, name, out string) *genai.Content {
+		return &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{{FunctionResponse: &genai.FunctionResponse{ID: id, Name: name, Response: map[string]any{"output": out}}}}}
+	}
+	req := &model.LLMRequest{Contents: []*genai.Content{
+		genai.NewContentFromText("What is your status?", genai.RoleUser),
+		genai.NewContentFromText("What is your status?", genai.RoleUser),
+		genai.NewContentFromText("Idle.", genai.RoleModel),
+		genai.NewContentFromText("Give me disk usage information.", genai.RoleUser),
+		call("a", "exec__disk_usage", nil),           // its result never came
+		result("b", "exec__list_snapshots", "snaps"), // before its call
+		genai.NewContentFromText("Here is the report.", genai.RoleModel),
+		call("b", "exec__list_snapshots", map[string]any{"limit": 10}),
+		result("c", "exec__get_status", "orphan"), // no call at all
+		genai.NewContentFromText("What is the current disk usage?", genai.RoleUser),
+	}}
+	params, _, err := (&Model{Name: "m"}).request(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Messages []struct {
+			Role      string `json:"role"`
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				ID       string `json:"id"`
+				Function struct {
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+			ToolCallID string `json:"tool_call_id"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	var seq []string
+	for _, m := range got.Messages {
+		s := m.Role
+		for _, c := range m.ToolCalls {
+			s += " call " + c.ID + " " + c.Function.Arguments
+		}
+		if m.Role == "tool" {
+			s += " " + m.ToolCallID + " " + m.Content
+		}
+		seq = append(seq, s)
+	}
+	want := []string{
+		"user", "user", "assistant", "user",
+		"assistant call a {}",
+		"tool a " + NoResult,
+		"assistant",
+		`assistant call b {"limit":10}`,
+		`tool b {"output":"snaps"}`,
+		"user",
+	}
+	if strings.Join(seq, "\n") != strings.Join(want, "\n") {
+		t.Errorf("messages:\n%s\nwant:\n%s", strings.Join(seq, "\n"), strings.Join(want, "\n"))
+	}
+}
