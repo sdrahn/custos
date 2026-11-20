@@ -147,6 +147,9 @@ th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var
 th { color: var(--muted); font-weight: 600; font-size: 0.9em; }
 tr.current td { background: var(--selected); }
 section.card + section.card, #agent-detail > .card { margin-top: 1rem; }
+/* Side by side (.split: the activities and the one shown), not stacked:
+ * both start at the same height. */
+.split > section.card + section.card { margin-top: 0; }
 section.card > h2 + p.muted { margin-top: 0.25rem; }
 .head-line { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }

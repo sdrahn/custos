@@ -59,6 +59,10 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(order.indexOf("activity-patch-pilot-e-7c21beef") === order.indexOf("activity-triage-e-5a10f00d") + 1 &&
           await page.$eval("#activity-patch-pilot-e-7c21beef", e => e.classList.contains("child")),
           "the delegated activity is under the one that delegated it");
+    // The activities and the one shown side by side start at the same height.
+    const tops = await page.evaluate(() => [document.querySelector("#tab-activity .split > .list").getBoundingClientRect().top,
+                                            document.querySelector("#activity-detail").getBoundingClientRect().top]);
+    check(Math.abs(tops[0] - tops[1]) < 1, "the activity's details are level with the list of activities (" + tops.join(", ") + ")");
     const detail = await page.textContent("#activity-detail");
     check(detail.includes("schedule · morning-check") && detail.includes("triage e-5a10") && detail.includes("patch-pilot e-7c21"),
           "the chain back to the schedule");
