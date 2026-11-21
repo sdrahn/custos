@@ -213,15 +213,21 @@ const gwAudit = jq => `journalctl -u mcp-gateway.service -o cat --no-pager --sin
     });
 
     await step("chat", async () => {
-        await go("/agents/patch-pilot");
-        const chat = frame().locator("#chat-patch-pilot");
+        // From the list, in the popup over it (#/agents/<name>/chat).
+        await go("/agents");
+        await frame().locator("#agent-row-patch-pilot button:has-text('Chat')").click({ timeout: 60000 });
+        const chat = frame().locator("#chat-popup");
+        await chat.locator(".chat-input").waitFor({ timeout: 30000 });
+        check(await frame().locator("#agents").isVisible(), "the chat opens in a popup over the list of agents");
         await chat.locator(".chat-input").fill("PROBE the host, please.");
         await chat.locator("button:has-text('Send')").click();
         await chat.locator(".msg-agent", { hasText: "probe ok" }).waitFor({ timeout: 60000 });
         check(true, "chat over AG-UI through Cockpit: the agent's answer arrives");
         check(await vmEventually(20, `journalctl -o json --no-pager --since @${t0} AGENT_NAME=patch-pilot AGENT_EVENT=invocation.start | jq -e 'select(.AGENT_ORIGIN == "chat" and .AGENT_USER == "${user}")' >/dev/null`),
               "the chat ran as an activity of " + user + " (origin chat)");
-        if (shots) await chat.screenshot({ path: path.join(shots, "chat.png") });
+        await shot("chat");
+        await chat.locator(".chat-input").press("Escape");
+        await chat.waitFor({ state: "hidden", timeout: 30000 });
     });
 
     await step("the Policy tab", async () => {

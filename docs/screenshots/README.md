@@ -13,10 +13,10 @@ are the test's.
 |---|---|
 | `activity.png` | the Activity tab: triage's scheduled activity delegated to patch-pilot, whose change waits for an approval, with its chain |
 | `approvals.png` | the approval item: the call from mcp-gateway beside the agent's self-asserted account; a decision of today |
-| `agents.png` | the Agents tab: the agents and patch-pilot's state and autonomy mode |
+| `agents.png` | the Agents tab: the agents, each with its Chat button, and patch-pilot's state, autonomy mode and the contents of its view |
 | `policy.png` | the Policy tab: every agent's posture and what the gateway would decide |
 | `audit.png` | the Audit tab: proposed → approved by carol via cockpit → executed, and a decline |
-| `chat.png` | chat with patch-pilot over AG-UI |
+| `chat.png` | chat with patch-pilot over AG-UI, in the popup over the list of agents |
 | `stopped.png` | after *Stop all agents*: the banner with who stopped them |
 
 To take them again: run the job and decode them from its log (the job
