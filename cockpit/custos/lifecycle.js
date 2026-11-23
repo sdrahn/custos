@@ -480,7 +480,7 @@ function configEditor(a) {
             // without a sandbox yet, or one that needs its credential again).
             say(out ? "Saved. " + out.replace(/^agent-admin: /gm, "") : "Saved and applied.", out ? "note-text" : "ok-text");
             showError(null);
-            tabs.agents.refresh();
+            refreshAfterAction();
         } catch (ex) {
             say(ex.message, "error-text", serverFix(ex.message, text, () => check.click()));
         }

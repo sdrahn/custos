@@ -70,7 +70,14 @@ async function act(button, what, fn) {
         if (note) note.textContent = "";
         showError(what + " failed: " + ((ex && ex.message) || ex));
     }
-    tabs.agents.refresh();
+    refreshAfterAction();
+}
+
+/* refreshAfterAction: what an action changed is read anew, and the agent
+ * view drawn with it at once, whatever the refresh's key says. */
+function refreshAfterAction() {
+    lateCache.clear();
+    return tabs.agents.refresh(true);
 }
 
 /* relativeSpan says a number of seconds as minutes or hours. */
@@ -131,7 +138,43 @@ function stateBadgeText(text, st) {
     return el("span", { class: "badge " + (STATE_CLASS[st] || "") }, text);
 }
 
-async function renderAgentDetail() {
+/* The agent view as last drawn: which agent, from what (viewKey), when.
+ * The tab's refresh draws it again only when that changed, or a minute
+ * on (the relative times), and never while something in it is being
+ * edited (editingAgentView): rebuilding it moves the page and takes an
+ * open editor from under the person. */
+const drawn = { name: null, key: null, at: 0 };
+const REDRAW_MS = 60000;
+
+/* viewKey is what the agent view shows of the page's state: the agent
+ * (without its calls in flight, which the view does not show and which
+ * change with every call), its gateway data, the host's control state,
+ * its credentials and its timers. */
+function viewKey(a, data, timers) {
+    const status = a.status ? Object.assign({}, a.status, { in_flight: undefined }) : null;
+    return JSON.stringify([Object.assign({}, a, { status }), data, state.posture && state.posture.control,
+                           state.credentials && state.credentials[a.name], timers]);
+}
+
+/* editingAgentView: something in the agent view is open or being typed
+ * in, focused or not: an editor or form opened, a field changed, a
+ * confirmation shown. The refresh leaves the view alone meanwhile. */
+function editingAgentView(box, name) {
+    const f = document.activeElement;
+    if (f && box.contains(f) && (f.matches("input, textarea, select") || f.closest(".chat"))) return true;
+    if (box.querySelector("details.permissions-edit[open], #promote-form[open], details.playbooks-unavailable[open], " +
+                          ".config-edit:not([hidden]), .confirm-delete:not([hidden]), .confirm.credentials-edit")) return true;
+    if ([...box.querySelectorAll("input[type=password], .playbook-run input, .chat-input")].some(i => i.value)) return true;
+    for (const [key, k] of keptEditors) if (key.endsWith(":" + name) && k.dirty) return true;
+    const p = promoteForms.get(name);
+    return !!(p && (p.dirty || (p.reason && p.reason.value.trim())));
+}
+
+/* renderAgentDetail draws the selected agent's view. An action that
+ * changed something draws it at once (no options); the tab's refresh
+ * passes background, and then it is drawn only as drawn above says;
+ * changed (a section's late data that differs) skips the key. */
+async function renderAgentDetail(opts = {}) {
     const box = document.getElementById("agent-detail");
     const name = selectedAgent();
     // The note about an agent just created, while it is shown.
@@ -153,6 +196,13 @@ async function renderAgentDetail() {
         renderChatPopup(a, data, text, st);
         return;
     }
+    const timers = await timersOf(a);
+    const key = viewKey(a, data, timers);
+    if (opts.background) {
+        if (editingAgentView(box, a.name)) return;
+        if (!opts.changed && drawn.name === a.name && drawn.key === key && Date.now() - drawn.at < REDRAW_MS) return;
+    }
+    Object.assign(drawn, { name: a.name, key, at: Date.now() });
 
     const pause = el("button", { class: "secondary" }, paused ? "Resume" : "Pause");
     pause.addEventListener("click", () => act(pause, (paused ? "Resuming " : "Pausing ") + a.name,
@@ -245,7 +295,6 @@ async function renderAgentDetail() {
     }
 
     const scheds = (a.status && a.status.schedules) || [];
-    const timers = await timersOf(a);
     const schedules = el("section", { class: "card" }, el("h2", null, "Schedules"),
         el("p", { class: "muted" }, "systemd timers agent-schedule@" + a.name + "_*.timer. Their runs show up under Activity with origin schedule."));
     if (scheds.length === 0) schedules.append(el("p", { class: "muted" }, a.status ? "No schedules." : "Unknown while the agent is not reachable."));
@@ -366,7 +415,8 @@ tabs.agents = {
             if (ev.key === "Escape" && chatView()) cockpit.location.go(["agents"]);
         });
     },
-    async refresh() {
+    // now: after an action, draw the agent view whatever the key says.
+    async refresh(now) {
         await refreshState();
         // The page's place, before anything is rebuilt: a layout read while
         // the list or the view is rebuilt (renderAgentDetail's) can see the
@@ -377,11 +427,9 @@ tabs.agents = {
         renderAgentList();
         const fe = document.activeElement;
         if (!(fe && fe.closest(".enablement-edit"))) renderEnablement();
-        // Not while someone edits the permissions or types a message.
-        const f = document.activeElement;
-        const editing = f && (f.id === "permissions-yaml" || f.id === "owners-input" || f.closest(".chat") || f.closest(".confirm-delete") || f.closest(".config-edit") ||
-            f.closest(".credentials-edit") || f.closest(".playbook-run") || f.closest("#agent-template"));
-        if (!editing) await renderAgentDetail();
+        // Only when what it shows changed, and not while something in it
+        // is edited (renderAgentDetail, editingAgentView).
+        await renderAgentDetail(now ? {} : { background: true });
         if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
     },
 };
@@ -489,8 +537,7 @@ function categoriesSection(a, data) {
     // The after-the-fact review of promoted categories' autonomous actions
     // (agent-admin review, through the root bridge).
     if (names.some(n => states[n] && states[n].promoted_by)) {
-        admin(["review", a.name]).then(out => {
-            const q = JSON.parse(out);
+        lateData("review:" + a.name, () => admin(["review", a.name]).then(out => JSON.parse(out)), q => {
             const items = [];
             for (const [cat, cq] of Object.entries(q.categories || {}).sort()) {
                 for (const x of cq.pending || []) {
@@ -521,12 +568,11 @@ function categoriesSection(a, data) {
                    "and demotes the category at once; it needs a reason. The agent's approvers can review them on the Approvals tab too " +
                    "(mcp-gateway's review items). " + counts.join("; ")),
                 ...(items.length ? items : [el("p", { class: "muted" }, "Nothing to review.")]));
-        }).catch(ex => reviews.replaceChildren(el("p", { class: "muted" }, "Review: " + ex.message)));
+        }, ex => reviews.replaceChildren(el("p", { class: "muted" }, "Review: " + ex.message)));
     }
     // Readiness, as the person with administrative access (it reads the
     // agent's and the gateway's journal).
-    admin(["readiness", a.name]).then(out => {
-        const r = JSON.parse(out);
+    lateData("readiness:" + a.name, () => admin(["readiness", a.name]).then(out => JSON.parse(out)), r => {
         for (const n of names) {
             const m = r.categories && r.categories[n];
             if (!m) continue;
@@ -540,11 +586,44 @@ function categoriesSection(a, data) {
         k.readiness = r.categories || {};
         k.showReady();
         diagnosticsEvidence(box, r);
-    }).catch(ex => {
+    }, ex => {
         for (const n of names) cells[n].ready.textContent = "unknown";
         box.append(el("p", { id: "readiness-note", class: "muted" }, "Readiness: " + ex.message));
     });
     return box;
+}
+
+/* lateData shows data a section reads after it is drawn (readiness and
+ * review, slow commands through the root bridge): the last result at
+ * once, so that a redraw does not shrink the section and then grow it
+ * again under the person's eyes, and a new one read at most every
+ * LATE_MS. A new result that differs draws the view again (as the
+ * refresh does: not while something in it is edited). */
+const lateCache = new Map(); // key -> { value | error, at, reading }
+const LATE_MS = 30000;
+
+function lateData(key, read, show, fail) {
+    const c = lateCache.get(key);
+    if (c && "value" in c) show(c.value);
+    else if (c && c.error) fail(c.error);
+    if (c && (c.reading || Date.now() - c.at < LATE_MS)) return;
+    const entry = Object.assign(c || {}, { reading: true });
+    lateCache.set(key, entry);
+    // The section that asked shows the result if it is still drawn; a
+    // result that differs draws the view again, for a section drawn since
+    // (as while the first read ran), which takes it from the cache.
+    read().then(v => {
+        const changed = !("value" in entry) || JSON.stringify(v) !== JSON.stringify(entry.value);
+        Object.assign(entry, { value: v, error: null, at: Date.now(), reading: false });
+        show(v);
+        if (changed) renderAgentDetail({ background: true, changed: true });
+    }, ex => {
+        const changed = "value" in entry || !entry.error;
+        Object.assign(entry, { error: ex, at: Date.now(), reading: false });
+        delete entry.value;
+        fail(ex);
+        if (changed) renderAgentDetail({ background: true, changed: true });
+    });
 }
 
 /* ownersEditor: who may approve the agent's calls besides the servers'
@@ -766,7 +845,7 @@ function disablementForm(enabled) {
             go.disabled = false;
             return;
         }
-        tabs.agents.refresh();
+        refreshAfterAction();
     });
     return form;
 }
@@ -805,7 +884,7 @@ function enablementForm(disabled) {
             go.disabled = false;
             return;
         }
-        tabs.agents.refresh();
+        refreshAfterAction();
     });
     return form;
 }
