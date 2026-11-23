@@ -728,14 +728,30 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(await page.isVisible("#create-backend-row") &&
           !(await page.$eval("#create-backend option[value=openshell-systemd]", o => o.disabled)),
           "a template that allows OpenShell offers its sandboxes");
+    // The template's name (service-doctor, 14 characters) is too long for
+    // an OpenShell sandbox: the draft fails, the form says so, and Create
+    // does not take the configuration still there (for systemd). A
+    // shorter name drafts it again.
     await page.selectOption("#create-backend", "openshell-systemd");
-    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("could not be drafted"));
+    check((await page.textContent("#create-note")).includes("at most 13") &&
+          (await page.textContent("#create-note")).includes("Change the name or where it runs"),
+          "a name too long for an OpenShell sandbox: the draft fails, and the form says why and what to do");
     check((await spawned("agent-admin draft service-doctor --template service-doctor --sandbox openshell --openshell-driver systemd")).length === 1,
           "the draft for OpenShell is agent-admin draft --sandbox openshell --openshell-driver systemd's");
+    const createsBefore = (await calls()).filter(c => c[0] === "spawn" && String(c[1]).startsWith("agent-admin create")).length;
+    await page.click("#create-agent button[name=create]");
+    await page.waitForTimeout(300);
+    check((await calls()).filter(c => c[0] === "spawn" && String(c[1]).startsWith("agent-admin create")).length === createsBefore &&
+          (await page.textContent("#create-note")).includes("not drafted for what is chosen"),
+          "Create does not take a configuration that was not drafted for what is chosen");
+    await page.fill("#create-name", "svc-doc");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    check(!(await page.textContent("#create-note")).includes("could not be drafted"), "a shorter name drafts the configuration for OpenShell again");
     check((await page.textContent("#create-template")).includes("In an OpenShell sandbox, also"), "what OpenShell needs is shown");
-    // The OAuth client drafted under the template's name follows the
-    // agent's name (idp-client --apply makes agent-NAME only).
-    check((await page.inputValue("#create-agent textarea")).includes("client_id: agent-service-doctor,"), "the draft's OAuth client is the agent's");
+    // The OAuth client is named after the agent (idp-client --apply
+    // makes agent-NAME only).
+    check((await page.inputValue("#create-agent textarea")).includes("client_id: agent-svc-doc,"), "the draft's OAuth client is the agent's");
     await page.fill("#create-name", "doc-osh");
     const renamed = await page.inputValue("#create-agent textarea");
     check(renamed.includes("client_id: agent-doc-osh,") && renamed.includes("idp-client doc-osh says") &&
@@ -764,6 +780,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
         await race.waitForSelector("#agents tbody tr");
         await race.click("#create-open");
         await race.waitForSelector("#create-from-row:not([hidden])");
+        await race.fill("#create-name", "svc-race"); // short enough for an OpenShell sandbox
         await race.selectOption("#create-from", "service-doctor");
         await race.selectOption("#create-backend", "openshell-systemd");
         await race.waitForTimeout(2500); // the template's slow draft has answered too

@@ -162,6 +162,13 @@ async function draft(tmpl, n) {
  * and the template's own draft (for systemd) may answer second. */
 let drafting = 0;
 
+/* draftFailed is why the configuration in the form is not the one asked
+ * for (the template and where it runs), "" when it is: a draft that
+ * failed leaves the earlier one there, which Create must not take for
+ * it. A name too long for an OpenShell sandbox fails so; changing the
+ * name drafts again (initCreate). */
+let draftFailed = "";
+
 async function useTemplate(name, yaml, nameInput) {
     showBackends(name);
     describeTemplate(name);
@@ -171,10 +178,14 @@ async function useTemplate(name, yaml, nameInput) {
         const d = await draft(name, nameInput.value.trim());
         if (mine !== drafting) return;
         yaml.value = withName(d, nameInput.value.trim());
+        draftFailed = "";
         setCreateNote("");
     } catch (ex) {
         if (mine !== drafting) return;
-        setCreateNote("Reading the template: " + ((ex && ex.message) || ex.problem || String(ex)), "error-text");
+        const runs = document.getElementById("create-backend");
+        draftFailed = ((ex && ex.message) || ex.problem || String(ex)).replace(/^agent-admin: /, "").trim();
+        setCreateNote("The configuration " + (runs.value === "systemd" ? "" : "for running " + runs.selectedOptions[0].textContent + " ") +
+            "could not be drafted: " + draftFailed + ". Change the name or where it runs; Create waits until it is drafted.", "error-text");
     }
 }
 
@@ -297,7 +308,17 @@ function initCreate() {
     });
     form.elements.from.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
     form.elements.backend.addEventListener("change", () => useTemplate(form.elements.from.value, yaml, name));
-    name.addEventListener("input", () => { yaml.value = withName(yaml.value, name.value.trim()) });
+    // A new name renames the configuration; after a draft that failed
+    // (a name too long for an OpenShell sandbox), it drafts it again.
+    let redraft = null;
+    // The configuration edited by hand is the person's: Create takes it.
+    yaml.addEventListener("input", () => { draftFailed = "" });
+    name.addEventListener("input", () => {
+        yaml.value = withName(yaml.value, name.value.trim());
+        if (!draftFailed) return;
+        clearTimeout(redraft);
+        redraft = setTimeout(() => useTemplate(form.elements.from.value, yaml, name), 400);
+    });
     form.elements.cancel.addEventListener("click", () => { form.hidden = true; setCreateNote("") });
     form.elements.check.addEventListener("click", async () => {
         setCreateNote("Checking…");
@@ -309,6 +330,10 @@ function initCreate() {
     });
     form.addEventListener("submit", async ev => {
         ev.preventDefault();
+        if (draftFailed) {
+            setCreateNote("The configuration was not drafted for what is chosen: " + draftFailed + ". Change the name or where it runs.", "error-text");
+            return;
+        }
         const n = name.value.trim();
         if (!NAME_RE.test(n)) {
             setCreateNote("The name is 2 to 32 lower-case letters, digits and dashes, starting with a letter.", "error-text");
