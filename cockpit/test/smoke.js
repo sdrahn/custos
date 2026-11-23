@@ -519,6 +519,44 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForTimeout(6500);
     const l1 = await page.$eval("#chat-patch-pilot .chat-log", l => l.scrollTop);
     check(l0[0] > 100 && Math.abs(l1 - l0[0]) < 5, "the chat's messages keep their scroll position across a refresh (" + l0[0] + " → " + l1 + ")");
+    // The agent view is drawn again only when what it shows changed, and
+    // not while something in it is open: a refresh that rebuilt it every
+    // 5 s, with the readiness read again (slowly) each time, moved what
+    // was below the categories and took editors from under the person.
+    await page.setViewportSize({ width: 1400, height: 960 });
+    await page.goto(url + "?agents&slow#/agents/disk-watch");
+    await page.reload(); // anew, also when only the hash differs
+    await page.waitForFunction(() => document.querySelector("#category-patch-errata") &&
+        !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…"));
+    await page.evaluate(() => {
+        window.__bounds = document.querySelector("#boundaries").closest("section");
+        document.querySelector("#credentials").scrollIntoView();
+        window.__tops = [];
+        const t = setInterval(() => window.__tops.push(Math.round(document.querySelector("#credentials").getBoundingClientRect().top)), 100);
+        setTimeout(() => clearInterval(t), 6400);
+    });
+    await page.waitForTimeout(6500); // one refresh and its slow loads
+    const view = await page.evaluate(() => [window.__bounds.isConnected, Math.min(...window.__tops), Math.max(...window.__tops)]);
+    check(view[0], "a refresh that changed nothing leaves the agent view as it is");
+    check(view[2] - view[1] < 2, "what is below the categories does not move during a refresh (" + view[1] + "–" + view[2] + " px)");
+    // Drawn again (as after an action): the readiness is there at once,
+    // the last result, not "…" while it is read anew.
+    check(await page.evaluate(async () => {
+        await renderAgentDetail();
+        return !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…");
+    }), "a redraw shows the last readiness at once");
+    // An editor opened and left (not focused) stays open across a refresh,
+    // and so does the page's place.
+    await page.click("#agent-detail details.permissions-edit summary");
+    await page.evaluate(() => {
+        window.__editor = document.querySelector("details.permissions-edit");
+        document.activeElement && document.activeElement.blur();
+        window.scrollTo(0, 600);
+    });
+    const ey0 = await page.evaluate(() => window.scrollY);
+    await page.waitForTimeout(6500);
+    const ed = await page.evaluate(() => [window.__editor.isConnected && window.__editor.open, window.scrollY]);
+    check(ed[0] && ed[1] === ey0, "an open permissions editor stays open across a refresh, the page where it was (" + ey0 + " → " + ed[1] + ")");
 
     // Chat: the person's own thread over AG-UI, as the person.
     await page.goto(url + "?chat#/agents/patch-pilot");
@@ -728,14 +766,30 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(await page.isVisible("#create-backend-row") &&
           !(await page.$eval("#create-backend option[value=openshell-systemd]", o => o.disabled)),
           "a template that allows OpenShell offers its sandboxes");
+    // The template's name (service-doctor, 14 characters) is too long for
+    // an OpenShell sandbox: the draft fails, the form says so, and Create
+    // does not take the configuration still there (for systemd). A
+    // shorter name drafts it again.
     await page.selectOption("#create-backend", "openshell-systemd");
-    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("could not be drafted"));
+    check((await page.textContent("#create-note")).includes("at most 13") &&
+          (await page.textContent("#create-note")).includes("Change the name or where it runs"),
+          "a name too long for an OpenShell sandbox: the draft fails, and the form says why and what to do");
     check((await spawned("agent-admin draft service-doctor --template service-doctor --sandbox openshell --openshell-driver systemd")).length === 1,
           "the draft for OpenShell is agent-admin draft --sandbox openshell --openshell-driver systemd's");
+    const createsBefore = (await calls()).filter(c => c[0] === "spawn" && String(c[1]).startsWith("agent-admin create")).length;
+    await page.click("#create-agent button[name=create]");
+    await page.waitForTimeout(300);
+    check((await calls()).filter(c => c[0] === "spawn" && String(c[1]).startsWith("agent-admin create")).length === createsBefore &&
+          (await page.textContent("#create-note")).includes("not drafted for what is chosen"),
+          "Create does not take a configuration that was not drafted for what is chosen");
+    await page.fill("#create-name", "svc-doc");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    check(!(await page.textContent("#create-note")).includes("could not be drafted"), "a shorter name drafts the configuration for OpenShell again");
     check((await page.textContent("#create-template")).includes("In an OpenShell sandbox, also"), "what OpenShell needs is shown");
-    // The OAuth client drafted under the template's name follows the
-    // agent's name (idp-client --apply makes agent-NAME only).
-    check((await page.inputValue("#create-agent textarea")).includes("client_id: agent-service-doctor,"), "the draft's OAuth client is the agent's");
+    // The OAuth client is named after the agent (idp-client --apply
+    // makes agent-NAME only).
+    check((await page.inputValue("#create-agent textarea")).includes("client_id: agent-svc-doc,"), "the draft's OAuth client is the agent's");
     await page.fill("#create-name", "doc-osh");
     const renamed = await page.inputValue("#create-agent textarea");
     check(renamed.includes("client_id: agent-doc-osh,") && renamed.includes("idp-client doc-osh says") &&
@@ -764,6 +818,7 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
         await race.waitForSelector("#agents tbody tr");
         await race.click("#create-open");
         await race.waitForSelector("#create-from-row:not([hidden])");
+        await race.fill("#create-name", "svc-race"); // short enough for an OpenShell sandbox
         await race.selectOption("#create-from", "service-doctor");
         await race.selectOption("#create-backend", "openshell-systemd");
         await race.waitForTimeout(2500); // the template's slow draft has answered too
