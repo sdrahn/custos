@@ -11,6 +11,38 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.10 — 2026-11-23
+
+Two fixes to Cockpit's pages. An agent's view no longer moves or
+closes things under you every few seconds: it is redrawn only when what
+it shows changed, and not while you edit in it. And the form for a new
+agent no longer creates it from a configuration drafted for something
+else, as when the name was too long for an OpenShell sandbox.
+
+Upgrading from 0.9.9 needs no change to configuration or gateway data.
+An agent created with "in an OpenShell sandbox" but without its sandbox
+(its configuration has no sandbox block) is a systemd agent: make it
+again with a name of at most 13 characters.
+
+### Fixed
+
+- An agent's view in Cockpit no longer moves or closes things under you
+  every 5 seconds. The refresh redraws it only when what it shows has
+  changed (or a minute on, for the relative times), and not while an
+  editor, form or confirmation in it is open, focused or not. The task
+  categories' readiness and review show their last result at once and
+  are read again at most every 30 seconds. Before, the whole view was
+  rebuilt at every refresh, and the readiness read anew each time
+  shrank and grew the section while you scrolled or edited.
+- Cockpit's form for a new agent no longer creates it from a
+  configuration drafted for something else. When the draft for the
+  chosen sandbox fails, Create waits, and the form says why and what to
+  do, as for a name too long for an OpenShell sandbox (at most 13
+  characters; a template's own name can be longer). A new name drafts
+  it again. Before, the form kept the earlier configuration, for a
+  systemd service, and a shorter name only renamed it, so the agent
+  could be created without its sandbox.
+
 ## v0.9.9 — 2026-11-20
 
 Changes to Cockpit's pages. An agent's chat opens in a window
