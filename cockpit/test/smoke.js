@@ -519,6 +519,44 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForTimeout(6500);
     const l1 = await page.$eval("#chat-patch-pilot .chat-log", l => l.scrollTop);
     check(l0[0] > 100 && Math.abs(l1 - l0[0]) < 5, "the chat's messages keep their scroll position across a refresh (" + l0[0] + " → " + l1 + ")");
+    // The agent view is drawn again only when what it shows changed, and
+    // not while something in it is open: a refresh that rebuilt it every
+    // 5 s, with the readiness read again (slowly) each time, moved what
+    // was below the categories and took editors from under the person.
+    await page.setViewportSize({ width: 1400, height: 960 });
+    await page.goto(url + "?agents&slow#/agents/disk-watch");
+    await page.reload(); // anew, also when only the hash differs
+    await page.waitForFunction(() => document.querySelector("#category-patch-errata") &&
+        !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…"));
+    await page.evaluate(() => {
+        window.__bounds = document.querySelector("#boundaries").closest("section");
+        document.querySelector("#credentials").scrollIntoView();
+        window.__tops = [];
+        const t = setInterval(() => window.__tops.push(Math.round(document.querySelector("#credentials").getBoundingClientRect().top)), 100);
+        setTimeout(() => clearInterval(t), 6400);
+    });
+    await page.waitForTimeout(6500); // one refresh and its slow loads
+    const view = await page.evaluate(() => [window.__bounds.isConnected, Math.min(...window.__tops), Math.max(...window.__tops)]);
+    check(view[0], "a refresh that changed nothing leaves the agent view as it is");
+    check(view[2] - view[1] < 2, "what is below the categories does not move during a refresh (" + view[1] + "–" + view[2] + " px)");
+    // Drawn again (as after an action): the readiness is there at once,
+    // the last result, not "…" while it is read anew.
+    check(await page.evaluate(async () => {
+        await renderAgentDetail();
+        return !document.querySelector("#category-patch-errata").cells[3].textContent.startsWith("…");
+    }), "a redraw shows the last readiness at once");
+    // An editor opened and left (not focused) stays open across a refresh,
+    // and so does the page's place.
+    await page.click("#agent-detail details.permissions-edit summary");
+    await page.evaluate(() => {
+        window.__editor = document.querySelector("details.permissions-edit");
+        document.activeElement && document.activeElement.blur();
+        window.scrollTo(0, 600);
+    });
+    const ey0 = await page.evaluate(() => window.scrollY);
+    await page.waitForTimeout(6500);
+    const ed = await page.evaluate(() => [window.__editor.isConnected && window.__editor.open, window.scrollY]);
+    check(ed[0] && ed[1] === ey0, "an open permissions editor stays open across a refresh, the page where it was (" + ey0 + " → " + ed[1] + ")");
 
     // Chat: the person's own thread over AG-UI, as the person.
     await page.goto(url + "?chat#/agents/patch-pilot");

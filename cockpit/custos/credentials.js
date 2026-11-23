@@ -99,7 +99,7 @@ function credentialUI(a) {
             say((done.length ? "Stored for " + done.join(", ") + "; then: " : "") + ex.message, "error-text");
         }
         store.disabled = false;
-        tabs.agents.refresh();
+        refreshAfterAction();
     });
     Object.assign(ui, { form, name, secret, say });
     credentialUIs.set(a.name, ui);
@@ -212,7 +212,7 @@ function keycloakForm(a, cred) {
                 // Out of the form, so that the refresh shows the credential
                 // as set (the detail is not redrawn while a form is in use).
                 if (document.activeElement && form.contains(document.activeElement)) document.activeElement.blur();
-                tabs.agents.refresh();
+                refreshAfterAction();
             } catch (ex) {
                 password.value = "";
                 say(ex.message, "error-text");
