@@ -336,6 +336,47 @@ func TestOpenShellAgent(t *testing.T) {
 	}
 }
 
+// An OpenShell agent whose agent-NAME would exceed OpenShell's 19
+// characters: its sandbox is NAME itself, in openshell.env for the
+// relay's unit and in every openshell command; a short name's
+// openshell.env names none (the unit's default, agent-NAME).
+func TestOpenShellAgentLongName(t *testing.T) {
+	a, r := newAdmin(t)
+	const name = "patch-pilot-txn-01" // 18 characters
+	f := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f, []byte(strings.Replace(oshYml, "name: sb", "name: "+name, 1)), 0o644)
+	if err := a.Create(name, f); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(a.AgentDir(name), "openshell.env")); !strings.Contains(string(b), "\nOPENSHELL_SANDBOX="+name+"\n") {
+		t.Errorf("openshell.env:\n%s", b)
+	}
+	if err := a.SetCredential(name, "gateway-token", strings.NewReader("tok\n")); err != nil {
+		t.Fatal(err)
+	}
+	r.Cmds = nil
+	if err := a.Delete(name, false); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(r.Cmds, "\n")
+	if !strings.Contains(all, "sandbox delete "+name+"\n") && !strings.HasSuffix(all, "sandbox delete "+name) {
+		t.Errorf("delete misses sandbox %s:\n%s", name, all)
+	}
+	if strings.Contains(all, "agent-"+name+" ") || strings.Contains(all, "sandbox delete agent-") {
+		t.Errorf("a sandbox agent-%s:\n%s", name, all)
+	}
+
+	a2, _ := newAdmin(t)
+	f2 := filepath.Join(t.TempDir(), "a.yaml")
+	os.WriteFile(f2, []byte(oshYml), 0o644)
+	if err := a2.Create("sb", f2); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(a2.AgentDir("sb"), "openshell.env")); strings.Contains(string(b), "OPENSHELL_SANDBOX") {
+		t.Errorf("openshell.env of agent sb names a sandbox:\n%s", b)
+	}
+}
+
 func TestGatewayTokenOnlyForOpenShell(t *testing.T) {
 	a, _ := newAdmin(t)
 	f := filepath.Join(t.TempDir(), "a.yaml")

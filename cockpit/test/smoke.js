@@ -766,17 +766,25 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     check(await page.isVisible("#create-backend-row") &&
           !(await page.$eval("#create-backend option[value=openshell-systemd]", o => o.disabled)),
           "a template that allows OpenShell offers its sandboxes");
-    // The template's name (service-doctor, 14 characters) is too long for
-    // an OpenShell sandbox: the draft fails, the form says so, and Create
-    // does not take the configuration still there (for systemd). A
-    // shorter name drafts it again.
+    // The template's name (service-doctor, 14 characters) fits an
+    // OpenShell sandbox, named after the agent where agent-NAME would not.
     await page.selectOption("#create-backend", "openshell-systemd");
-    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("could not be drafted"));
-    check((await page.textContent("#create-note")).includes("at most 13") &&
-          (await page.textContent("#create-note")).includes("Change the name or where it runs"),
-          "a name too long for an OpenShell sandbox: the draft fails, and the form says why and what to do");
+    await page.waitForFunction(() => document.querySelector("#create-agent textarea").value.includes("openshell_driver: systemd"));
+    check(!(await page.textContent("#create-note")).includes("could not be drafted"), "a name of 14 characters drafts for OpenShell");
     check((await spawned("agent-admin draft service-doctor --template service-doctor --sandbox openshell --openshell-driver systemd")).length === 1,
           "the draft for OpenShell is agent-admin draft --sandbox openshell --openshell-driver systemd's");
+    // A name of more than 19 characters is too long for an OpenShell
+    // sandbox: drafted for it, the draft fails, the form says so, and
+    // Create does not take the configuration still there. A shorter name
+    // drafts it again.
+    await page.selectOption("#create-backend", "systemd");
+    await page.waitForFunction(() => !document.querySelector("#create-agent textarea").value.includes("openshell_driver"));
+    await page.fill("#create-name", "service-doctor-host-a");
+    await page.selectOption("#create-backend", "openshell-systemd");
+    await page.waitForFunction(() => document.querySelector("#create-note").textContent.includes("could not be drafted"));
+    check((await page.textContent("#create-note")).includes("at most 19") &&
+          (await page.textContent("#create-note")).includes("Change the name or where it runs"),
+          "a name too long for an OpenShell sandbox: the draft fails, and the form says why and what to do");
     const createsBefore = (await calls()).filter(c => c[0] === "spawn" && String(c[1]).startsWith("agent-admin create")).length;
     await page.click("#create-agent button[name=create]");
     await page.waitForTimeout(300);

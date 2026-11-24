@@ -407,6 +407,14 @@ check "its configuration names this driver and the template's servers" bash -c \
 check "agent-admin delete tpt" agent-admin delete tpt
 # A template's name longer than OpenShell takes, as the agent's name: refused (#244).
 check "an OpenShell agent named like a long template is refused" not agent-admin create patch-pilot-transactional --template patch-pilot-transactional --sandbox openshell --token-url "$issuer/token" "${gwcfg[@]}"
+# A name of 14 to 19 characters: its sandbox is named after the agent,
+# since agent-NAME would exceed OpenShell's 19 characters.
+agent-admin delete service-doctor >/dev/null 2>&1
+check "agent-admin create service-doctor (14 characters) --sandbox openshell" bash -c \
+	"agent-admin create service-doctor --template service-doctor --sandbox openshell --openshell-driver $tpl_driver --token-url '$issuer/token' ${gwcfg[*]} >'$work/sd.out' 2>&1" ||
+	sed 's/^/    | /' "$work/sd.out"
+check "its openshell.env names the sandbox service-doctor" grep -qx "OPENSHELL_SANDBOX=service-doctor" /etc/custos/agents/service-doctor/openshell.env
+check "agent-admin delete service-doctor" agent-admin delete service-doctor
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF
