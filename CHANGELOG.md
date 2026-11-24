@@ -11,6 +11,32 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.14 — 2026-11-24
+
+`agent-admin chat` talks with an agent on the host's terminal, and the
+SELinux package installs again where the build saw a newer snapshot of
+the same SELinux policy than the host has.
+
+Upgrading from 0.9.13 needs no change to configuration or gateway data.
+Where `custos-selinux` could not be installed ("nothing provides
+'selinux-policy >= …+git…'"), 0.9.14 installs.
+
+### Added
+
+- `agent-admin chat NAME` talks with an agent on the host's terminal,
+  as Cockpit's chat does: each line is a message of one thread, and the
+  answer is printed as it comes, with the agent's tool calls and the
+  approvals it waits for. `--thread` continues a thread, `--message`
+  sends one message and ends.
+
+### Fixed
+
+- `custos-selinux` requires `selinux-policy` by its date only
+  (`>= 20260826`), where it required the build's version with its git
+  snapshot (`>= 20260826+git190.1d6a6b164`): a build against a newer
+  snapshot of the same policy, not yet released to hosts, could not be
+  installed.
+
 ## v0.9.13 — 2026-11-24
 
 One fix in Cockpit: the chat window opened from the list of agents keeps
