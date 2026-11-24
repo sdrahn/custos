@@ -271,7 +271,8 @@ user, and Podman or Docker, or the systemd compute driver's package with
 
 - lingering for the user;
 - for rootless Podman, the delegation and subordinate IDs;
-- for the systemd compute driver, the driver's helper and service;
+- for the systemd compute driver, the driver's helper and service,
+  running and enabled to start at boot;
 - `gateway.toml`, naming the driver;
 - OpenShell's gateway and driver as that user's only: where they also
   run as another user (`systemctl --user` as root starts them for
