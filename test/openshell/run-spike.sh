@@ -332,7 +332,8 @@ fi
 if [ -z "$why" ]; then
 	rootctl start openshell-gateway.service >"$work/rootgw.out" 2>&1 || sed 's/^/    | start: /' "$work/rootgw.out"
 	rootctl start openshell-driver-systemd.service >/dev/null 2>&1 || true
-	check "a gateway runs as root (the case to repair)" eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)'
+	check "a gateway runs as root (the case to repair)" eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)' ||
+		journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | tail -n 15 | sed 's/^/    | root gateway: /'
 	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" >"$work/second-gw.out" 2>&1
 	check "openshell-setup says it stopped them" grep -q "also run.* as root" "$work/second-gw.out" ||
 		sed 's/^/    | /' "$work/second-gw.out"
