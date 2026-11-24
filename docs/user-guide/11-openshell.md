@@ -272,6 +272,12 @@ user, and Podman or Docker, or the systemd compute driver's package with
 - for rootless Podman, the delegation and subordinate IDs;
 - for the systemd compute driver, the driver's helper and service;
 - `gateway.toml`, naming the driver;
+- OpenShell's gateway and driver as that user's only: where they also
+  run as another user (`systemctl --user` as root starts them for
+  root), that user's services are stopped and disabled. A second gateway
+  makes a CA of its own and writes its client certificates into root's
+  registration, and root's `openshell` then fails with `invalid peer
+  certificate: BadSignature`;
 - with `--ca`, the CA that signed mcp-gateway's certificate, where the
   driver needs it ([step 4](#trust));
 - root's own copy of the gateway's registration.

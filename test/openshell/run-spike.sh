@@ -315,6 +315,24 @@ fi
 check "the OpenShell gateway answers again" eventually 90 osh status
 check "a second openshell-setup changes nothing" bash -c \
 	"! agent-admin openshell-setup --user '$osh_user' --driver $setup_driver --ca '$work/tls/ca.pem' | grep -q '^set '"
+# A second gateway, as root (systemctl --user as root): it makes a CA of
+# its own and writes its client certificates into root's registration,
+# and root's openshell then fails with BadSignature. openshell-setup
+# stops and disables it and writes root's registration again.
+if [ "$(id -u)" = 0 ] && systemctl start user@0.service 2>/dev/null &&
+	systemctl --user --machine=root@ cat openshell-gateway.service >/dev/null 2>&1; then
+	systemctl --user --machine=root@ start openshell-gateway.service openshell-driver-systemd.service 2>/dev/null || true
+	sleep 5
+	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" >"$work/second-gw.out" 2>&1
+	check "openshell-setup leaves no OpenShell gateway or driver running as root" \
+		not pgrep -u 0 -f 'openshell-(gateway|driver-systemd)( |$)' ||
+		sed 's/^/    | /' "$work/second-gw.out"
+	check "root's OpenShell services are disabled" bash -c \
+		"! systemctl --user --machine=root@ is-enabled --quiet openshell-gateway.service"
+	check "root's openshell trusts the gateway again" eventually 60 osh status
+else
+	skip "a second OpenShell gateway as root (no user manager for root, or no user unit of the gateway for it)"
+fi
 
 section "Agent image"
 img=localhost/custos-agent:ci
