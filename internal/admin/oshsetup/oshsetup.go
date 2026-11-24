@@ -394,11 +394,22 @@ func (s *setup) helper() error {
 		return err
 	}
 	if !changed {
-		if s.a.Probe("systemctl", "is-active", "--quiet", "openshell-systemd-helper.service") == nil {
-			s.say("ok", "the driver's helper serves "+s.u.name+" and runs")
+		// Running is not enough: a helper that runs but is not enabled is
+		// gone after the next boot, and so are the sandboxes.
+		active := s.a.Probe("systemctl", "is-active", "--quiet", "openshell-systemd-helper.service") == nil
+		enabled := s.a.Probe("systemctl", "is-enabled", "--quiet", "openshell-systemd-helper.service") == nil
+		switch {
+		case active && enabled:
+			s.say("ok", "the driver's helper serves "+s.u.name+", runs and starts at boot")
 			return nil
+		case active:
+			s.change("the driver's helper enabled: it runs, but would not start at boot")
+			if s.o.Check {
+				return nil
+			}
+			return s.a.Run(nil, "systemctl", "enable", "openshell-systemd-helper.service")
 		}
-		s.change("the driver's helper started")
+		s.change("the driver's helper started, and enabled to start at boot")
 		if s.o.Check {
 			return nil
 		}
@@ -442,10 +453,21 @@ func (s *setup) driver() error {
 	if err != nil {
 		return err
 	}
-	active := !changed && s.a.Probe("runuser", "-u", s.u.name, "--", "env", "XDG_RUNTIME_DIR="+s.runtimeDir(), "systemctl", "--user", "is-active", "--quiet", "openshell-driver-systemd.service") == nil
+	userProbe := func(verb string) bool {
+		return s.a.Probe("runuser", "-u", s.u.name, "--", "env", "XDG_RUNTIME_DIR="+s.runtimeDir(), "systemctl", "--user", verb, "--quiet", "openshell-driver-systemd.service") == nil
+	}
+	active := !changed && userProbe("is-active")
 	if active {
-		s.say("ok", "the systemd compute driver runs as "+s.u.name)
-		return nil
+		// As for the helper: running, and started again after a boot.
+		if userProbe("is-enabled") {
+			s.say("ok", "the systemd compute driver runs as "+s.u.name+" and starts at boot")
+			return nil
+		}
+		s.change("the systemd compute driver enabled as " + s.u.name + "'s service: it runs, but would not start at boot")
+		if s.o.Check {
+			return nil
+		}
+		return s.userctl("enable", "openshell-driver-systemd.service")
 	}
 	s.change("the systemd compute driver as " + s.u.name + "'s service, verifying the gateway with " + ca)
 	if s.o.Check {
