@@ -198,21 +198,50 @@ func TestEvents(t *testing.T) {
 	}
 }
 
-// An OpenShell agent's name fits OpenShell's sandbox name (agent-NAME, at
-// most 19 characters); a systemd agent's may be longer.
+// An OpenShell agent's name fits OpenShell's sandbox name (at most 19
+// characters): its sandbox is agent-NAME up to 13 characters, NAME itself
+// beyond; a systemd agent's name may be longer.
 func TestOpenShellNameLength(t *testing.T) {
 	osh := strings.Replace(sample, "gateway: {servers: [zypp, systemd], tools: [zypp__list_updates]}", "gateway: {url: \"https://host.openshell.internal:8443/mcp\", token_env: AGENT_GATEWAY_TOKEN, servers: [zypp]}", 1)
 	named := func(y, n string) []byte {
 		return []byte(regexp.MustCompile(`(?m)^name: .*$`).ReplaceAllString(y, "name: "+n))
 	}
-	if _, err := Parse(append(named(osh, "thirteen-char"), "sandbox: {kind: openshell}\n"...)); err != nil {
-		t.Errorf("13 characters: %v", err)
+	for _, n := range []string{"thirteen-char", "triage-openshell", "nineteen-characters"} {
+		c, err := Parse(append(named(osh, n), "sandbox: {kind: openshell, openshell_driver: systemd}\n"...))
+		if err != nil {
+			t.Errorf("%d characters: %v", len(n), err)
+			continue
+		}
+		if got := c.Lifecycle()["sandbox"]; got != OpenShellSandbox(n) {
+			t.Errorf("%s: lifecycle sandbox %q", n, got)
+		}
 	}
-	_, err := Parse(append(named(osh, "triage-openshell"), "sandbox: {kind: openshell, openshell_driver: systemd}\n"...))
-	if err == nil || !strings.Contains(err.Error(), "at most 13") || !strings.Contains(err.Error(), "agent-triage-openshell") {
-		t.Errorf("16 characters: %v", err)
+	_, err := Parse(append(named(osh, "twenty-characters-ab"), "sandbox: {kind: openshell}\n"...))
+	if err == nil || !strings.Contains(err.Error(), "at most 19") {
+		t.Errorf("20 characters: %v", err)
 	}
-	if _, err := Parse(named(sample, "triage-openshell")); err != nil {
-		t.Errorf("systemd, 16 characters: %v", err)
+	// agent-X of 14 to 19 characters would have the sandbox of agent X.
+	_, err = Parse(append(named(osh, "agent-patch-pilot"), "sandbox: {kind: openshell}\n"...))
+	if err == nil || !strings.Contains(err.Error(), "sandbox of agent patch-pilot") {
+		t.Errorf("agent-patch-pilot: %v", err)
+	}
+	if _, err := Parse(append(named(osh, "agent-short"), "sandbox: {kind: openshell}\n"...)); err != nil {
+		t.Errorf("agent-short (sandbox agent-agent-short): %v", err)
+	}
+	if _, err := Parse(named(sample, "a-systemd-agent-with-a-long-name")); err != nil {
+		t.Errorf("systemd, 32 characters: %v", err)
+	}
+}
+
+func TestOpenShellSandbox(t *testing.T) {
+	for name, want := range map[string]string{
+		"dwt-osh":             "agent-dwt-osh",
+		"thirteen-char":       "agent-thirteen-char",
+		"fourteen-chars":      "fourteen-chars",
+		"nineteen-characters": "nineteen-characters",
+	} {
+		if got := OpenShellSandbox(name); got != want {
+			t.Errorf("OpenShellSandbox(%s) = %s, want %s", name, got, want)
+		}
 	}
 }

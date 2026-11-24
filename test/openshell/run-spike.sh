@@ -315,6 +315,47 @@ fi
 check "the OpenShell gateway answers again" eventually 90 osh status
 check "a second openshell-setup changes nothing" bash -c \
 	"! agent-admin openshell-setup --user '$osh_user' --driver $setup_driver --ca '$work/tls/ca.pem' | grep -q '^set '"
+# A second gateway, as root (systemctl --user as root): it makes a CA of
+# its own and writes its client certificates into root's registration,
+# and root's openshell then fails with BadSignature. openshell-setup
+# stops and disables it and writes root's registration again. Root's
+# user manager is reached as agent-admin reaches it (XDG_RUNTIME_DIR).
+rootctl() { env XDG_RUNTIME_DIR=/run/user/0 systemctl --user "$@"; }
+why=""
+if [ "$(id -u)" != 0 ]; then
+	why="the test does not run as root"
+elif ! systemctl start user@0.service >"$work/user0.out" 2>&1; then
+	why="root's user manager does not start: $(tail -n 1 "$work/user0.out")"
+elif ! rootctl cat openshell-gateway.service >/dev/null 2>&1; then
+	why="root's user manager has no openshell-gateway.service"
+fi
+if [ -z "$why" ]; then
+	rootctl start openshell-gateway.service >/dev/null 2>&1 || true
+	rootctl start openshell-driver-systemd.service >/dev/null 2>&1 || true
+	# Where root's gateway cannot run here (the CI host's gateway.toml is
+	# the runner's, which its unit cannot read), there is no case to repair.
+	# The service active, not a process of its name: the unit's pre-start
+	# step (openshell-gateway config preflight) has that name too, and runs
+	# also where the gateway then fails to start.
+	if ! eventually 30 rootctl is-active --quiet openshell-gateway.service; then
+		why="root's gateway does not run here: $(journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | grep -m1 -oE 'preflight failed: [^;]*|Error: .*' | head -c 160)"
+		rootctl disable --now openshell-gateway.service openshell-driver-systemd.service >/dev/null 2>&1 || true
+		rootctl reset-failed >/dev/null 2>&1 || true
+	fi
+fi
+if [ -z "$why" ]; then
+	pass "a gateway runs as root (the case to repair)"
+	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" >"$work/second-gw.out" 2>&1
+	check "openshell-setup says it stopped them" grep -q "also run.* as root" "$work/second-gw.out" ||
+		sed 's/^/    | /' "$work/second-gw.out"
+	check "openshell-setup leaves no OpenShell gateway or driver running as root" \
+		not pgrep -u 0 -f 'openshell-(gateway|driver-systemd)( |$)'
+	check "root's OpenShell services are disabled" not rootctl is-enabled --quiet openshell-gateway.service
+	check "root's openshell trusts the gateway again" eventually 60 osh status
+else
+	skip "a second OpenShell gateway as root ($why)"
+fi
+systemctl stop user@0.service 2>/dev/null || true
 
 section "Agent image"
 img=localhost/custos-agent:ci
@@ -369,6 +410,14 @@ check "its configuration names this driver and the template's servers" bash -c \
 check "agent-admin delete tpt" agent-admin delete tpt
 # A template's name longer than OpenShell takes, as the agent's name: refused (#244).
 check "an OpenShell agent named like a long template is refused" not agent-admin create patch-pilot-transactional --template patch-pilot-transactional --sandbox openshell --token-url "$issuer/token" "${gwcfg[@]}"
+# A name of 14 to 19 characters: its sandbox is named after the agent,
+# since agent-NAME would exceed OpenShell's 19 characters.
+agent-admin delete service-doctor >/dev/null 2>&1
+check "agent-admin create service-doctor (14 characters) --sandbox openshell" bash -c \
+	"agent-admin create service-doctor --template service-doctor --sandbox openshell --openshell-driver $tpl_driver --token-url '$issuer/token' ${gwcfg[*]} >'$work/sd.out' 2>&1" ||
+	sed 's/^/    | /' "$work/sd.out"
+check "its openshell.env names the sandbox service-doctor" grep -qx "OPENSHELL_SANDBOX=service-doctor" /etc/custos/agents/service-doctor/openshell.env
+check "agent-admin delete service-doctor" agent-admin delete service-doctor
 
 section "Creating the agent"
 cat >"$work/sb.yaml" <<EOF

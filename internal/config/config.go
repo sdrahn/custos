@@ -31,13 +31,22 @@ const (
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
 // OpenShell's gateway takes a sandbox's name of at most 19 characters (a
-// DNS label holds three such names joined by "--"; OpenShell 0.1.8,
-// MAX_ROUTABLE_NAME_LEN), and an agent's sandbox is agent-NAME: an
-// OpenShell agent's name has at most 13.
-const (
-	maxOpenShellSandboxName = 19
-	MaxOpenShellName        = maxOpenShellSandboxName - len("agent-")
-)
+// DNS label holds three such names joined by "--"; OpenShell 0.1.8 and
+// 0.1.9, MAX_ROUTABLE_NAME_LEN). An agent's sandbox is agent-NAME where
+// that fits, else NAME itself (OpenShellSandbox): an OpenShell agent's
+// name has at most 19 characters.
+const MaxOpenShellName = 19
+
+// OpenShellSandbox is the name of an agent's OpenShell sandbox
+// (CONTRACT.md §3a): agent-NAME, or NAME itself where agent-NAME would be
+// longer than OpenShell takes. It depends on the name alone, so that an
+// agent's sandbox is found where its configuration is gone.
+func OpenShellSandbox(name string) string {
+	if s := "agent-" + name; len(s) <= MaxOpenShellName {
+		return s
+	}
+	return name
+}
 
 var envRE = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
@@ -239,7 +248,7 @@ type Sandbox struct {
 // Lifecycle is /v1/status's lifecycle (CONTRACT.md §3a).
 func (c *Config) Lifecycle() map[string]string {
 	if c.Sandbox.Kind == "openshell" {
-		return map[string]string{"kind": "openshell", "sandbox": "agent-" + c.Name, "gateway": c.Sandbox.OpenShellGateway,
+		return map[string]string{"kind": "openshell", "sandbox": OpenShellSandbox(c.Name), "gateway": c.Sandbox.OpenShellGateway,
 			"driver": c.Sandbox.OpenShellDriver, "service": "agent-openshell@" + c.Name + ".service"}
 	}
 	return map[string]string{"kind": "systemd", "service": "agent@" + c.Name + ".service", "socket": "agent@" + c.Name + ".socket"}
@@ -512,8 +521,12 @@ func (c *Config) Check() error {
 		default:
 			bad("sandbox.openshell_driver: %q: want container or systemd", c.Sandbox.OpenShellDriver)
 		}
-		if len(c.Name) > MaxOpenShellName {
-			bad("name %q: %d characters; an agent in an OpenShell sandbox has at most %d: its sandbox agent-%s would exceed OpenShell's %d for a sandbox's name", c.Name, len(c.Name), MaxOpenShellName, c.Name, maxOpenShellSandboxName)
+		switch sb := OpenShellSandbox(c.Name); {
+		case len(c.Name) > MaxOpenShellName:
+			bad("name %q: %d characters; an agent in an OpenShell sandbox has at most %d, OpenShell's limit for a sandbox's name", c.Name, len(c.Name), MaxOpenShellName)
+		case sb == c.Name && strings.HasPrefix(c.Name, "agent-"):
+			// Its sandbox would be agent-X, the sandbox of an agent X.
+			bad("name %q: an agent in an OpenShell sandbox whose name begins with agent- has at most %d characters (its sandbox %s would be the sandbox of agent %s)", c.Name, MaxOpenShellName-len("agent-"), sb, strings.TrimPrefix(c.Name, "agent-"))
 		}
 	default:
 		bad("sandbox.kind: %q: want systemd or openshell", c.Sandbox.Kind)

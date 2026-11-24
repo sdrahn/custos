@@ -112,8 +112,10 @@ func (g *Governor) afterRun(ictx agent.InvocationContext) {
 // limit records a limit reached; g.mu must be held.
 func (g *Governor) limit(in *invocation, invID, name string, value int) {
 	in.stopped = true
-	g.publish(Event{Kind: EvLimitExceeded, Session: in.session, Invocation: invID, Limit: name, Value: value})
+	// The journal's record before the event: whoever sees the event finds
+	// the record.
 	g.log.Log(journal.LimitExceeded, fmt.Sprintf("Limit %s (%d) reached", name, value), journal.Fields{
 		"SESSION": in.session, "INVOCATION": invID, "USER": in.user, "OUTCOME": "limit", "REASON": name + "=" + strconv.Itoa(value),
 	})
+	g.publish(Event{Kind: EvLimitExceeded, Session: in.session, Invocation: invID, Limit: name, Value: value})
 }

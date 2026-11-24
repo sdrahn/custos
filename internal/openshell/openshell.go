@@ -51,7 +51,7 @@ func Port(agent string) int {
 const HostAlias = "host.openshell.internal"
 
 // Names of an agent's OpenShell objects.
-func SandboxName(agent string) string  { return "agent-" + agent }
+func SandboxName(agent string) string  { return config.OpenShellSandbox(agent) }
 func ProviderName(agent string) string { return "agent-" + agent + "-gateway" }
 func ProfileID(agent string) string    { return "custos-gateway-" + agent }
 

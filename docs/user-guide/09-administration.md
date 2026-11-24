@@ -116,9 +116,11 @@ An agent from a template runs as a systemd service unless you say
 otherwise. Where its template allows it (`agent-admin templates` lists
 its `backends`; every shipped template does, a site's own may not), it
 can run in an OpenShell sandbox instead, with either compute driver
-([chapter 11](11-openshell.md#drivers)). Its name then has at most 13
-characters: several templates' own names are longer, so name the agent
-yourself:
+([chapter 11](11-openshell.md#drivers)). Its name then has at most 19
+characters, and its sandbox is `agent-<name>`, or `<name>` itself beyond
+13 characters. A template whose own name is longer
+(`patch-pilot-transactional`, `disk-watch-transactional`) needs a name of
+the agent's own:
 
 ```bash
 agent-admin draft web-pilot --template patch-pilot --sandbox openshell --openshell-driver systemd   # look first

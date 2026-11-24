@@ -11,3 +11,10 @@ GO-2026-6612
 GO-2026-6611
 GO-2026-6610
 GO-2026-6603
+
+# go.opentelemetry.io/otel/sdk v1.45.0, AttributeValueLengthLimit bypassed
+# with U+FFFD runes; fixed in v1.47.0, which needs Go 1.26 in go.mod (as
+# above). It comes with google.golang.org/adk; Custos configures no
+# OpenTelemetry itself (no exporter, no attribute limit). Goes with the
+# move to Go 1.26.
+GO-2026-6974

@@ -474,10 +474,10 @@
                     if (model()) text = text.replace(/^model:\n(?:  .*\n)*/m, model());
                     if (args.includes("--sandbox")) {
                         const drv = args[args.indexOf("--openshell-driver") + 1];
-                        // As agent-admin draft's check: its sandbox agent-NAME
-                        // takes at most 19 characters.
-                        if (name.length > 13) return Promise.reject(new Error("agent-admin: the configuration for OpenShell is not valid: name \"" + name +
-                            "\": " + name.length + " characters; an agent in an OpenShell sandbox has at most 13"));
+                        // As agent-admin draft's check: its sandbox's name
+                        // (agent-NAME, or NAME itself) takes at most 19 characters.
+                        if (name.length > 19) return Promise.reject(new Error("agent-admin: the configuration for OpenShell is not valid: name \"" + name +
+                            "\": " + name.length + " characters; an agent in an OpenShell sandbox has at most 19, OpenShell's limit for a sandbox's name"));
                         // As agent-admin draft: the agent's OAuth client is agent-NAME.
                         text = text.replace(/^gateway:\n/m, "gateway:\n  url: \"https://gw.example.com:8443/mcp\"\n" +
                             "  oauth: {token_url: \"https://idp.example.com/realms/mcp/protocol/openid-connect/token\", client_id: agent-" + name +

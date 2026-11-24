@@ -17,7 +17,8 @@ not yet verified by this project's tests ([below](#idp-status)).
 
 ## How an OpenShell agent is put together {#architecture}
 
-- **The sandbox** `agent-<name>` runs `agent-launcher`: from the image
+- **The sandbox** `agent-<name>` (`<name>` for a name of more than 13
+  characters) runs `agent-launcher`: from the image
   `custos-agent` as OpenShell's `sandbox` user, or with the systemd
   compute driver the host's own as a user of the sandbox
   ([below](#drivers)). It is created with a
@@ -218,6 +219,12 @@ user, and Podman or Docker, or the systemd compute driver's package with
 - for rootless Podman, the delegation and subordinate IDs;
 - for the systemd compute driver, the driver's helper and service;
 - `gateway.toml`, naming the driver;
+- OpenShell's gateway and driver as that user's only: where they also
+  run as another user (`systemctl --user` as root starts them for
+  root), that user's services are stopped and disabled. A second gateway
+  makes a CA of its own and writes its client certificates into root's
+  registration, and root's `openshell` then fails with `invalid peer
+  certificate: BadSignature`;
 - with `--ca`, the CA that signed mcp-gateway's certificate, where the
   driver needs it ([step 4](#trust));
 - root's own copy of the gateway's registration.
@@ -588,9 +595,12 @@ sandbox: {kind: openshell, openshell_gateway: openshell}
 - `gateway.oauth` is only for OpenShell agents: OpenShell's gateway gets
   the tokens. Without it, the agent uses a static token
   ([above](#other-idp)).
-- The agent's `name` has at most 13 characters: its sandbox is
-  `agent-<name>`, and OpenShell takes a sandbox's name of up to 19.
-  `agent-admin check` and `create` refuse a longer one.
+- The agent's `name` has at most 19 characters, OpenShell's limit for a
+  sandbox's name. Its sandbox is `agent-<name>` up to 13 characters and
+  `<name>` itself beyond (`openshell sandbox list`; the lifecycle's
+  `sandbox` in `agent-admin status`). A name of 14 to 19 characters does
+  not begin with `agent-`, whose sandbox would be another agent's.
+  `agent-admin check` and `create` refuse such names.
 - `sandbox.openshell_gateway` names OpenShell's gateway as registered for
   root (default `openshell`).
 - `sandbox.openshell_driver` says which compute driver that gateway
