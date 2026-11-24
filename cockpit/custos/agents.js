@@ -366,6 +366,14 @@ function renderChatPopup(a, data, text, st) {
            el("button", { class: "link chat-popup-close", "aria-label": "Close the chat", title: "Close (Esc)", onclick: close }, "✕")));
     const chat = chatSection(a);
     const first = pop.hidden || pop.dataset.agent !== a.name;
+    // The same agent's chat already in the popup (the tab's refresh, every
+    // few seconds): only the head is drawn again. Taking the chat out and
+    // putting it back would take the keyboard focus from the message field
+    // being typed in.
+    if (!first && pop.children.length === 2 && pop.children[1] === chat) {
+        pop.children[0].replaceWith(head);
+        return;
+    }
     const logs = [...pop.querySelectorAll(".chat-log")].map(l => [l, l.scrollTop]);
     pop.replaceChildren(head, chat);
     pop.dataset.agent = a.name;
