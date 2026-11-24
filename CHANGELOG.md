@@ -11,6 +11,21 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.13 — 2026-11-24
+
+One fix in Cockpit: the chat window opened from the list of agents keeps
+the keyboard focus in its message field. Every few seconds the page's
+refresh took it away.
+
+Upgrading from 0.9.12 needs no change to configuration or gateway data.
+
+### Fixed
+
+- Cockpit: the chat window opened from the list of agents keeps the
+  keyboard focus in its message field. Every few seconds the page's
+  refresh took it away, and typing went nowhere until the field was
+  clicked again.
+
 ## v0.9.12 — 2026-11-24
 
 One fix for OpenShell agents with the systemd compute driver: `agent-admin
