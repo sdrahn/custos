@@ -330,10 +330,18 @@ elif ! rootctl cat openshell-gateway.service >/dev/null 2>&1; then
 	why="root's user manager has no openshell-gateway.service"
 fi
 if [ -z "$why" ]; then
-	rootctl start openshell-gateway.service >"$work/rootgw.out" 2>&1 || sed 's/^/    | start: /' "$work/rootgw.out"
+	rootctl start openshell-gateway.service >/dev/null 2>&1 || true
 	rootctl start openshell-driver-systemd.service >/dev/null 2>&1 || true
-	check "a gateway runs as root (the case to repair)" eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)' ||
-		journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | tail -n 15 | sed 's/^/    | root gateway: /'
+	# Where root's gateway cannot run here (the CI host's gateway.toml is
+	# the runner's, which its unit cannot read), there is no case to repair.
+	if ! eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)'; then
+		why="root's gateway does not run here: $(journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | grep -m1 -oE 'preflight failed: [^;]*|Error: .*' | head -c 160)"
+		rootctl disable --now openshell-gateway.service openshell-driver-systemd.service >/dev/null 2>&1 || true
+		rootctl reset-failed >/dev/null 2>&1 || true
+	fi
+fi
+if [ -z "$why" ]; then
+	pass "a gateway runs as root (the case to repair)"
 	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" >"$work/second-gw.out" 2>&1
 	check "openshell-setup says it stopped them" grep -q "also run.* as root" "$work/second-gw.out" ||
 		sed 's/^/    | /' "$work/second-gw.out"
@@ -341,10 +349,10 @@ if [ -z "$why" ]; then
 		not pgrep -u 0 -f 'openshell-(gateway|driver-systemd)( |$)'
 	check "root's OpenShell services are disabled" not rootctl is-enabled --quiet openshell-gateway.service
 	check "root's openshell trusts the gateway again" eventually 60 osh status
-	systemctl stop user@0.service 2>/dev/null || true
 else
 	skip "a second OpenShell gateway as root ($why)"
 fi
+systemctl stop user@0.service 2>/dev/null || true
 
 section "Agent image"
 img=localhost/custos-agent:ci
