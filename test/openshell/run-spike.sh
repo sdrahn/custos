@@ -315,6 +315,44 @@ fi
 check "the OpenShell gateway answers again" eventually 90 osh status
 check "a second openshell-setup changes nothing" bash -c \
 	"! agent-admin openshell-setup --user '$osh_user' --driver $setup_driver --ca '$work/tls/ca.pem' | grep -q '^set '"
+# A second gateway, as root (systemctl --user as root): it makes a CA of
+# its own and writes its client certificates into root's registration,
+# and root's openshell then fails with BadSignature. openshell-setup
+# stops and disables it and writes root's registration again. Root's
+# user manager is reached as agent-admin reaches it (XDG_RUNTIME_DIR).
+rootctl() { env XDG_RUNTIME_DIR=/run/user/0 systemctl --user "$@"; }
+why=""
+if [ "$(id -u)" != 0 ]; then
+	why="the test does not run as root"
+elif ! systemctl start user@0.service >"$work/user0.out" 2>&1; then
+	why="root's user manager does not start: $(tail -n 1 "$work/user0.out")"
+elif ! rootctl cat openshell-gateway.service >/dev/null 2>&1; then
+	why="root's user manager has no openshell-gateway.service"
+fi
+if [ -z "$why" ]; then
+	rootctl start openshell-gateway.service >/dev/null 2>&1 || true
+	rootctl start openshell-driver-systemd.service >/dev/null 2>&1 || true
+	# Where root's gateway cannot run here (the CI host's gateway.toml is
+	# the runner's, which its unit cannot read), there is no case to repair.
+	if ! eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)'; then
+		why="root's gateway does not run here: $(journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | grep -m1 -oE 'preflight failed: [^;]*|Error: .*' | head -c 160)"
+		rootctl disable --now openshell-gateway.service openshell-driver-systemd.service >/dev/null 2>&1 || true
+		rootctl reset-failed >/dev/null 2>&1 || true
+	fi
+fi
+if [ -z "$why" ]; then
+	pass "a gateway runs as root (the case to repair)"
+	agent-admin openshell-setup --user "$osh_user" --driver "$setup_driver" --ca "$work/tls/ca.pem" >"$work/second-gw.out" 2>&1
+	check "openshell-setup says it stopped them" grep -q "also run.* as root" "$work/second-gw.out" ||
+		sed 's/^/    | /' "$work/second-gw.out"
+	check "openshell-setup leaves no OpenShell gateway or driver running as root" \
+		not pgrep -u 0 -f 'openshell-(gateway|driver-systemd)( |$)'
+	check "root's OpenShell services are disabled" not rootctl is-enabled --quiet openshell-gateway.service
+	check "root's openshell trusts the gateway again" eventually 60 osh status
+else
+	skip "a second OpenShell gateway as root ($why)"
+fi
+systemctl stop user@0.service 2>/dev/null || true
 
 section "Agent image"
 img=localhost/custos-agent:ci
