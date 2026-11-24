@@ -185,7 +185,7 @@ func TestUnitUsesIt(t *testing.T) {
 	}
 	unit := string(b)
 	// Not "-": a sandbox that does not come up fails the unit.
-	if !strings.Contains(unit, "\nExecStartPre=/usr/libexec/custos/agent-openshell-start ${OPENSHELL_GATEWAY} agent-%i\n") {
+	if !strings.Contains(unit, "\nExecStartPre=/usr/libexec/custos/agent-openshell-start ${OPENSHELL_GATEWAY} ${OPENSHELL_SANDBOX}\n") {
 		t.Error("the unit does not start the sandbox with agent-openshell-start")
 	}
 	if strings.Contains(unit, "sandbox start") {

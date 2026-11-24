@@ -62,3 +62,34 @@ func TestAgentConfigurationDirectoryMode(t *testing.T) {
 		t.Errorf("ConfigurationDirectoryMode: %v, want 0750 (agent-admin create)", u["ConfigurationDirectoryMode"])
 	}
 }
+
+// An OpenShell agent's sandbox is agent-%i by default and the name
+// openshell.env gives otherwise (config.OpenShellSandbox): every command
+// of the unit takes it from OPENSHELL_SANDBOX, and the default is an
+// Environment=, which the EnvironmentFile= overrides. An openshell.env
+// written before it named the sandbox works unchanged.
+func TestOpenShellSandboxName(t *testing.T) {
+	u := settings(t, "../../systemd/agent-openshell@.service")
+	if !has(u["Environment"], "OPENSHELL_SANDBOX=agent-%i") {
+		t.Errorf("Environment: %v", u["Environment"])
+	}
+	if !has(u["EnvironmentFile"], "/etc/custos/agents/%i/openshell.env") {
+		t.Errorf("EnvironmentFile: %v", u["EnvironmentFile"])
+	}
+	for _, k := range []string{"ExecStartPre", "ExecStart", "ExecStopPost"} {
+		for _, v := range u[k] {
+			if strings.Contains(v, "agent-%i") {
+				t.Errorf("%s names the sandbox agent-%%i, not ${OPENSHELL_SANDBOX}: %s", k, v)
+			}
+		}
+	}
+	n := 0
+	for _, k := range []string{"ExecStartPre", "ExecStart", "ExecStopPost"} {
+		for _, v := range u[k] {
+			n += strings.Count(v, "${OPENSHELL_SANDBOX}")
+		}
+	}
+	if n != 6 {
+		t.Errorf("${OPENSHELL_SANDBOX} in %d commands, want 6 (start, the forward stopped and started, the logs, the forward and the sandbox stopped)", n)
+	}
+}

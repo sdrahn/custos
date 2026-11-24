@@ -292,6 +292,11 @@ func (a *Admin) createOpenShell(cfg *config.Config) error {
 	}
 	env := fmt.Sprintf("# agent-admin: agent %s in OpenShell\nOPENSHELL_GATEWAY=%s\nFORWARD_PORT=%d\nAGENT_IMAGE=%s\nOPENSHELL_DRIVER=%s\n",
 		cfg.Name, cfg.Sandbox.OpenShellGateway, openshell.Port(cfg.Name), a.image(cfg), cfg.Sandbox.OpenShellDriver)
+	// The sandbox's name, where it is not the unit's default agent-NAME
+	// (agent-openshell@.service): a file written before stays right.
+	if sb := openshell.SandboxName(cfg.Name); sb != "agent-"+cfg.Name {
+		env += "OPENSHELL_SANDBOX=" + sb + "\n"
+	}
 	// With the systemd driver the agent's output is in the journal, not in
 	// a container runtime's: no runtime user to read it as.
 	if a.OpenShellUser != "" && cfg.Sandbox.OpenShellDriver != "systemd" {
