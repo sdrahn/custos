@@ -11,6 +11,25 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.12 — 2026-11-24
+
+One fix for OpenShell agents with the systemd compute driver: `agent-admin
+openshell-setup` makes sure the driver's helper and the driver's
+service start at boot. A helper that ran without being enabled was gone
+after the next reboot, and no OpenShell agent started.
+
+Upgrading from 0.9.11 needs no change to configuration or gateway data.
+Run `agent-admin openshell-setup --user <user> --driver systemd --check`
+once: where it says "would not start at boot", run it without `--check`.
+
+### Fixed
+
+- `agent-admin openshell-setup` checks that the systemd compute driver's
+  helper and the driver's user service are enabled to start at boot, not
+  only that they run, and enables them where they are not. One that ran
+  without being enabled was gone after the next boot, and OpenShell
+  agents did not start; `--check` said it was fine.
+
 ## v0.9.11 — 2026-11-24
 
 OpenShell agents get longer names and a repair for a second gateway.
