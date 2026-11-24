@@ -398,3 +398,66 @@ func TestSetupHelperDoesNotRun(t *testing.T) {
 		t.Errorf("slept %d, ran:\n%s", slept, strings.Join(r.Cmds, "\n"))
 	}
 }
+
+// A helper and a driver that run but are not enabled would be gone after
+// the next boot: --check says so, and the setup enables them without
+// restarting them.
+func TestSetupEnablesRunningUnits(t *testing.T) {
+	a, r, _ := oshHost(t, "systemd")
+	put(t, a, filepath.Join(LingerDir, "osh"), "")
+	// As after a first run: the helper's drop-in and the driver's are there.
+	if err := Setup(a, Options{User: "osh", Driver: "systemd"}); err != nil {
+		t.Fatal(err)
+	}
+	// Both run; neither is enabled.
+	r.Gone = func(cmd string) error {
+		if strings.Contains(cmd, "is-enabled") {
+			return errors.New("disabled")
+		}
+		return nil
+	}
+	var out strings.Builder
+	a.Out = &out
+	r.Cmds = nil
+	if err := Setup(a, Options{User: "osh", Driver: "systemd", Check: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"todo the driver's helper enabled: it runs, but would not start at boot",
+		"todo the systemd compute driver enabled as osh's service: it runs, but would not start at boot",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("--check lacks %q:\n%s", want, out.String())
+		}
+	}
+	if ran(r, "systemctl enable") || ran(r, "--user enable") {
+		t.Errorf("--check enabled something:\n%s", strings.Join(r.Cmds, "\n"))
+	}
+	r.Cmds = nil
+	out.Reset()
+	if err := Setup(a, Options{User: "osh", Driver: "systemd"}); err != nil {
+		t.Fatal(err, out.String())
+	}
+	for _, want := range []string{
+		"systemctl enable openshell-systemd-helper.service",
+		"runuser -u osh -- env HOME=/home/osh XDG_RUNTIME_DIR=/run/user/1001 systemctl --user enable openshell-driver-systemd.service",
+	} {
+		if !ran(r, want) {
+			t.Errorf("not run: %s\n%s", want, strings.Join(r.Cmds, "\n"))
+		}
+	}
+	if ran(r, "restart openshell-systemd-helper") || ran(r, "restart openshell-driver-systemd") || ran(r, "enable --now") {
+		t.Errorf("restarted a running unit:\n%s", strings.Join(r.Cmds, "\n"))
+	}
+
+	// Enabled as well: nothing to do.
+	r.Gone = func(string) error { return nil }
+	out.Reset()
+	if err := Setup(a, Options{User: "osh", Driver: "systemd", Check: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "ok   the driver's helper serves osh, runs and starts at boot") ||
+		!strings.Contains(out.String(), "ok   the systemd compute driver runs as osh and starts at boot") {
+		t.Errorf("output:\n%s", out.String())
+	}
+}
