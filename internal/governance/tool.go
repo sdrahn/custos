@@ -125,11 +125,12 @@ func (g *Governor) afterTool(tctx agent.ToolContext, t tool.Tool, args, result m
 			outcome = "declined"
 		}
 		call.Approval = outcome
-		g.publish(Event{Kind: EvApprovalResolved, Session: call.Session, Invocation: call.Invocation, CallID: call.CallID, Tool: call.Tool, ApprovalID: call.ApprovalID, Outcome: outcome})
 		af := copyFields(f)
 		af["APPROVAL_ID"], af["OUTCOME"], af["REASON"] = call.ApprovalID, outcome, reasonOf(errText)
-		g.mu.Unlock()
+		// The journal's record before the event, as for a pending one.
 		g.log.Log(journal.ApprovalResolved, fmt.Sprintf("Approval %s for %s: %s", call.ApprovalID, call.Tool, outcome), af)
+		g.publish(Event{Kind: EvApprovalResolved, Session: call.Session, Invocation: call.Invocation, CallID: call.CallID, Tool: call.Tool, ApprovalID: call.ApprovalID, Outcome: outcome})
+		g.mu.Unlock()
 		f["APPROVAL_ID"] = call.ApprovalID
 	} else {
 		g.mu.Unlock()
@@ -215,10 +216,14 @@ func (g *Governor) OnGatewayLog(_ context.Context, p *mcp.LoggingMessageParams) 
 		if len(call.SuspectedInjection) > 0 {
 			f["SUSPECTED_INJECTION"] = suspicionText(call.SuspectedInjection)
 		}
+	}
+	// The journal's record before the event: whoever sees the event finds
+	// the record.
+	g.log.Log(journal.ApprovalPending, fmt.Sprintf("Waiting for approval %s of %s", n.ApprovalID, n.ToolName()), f)
+	if call != nil {
 		g.publish(Event{Kind: EvApprovalPending, Session: call.Session, Invocation: call.Invocation, CallID: call.CallID, Tool: call.Tool, ApprovalID: n.ApprovalID, ApprovalURL: g.ApprovalURL(n.ApprovalID)})
 	}
 	g.mu.Unlock()
-	g.log.Log(journal.ApprovalPending, fmt.Sprintf("Waiting for approval %s of %s", n.ApprovalID, n.ToolName()), f)
 }
 
 func (g *Governor) toolFields(tctx agent.ToolContext, name string, args map[string]any) journal.Fields {
