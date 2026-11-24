@@ -27,7 +27,7 @@ var layers = [][]string{
 	{"internal/category", "internal/delegate", "internal/openshell", "internal/host", "internal/governance", "internal/relay"},
 	{"internal/gatewayconf", "internal/agui", "internal/host/hosttest"},
 	{"internal/launcher", "internal/admin"},
-	{"internal/admin/idp", "internal/admin/templates", "internal/admin/promotion", "internal/admin/oshsetup", "internal/admin/admintest"},
+	{"internal/admin/idp", "internal/admin/templates", "internal/admin/promotion", "internal/admin/oshsetup", "internal/admin/chat", "internal/admin/admintest"},
 	{"internal/admin/setup"},
 	{"cmd/agent-launcher", "cmd/agent-delegate", "cmd/agent-openshell-relay", "cmd/agent-admin", "cmd/custos-setup"},
 }

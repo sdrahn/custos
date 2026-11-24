@@ -261,8 +261,26 @@ gateway's policy and approvals are what protect the system.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `interaction.agui` | `false` | serve AG-UI on the agent's socket: chat in Cockpit |
+| `interaction.agui` | `false` | serve AG-UI on the agent's socket: chat in Cockpit and with `agent-admin chat` |
 | `interaction.client_tools` | `deny` | tools a chat frontend offers the model: `deny`, or `{allow: [name, …]}`. Names with `__` are always refused, so they cannot pose as gateway tools |
+
+On the host, as root (or a member of `agent-clients`), `agent-admin
+chat NAME` is the same chat on the terminal: each line is a message of
+one thread, and the answer is printed as it comes, with the tool calls
+and the approvals the agent waits for:
+
+```text
+# agent-admin chat patch-pilot
+Chat with patch-pilot, thread t-cli-5f2c9a01d3b7e4a6. An empty line is skipped; end with Ctrl-D.
+> Which security patches are pending?
+  [tool] zypp__list_updates
+  [tool] zypp__list_updates: done
+Two: SUSE-2026-4411 (openssl) and SUSE-2026-4417 (curl).
+```
+
+`--thread ID` continues one of your own threads (threads are the
+caller's); `--message TEXT` sends one message, prints the answer and
+ends, for scripts. A message whose run failed makes the exit status 1.
 
 ## Schedules {#schedules}
 
