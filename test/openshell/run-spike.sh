@@ -334,7 +334,10 @@ if [ -z "$why" ]; then
 	rootctl start openshell-driver-systemd.service >/dev/null 2>&1 || true
 	# Where root's gateway cannot run here (the CI host's gateway.toml is
 	# the runner's, which its unit cannot read), there is no case to repair.
-	if ! eventually 30 pgrep -u 0 -f 'openshell-gateway( |$)'; then
+	# The service active, not a process of its name: the unit's pre-start
+	# step (openshell-gateway config preflight) has that name too, and runs
+	# also where the gateway then fails to start.
+	if ! eventually 30 rootctl is-active --quiet openshell-gateway.service; then
 		why="root's gateway does not run here: $(journalctl --no-pager -o cat _UID=0 _SYSTEMD_USER_UNIT=openshell-gateway.service 2>&1 | grep -m1 -oE 'preflight failed: [^;]*|Error: .*' | head -c 160)"
 		rootctl disable --now openshell-gateway.service openshell-driver-systemd.service >/dev/null 2>&1 || true
 		rootctl reset-failed >/dev/null 2>&1 || true
