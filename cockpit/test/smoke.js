@@ -619,6 +619,16 @@ const cockpit_path = u => (new URL(u).hash.replace(/^#\/?/, "").split("/")[0]);
     await page.waitForSelector("#chat-popup .msg-approval");
     await page.waitForTimeout(5500); // a refresh keeps the conversation in the popup
     check((await page.textContent("#chat-popup .chat-log")).includes("Installing 1 patch."), "the conversation survives a refresh in the popup");
+    // Typing goes on across the tab's refreshes: the message field keeps the
+    // focus, what is typed and the caret.
+    await page.focus("#chat-popup .chat-input");
+    await page.keyboard.type("And then reboot");
+    await page.waitForTimeout(5500);
+    await page.keyboard.type(" if needed");
+    check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains("chat-input")) &&
+          (await page.inputValue("#chat-popup .chat-input")) === "And then reboot if needed",
+          "a refresh leaves the message field focused, with what is typed in it");
+    await page.fill("#chat-popup .chat-input", "");
     if (shots) await page.screenshot({ path: path.join(shots, "chat-popup.png") });
     await page.click("#chat-popup button:has-text('Details')");
     await page.waitForSelector("#agent-detail #chat-patch-pilot");
