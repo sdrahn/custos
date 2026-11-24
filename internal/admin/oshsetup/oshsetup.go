@@ -93,7 +93,7 @@ func Setup(a *admin.Admin, o Options) error {
 	} else {
 		steps = append(steps, s.helper, s.driver)
 	}
-	steps = append(steps, s.ca, s.gatewayConfig, s.registration)
+	steps = append(steps, s.ca, s.gatewayConfig, s.others, s.registration)
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return fmt.Errorf("openshell-setup: %w", err)
