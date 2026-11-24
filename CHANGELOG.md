@@ -11,6 +11,53 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.11 — 2026-11-24
+
+OpenShell agents get longer names and a repair for a second gateway.
+An agent in an OpenShell sandbox may now have a name of up to 19
+characters. `agent-admin openshell-setup` stops an OpenShell gateway
+that also runs as root, which breaks root's registration so that no
+OpenShell agent starts. Approval and limit records are in the journal
+before their events, and `gorilla/websocket` has its fix of
+GO-2026-6278.
+
+Upgrading from 0.9.10 needs no change to configuration or gateway data;
+existing OpenShell agents keep their sandboxes. If `openshell` as root
+fails with `invalid peer certificate: BadSignature`, run `agent-admin
+openshell-setup --user <user> --driver <driver>` once, then restart the
+agents.
+
+### Changed
+
+- An agent in an OpenShell sandbox may have a name of up to 19
+  characters, where it had 13: its sandbox is `agent-<name>` as before
+  where that fits OpenShell's 19 characters, and `<name>` itself beyond.
+  A name of 14 to 19 characters does not begin with `agent-` (its
+  sandbox would be another agent's). Existing agents and their sandboxes
+  stay as they are; `openshell.env` names the sandbox where it is not
+  `agent-<name>`.
+
+### Fixed
+
+- An approval's pending and resolved records, and a limit's, are in the
+  journal before the event that announces them reaches a chat or
+  Cockpit: one that showed the event and then read the journal found no
+  record, now and then.
+- `agent-admin openshell-setup` stops and disables OpenShell's gateway
+  and driver where they also run as another user than the gateway's,
+  such as root after `systemctl --user` as root, before it writes root's
+  registration again. A second gateway made a CA of its own and wrote
+  its client certificates into root's registration: root's `openshell`
+  then failed with `invalid peer certificate: BadSignature`, and
+  OpenShell agents did not start. `--check` names it.
+
+### Security
+
+- `github.com/gorilla/websocket` (with `google.golang.org/genai`) at
+  the commit that fixes GO-2026-6278, a weak random number generator for
+  WebSocket mask keys, where it was 1.5.3; there is no release with the
+  fix yet.
+
 ## v0.9.10 — 2026-11-23
 
 Two fixes to Cockpit's pages. An agent's view no longer moves or
