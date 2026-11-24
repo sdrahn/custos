@@ -54,7 +54,12 @@ BuildRequires:  selinux-policy-devel
 Requires:       mcp-gateway-selinux
 Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
-%{?_selinux_policy_version:%global _selinux_policy_version %(echo '%{_selinux_policy_version}' | cut -d- -f1)}
+# %%selinux_requires asks for the build's selinux-policy version and
+# release. The module needs the policy version only, and SUSE's version
+# carries a git snapshot as well (20260826+git190.1d6a6b164), which a
+# newer build of the same policy raises without a release to hosts: keep
+# the date alone (>= 20260826).
+%{?_selinux_policy_version:%global _selinux_policy_version %(echo '%{_selinux_policy_version}' | sed 's/[-+].*//')}
 %{?selinux_requires}
 
 %description selinux
