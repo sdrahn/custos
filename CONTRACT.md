@@ -49,7 +49,7 @@ agent and enriches the record.
 
 | Thing | Value |
 |---|---|
-| agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host; in an OpenShell sandbox at most 13 characters, since its sandbox `agent-<name>` is a name OpenShell takes up to 19 characters (§16a) |
+| agent name | `^[a-z][a-z0-9-]{0,30}[a-z0-9]$`, unique on the host; in an OpenShell sandbox at most 19 characters, OpenShell's limit for a sandbox's name; one of 14 to 19 characters does not begin with `agent-` (§16a) |
 | agent user | `agent-<name>`: a static system user without a password, member of `mcp-users` and `agent-clients`. The prefix `agent-` is reserved for agents |
 | gateway principal | `sub: agent-<name>`. With the `systemd` backend: `transport: unix`, identified by `SO_PEERCRED`. With the `openshell` backend: `transport: http`, identified by an OAuth bearer token whose subject is `agent-<name>`, from an issuer trusted for agents (§6); the token carries no local-user claim, so the subject stays the principal (§16a). Never by what the agent says |
 | journal identifier | `SYSLOG_IDENTIFIER=agent-<name>`, `AGENT_NAME=<name>` |
@@ -110,7 +110,12 @@ same for every backend.
 | `lifecycle` in `/v1/status` | Starts / stops | Sandbox | Reaches the gateway |
 |---|---|---|---|
 | `{"kind": "systemd", "service": "agent@<name>.service", "socket": "agent@<name>.socket"}` | systemd | the unit's sandbox and SELinux `agent_t` (§15, §18) | `/run/mcp-gateway/mcp.sock`, `SO_PEERCRED` |
-| `{"kind": "openshell", "sandbox": "agent-<name>", "gateway": "<openshell gateway name>", "driver": "container" \| "systemd", "service": "agent-openshell@<name>.service"}` | OpenShell (`openshell sandbox start/stop`), with a systemd unit on the host that owns the agent's socket | OpenShell: Landlock, seccomp, an unprivileged user, a network fence; egress only through OpenShell's supervisor and its network policy | mcp-gateway's Streamable HTTP listener, by the host's name (or `host.openshell.internal`, §16a), with a bearer token the supervisor adds (the agent never holds it) |
+| `{"kind": "openshell", "sandbox": "<sandbox>", "gateway": "<openshell gateway name>", "driver": "container" \| "systemd", "service": "agent-openshell@<name>.service"}` | OpenShell (`openshell sandbox start/stop`), with a systemd unit on the host that owns the agent's socket | OpenShell: Landlock, seccomp, an unprivileged user, a network fence; egress only through OpenShell's supervisor and its network policy | mcp-gateway's Streamable HTTP listener, by the host's name (or `host.openshell.internal`, §16a), with a bearer token the supervisor adds (the agent never holds it) |
+
+`<sandbox>`, the OpenShell sandbox's name, is `agent-<name>`, or
+`<name>` itself where `agent-<name>` would be longer than the 19
+characters OpenShell takes for a sandbox's name (§16a). It depends on
+the name alone.
 
 Rules for every backend:
 
@@ -886,7 +891,7 @@ user, who is not necessarily allowed to approve.
 | **Revoke** | a grant | gateway `DELETE /v1/grants/{id}` | gateway |
 | **Cancel** | one running activity | `POST /v1/activities/{id}/cancel` | host |
 | **Pause** | one agent | the agent data's `paused: true` (the gateway denies every call) **and** `POST /v1/pause` (the host holds activities and refuses new ones) | gateway; host for the graceful part |
-| **Stop** | one agent | by its `lifecycle` (§3a): `systemctl stop agent@<name>.socket agent@<name>.service`, or `openshell sandbox stop agent-<name>` and `systemctl stop agent-openshell@<name>.service` | systemd; OpenShell |
+| **Stop** | one agent | by its `lifecycle` (§3a): `systemctl stop agent@<name>.socket agent@<name>.service`, or `openshell sandbox stop <sandbox>` and `systemctl stop agent-openshell@<name>.service` | systemd; OpenShell |
 | **Disable a schedule** | one schedule | `systemctl disable --now agent-schedule@<name>_<schedule>.timer` | systemd |
 | **Emergency stop** | every agent | `/etc/mcp-gateway/policy/agents/_control.yaml` with `_control: {stopped: true}` (the gateway denies every agent everything, on every backend), then stop every agent by its lifecycle and every schedule timer | gateway, systemd, OpenShell |
 
@@ -1532,7 +1537,7 @@ for the systemd driver, they say so.
 | Piece | What |
 |---|---|
 | image | systemd driver: none (`--from host`; `AGENT_IMAGE=host` in `openshell.env`), the host's packages are the sandbox's system. Container driver: `packaging/openshell/Containerfile`: Leap 16 with `agent-launcher` and the shipped playbooks (`/usr/share/custos/playbooks`, which the agent reads, §5) (`CUSTOS_OPENSHELL_IMAGE`, default `localhost/custos-agent:latest`). It resolves names by DNS first (`hosts: dns files`): the sandbox's DNS is OpenShell's policy DNS, and Podman copies the host's `/etc/hosts` into the sandbox, whose real addresses OpenShell's network fence refuses (#131) |
-| sandbox `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`CUSTOS_CONFIG`, base64), the relay secret (`CUSTOS_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The configuration and the relay secret go in with `--env-from`, from the CLI's environment, never on its command line, which any local user can read. The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name; `agent-admin create` refuses an OpenShell agent whose port another one has) |
+| sandbox `agent-<name>`, or `<name>` where `agent-<name>` would be longer than OpenShell's 19 characters: the lifecycle's `sandbox` (§3a), and `OPENSHELL_SANDBOX` in `openshell.env` where it is not `agent-<name>` | created by `agent-admin` with `--policy`, `--provider agent-<name>-gateway` and the environment: the configuration (`CUSTOS_CONFIG`, base64), the relay secret (`CUSTOS_RELAY_SECRET`), the gateway token's placeholder (`AGENT_GATEWAY_TOKEN`, set by OpenShell). The configuration and the relay secret go in with `--env-from`, from the CLI's environment, never on its command line, which any local user can read. The agent runs as OpenShell's `sandbox` user and serves its control API on `127.0.0.1:<port>` inside the sandbox (port 47000–47999, stable per name; `agent-admin create` refuses an OpenShell agent whose port another one has) |
 | sandbox policy | `/etc/custos/agents/<name>/openshell-policy.yaml`: Landlock as a hard requirement; the image's system read-only; the network only to the model endpoint, for `agent-launcher` only (the gateway's rule comes with the provider). The model endpoint is uninspected (no `protocol`: OpenShell passes the connection through at the TCP level); with `sandbox.openshell_inspect_model: true` it is `protocol: rest`, `enforcement: enforce`, `access: full`. The host's loopback is `host.openshell.internal` (in the policy and in the configuration the sandbox gets) |
 | provider profile | `custos-gateway-<name>` (`openshell-profile.yaml`): the bearer token `AGENT_GATEWAY_TOKEN`, valid for the gateway's endpoint only, which attaching the provider adds to the sandbox's network policy (`protocol: mcp`, every known MCP method: the tools are the gateway's decision; the protocol revisions `2025-06-18` and `2025-11-25`, since OpenShell refuses the others; for `agent-launcher` only). The agent sends `Authorization: Bearer $AGENT_GATEWAY_TOKEN` (`gateway.token_env`); the supervisor swaps the placeholder for the token on the way out |
 | relay secret | in the sandbox's environment, which OpenShell flags as readable by the agent. That is intended: it proves to the agent that a request comes from the relay, so the agent must know it; host users who cannot reach the agent's socket must not (`relay.secret` is root's, 0600). The OpenShell user (rootless Podman) can read it, and can enter every sandbox: it is trusted as far as the OpenShell agents go |
