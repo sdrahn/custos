@@ -11,6 +11,7 @@
 //	cmd_promotion.go    internal/admin/promotion  readiness, promote, demote, review, evaluate, feedback
 //	cmd_idp.go          internal/admin/idp        the identity provider
 //	cmd_openshell.go    internal/admin/oshsetup   OpenShell on the host
+//	cmd_chat.go         internal/admin/chat       a conversation with an agent on the terminal
 package main
 
 import (
@@ -106,6 +107,10 @@ const usage = `usage: agent-admin COMMAND …
   evaluate                               the demotion evaluator: demote bounded categories whose override rate
                                          or rollback conditions say so (custos-demote.timer)
   pause NAME | resume NAME               hold an agent / let it go on
+  chat NAME [--thread ID] [--message TEXT]
+                                         talk with an agent: each line read is a message of one thread, its
+                                         answer printed as it comes (text, tool calls, approvals waited for);
+                                         --thread continues one; --message sends one message and ends
   trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
   event NAME_EVENT_UNIT                  start an event's activity for a unit that failed (agent-event@.service)
   stop-all                               emergency stop: every agent, every schedule
@@ -138,7 +143,7 @@ type command struct {
 }
 
 // groups are the groups' tables; a new group is added here.
-var groups = [][]command{agentCommands, credentialCommands, enablementCommands, templateCommands, promotionCommands, idpCommands, openshellCommands}
+var groups = [][]command{agentCommands, credentialCommands, enablementCommands, templateCommands, promotionCommands, idpCommands, openshellCommands, chatCommands}
 
 // commands are all of them, by name.
 var commands = func() map[string]command {
