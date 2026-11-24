@@ -3,6 +3,7 @@ package governance
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -131,5 +132,39 @@ func TestClipBytes(t *testing.T) {
 	}
 	if got := clipBytes("aaää", 4); got != "aaä…" {
 		t.Errorf("%q", got)
+	}
+}
+
+// slowLog is a journal whose write takes a while, as journald's can.
+type slowLog struct{ *journal.Memory }
+
+func (s slowLog) Log(event, message string, f journal.Fields) {
+	time.Sleep(50 * time.Millisecond)
+	s.Memory.Log(event, message, f)
+}
+
+// Whoever sees an approval's pending event finds its journal record: the
+// record is written before the event is published, however slow the
+// journal (a stream that showed the event and then read the journal
+// found nothing, now and then).
+func TestJournalBeforeEvent(t *testing.T) {
+	cfg, _ := config.Parse([]byte("version: 1\nname: pp\nmodel: {provider: vertex, name: m}\ngateway: {servers: [zypp]}\n"))
+	mem := &journal.Memory{}
+	g := New(cfg, slowLog{mem})
+	g.inflight = append(g.inflight, &Call{Session: "s1", Invocation: "e-1", CallID: "c1", Tool: "zypp__install", State: StateRunning})
+	ch, cancel := g.Subscribe("s1")
+	defer cancel()
+	go g.OnGatewayLog(context.Background(), &mcp.LoggingMessageParams{Logger: "mcp-gateway", Level: "notice",
+		Data: "Waiting for approval of zypp/install on the mcp-gateway approvals page (id a-1)."})
+	select {
+	case e := <-ch:
+		if e.Kind != EvApprovalPending {
+			t.Fatalf("event %+v", e)
+		}
+		if r := mem.Events(journal.ApprovalPending); len(r) != 1 || r[0].Fields["APPROVAL_ID"] != "a-1" {
+			t.Errorf("the event came before its journal record: records %+v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event")
 	}
 }
