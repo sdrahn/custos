@@ -44,7 +44,7 @@ var enablementCommands = []command{
 			return err
 		}
 		if len(pos) > 0 {
-			return fmt.Errorf("seal: %q: want --accept NAME\n%s", pos[0], usage)
+			return fmt.Errorf("seal: %q: want --accept NAME\n%s", pos[0], commandUsage("seal"))
 		}
 		switch {
 		case *rekey && !*agents:
@@ -52,7 +52,7 @@ var enablementCommands = []command{
 		case *agents && !*rekey:
 			return a.SealAgents(accept)
 		}
-		return fmt.Errorf("seal: --agents or --rekey\n%s", usage)
+		return fmt.Errorf("seal: --agents or --rekey\n%s", commandUsage("seal"))
 	}},
 	{"issuers", func(a *admin.Admin, args []string) error {
 		fs := flags("issuers")
@@ -64,7 +64,7 @@ var enablementCommands = []command{
 			return err
 		}
 		if len(pos) > 0 {
-			return fmt.Errorf("issuers: %q: want --add ISSUER or --remove ISSUER\n%s", pos[0], usage)
+			return fmt.Errorf("issuers: %q: want --add ISSUER or --remove ISSUER\n%s", pos[0], commandUsage("issuers"))
 		}
 		return a.Issuers(add, remove)
 	}},
