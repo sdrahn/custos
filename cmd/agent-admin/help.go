@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -27,7 +28,7 @@ const backendText = `  --sandbox systemd
                       [--token-url URL | --static-token]
                       [--gateway-config FILE]`
 
-var help = []helpGroup{
+var help = sortedHelp([]helpGroup{
 	{"Agents", []helpEntry{
 		{"list", []string{"List the agents."}},
 		{"show [NAME…]", []string{"The agents' gateway data and the state of the emergency stop, as JSON."}},
@@ -159,7 +160,7 @@ var help = []helpGroup{
 			"The demotion evaluator: demote bounded categories whose override rate or rollback conditions say so (custos-demote.timer).",
 		}},
 	}},
-}
+})
 
 const (
 	helpWidth  = 78
@@ -184,6 +185,15 @@ var usage = func() string {
 	}
 	return strings.TrimRight(b.String(), "\n")
 }()
+
+// sortedHelp puts each group's commands in alphabetical order; the forms
+// of one command stay in the order given.
+func sortedHelp(groups []helpGroup) []helpGroup {
+	for _, g := range groups {
+		sort.SliceStable(g.entries, func(i, j int) bool { return helpName(g.entries[i]) < helpName(g.entries[j]) })
+	}
+	return groups
+}
 
 // entryText is a command's synopsis and what it does.
 func entryText(e helpEntry) string {
