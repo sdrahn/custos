@@ -31,6 +31,13 @@ wait "$slow_pid"
 check "the slow run finished" grep -q RUN_FINISHED "$slow"
 check "then the thread takes the next run" bash -c "$(declare -f api); api t1 /agui -N -X POST -d '{\"threadId\":\"custos-test-busy\",\"messages\":[{\"role\":\"user\",\"content\":\"after\"}]}' | grep -q RUN_FINISHED"
 rm -f "$slow"
+# agent-admin chat: the same endpoint on the terminal, as root.
+cli=$(agent-admin chat t1 --message PROBE 2>&1)
+check "agent-admin chat --message prints the answer with its tool call" grep -q '^  \[tool\] ' <<<"$cli" ||
+	head -n 10 <<<"$cli" | sed 's/^/    | /'
+check "agent-admin chat takes one message per line of standard input" bash -c \
+	"printf 'hello\n\nhello\n' | agent-admin chat t1 >/dev/null"
+check "agent-admin chat refuses an agent without a socket" not agent-admin chat no-such-agent --message hello
 
 section "Access to the socket"
 id custos-tester >/dev/null 2>&1 || useradd -m custos-tester
