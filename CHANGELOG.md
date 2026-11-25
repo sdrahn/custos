@@ -11,6 +11,26 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.15 — 2026-11-25
+
+`agent-admin help` is easier to read: the commands in groups of what
+they are for, each with its synopsis and what it does, and help for one
+command. Custos's tests now run against OpenShell 0.1.10 and the
+OpenShell systemd compute driver 0.3.1.
+
+Upgrading from 0.9.14 needs no change to configuration or gateway data.
+
+### Changed
+
+- `agent-admin help` lists the commands in groups of what they are for
+  (agents, templates, what an agent may do, credentials, promotion, the
+  host, OpenShell, the emergency stop, and what systemd units run), in
+  alphabetical order within a group, each with its synopsis on a line of
+  its own, what it does under it, and a blank line between two commands.
+  `agent-admin help COMMAND` and `agent-admin COMMAND --help` show one
+  command; a command line that is not understood shows that command's
+  synopsis, not the whole help.
+
 ## v0.9.14 — 2026-11-24
 
 `agent-admin chat` talks with an agent on the host's terminal, and the
