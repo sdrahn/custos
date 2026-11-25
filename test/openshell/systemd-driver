@@ -2,5 +2,11 @@
 # --driver systemd (#215): its release, from which CI builds its packages,
 # and the OpenShell release that release is built against, which the
 # spike then installs in place of test/openshell/openshell-version.
-DRIVER_VERSION=v0.1.4
-OPENSHELL_VERSION=v0.1.8
+DRIVER_VERSION=v0.3.1
+OPENSHELL_VERSION=v0.1.10
+# From version 0.3 on the driver requires OpenShell's packages
+# openshell-supervisor and openshell-sandbox of that release, which
+# OpenShell's installer does not install and Leap does not carry: they
+# come from this OBS project, from its repository named after the VM's
+# release (16.0), as in the driver's own tests.
+OPENSHELL_PROJECT=home:sdrahn:testing
