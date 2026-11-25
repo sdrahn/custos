@@ -119,6 +119,20 @@ func TestHelpLayout(t *testing.T) {
 	}
 }
 
+// Within a group, the commands are in alphabetical order.
+func TestHelpGroupsSorted(t *testing.T) {
+	for _, g := range help {
+		for i := 1; i < len(g.entries); i++ {
+			if a, b := helpName(g.entries[i-1]), helpName(g.entries[i]); a > b {
+				t.Errorf("%s: %s before %s", g.title, a, b)
+			}
+		}
+	}
+	if !strings.Contains(usage, "\nAgents\n  chat NAME") {
+		t.Error("Agents does not start with chat")
+	}
+}
+
 func TestHelpCommand(t *testing.T) {
 	a, _ := admintest.New(t)
 	out := &bytes.Buffer{}

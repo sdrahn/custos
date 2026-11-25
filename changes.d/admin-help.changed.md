@@ -1,4 +1,5 @@
-- `agent-admin help` lists the commands in groups of what they are for
+- `agent-admin help` lists the commands in groups of what they are for,
+  in alphabetical order within a group
   (agents, templates, what an agent may do, credentials, promotion, the
   host, OpenShell, the emergency stop, and what systemd units run), each
   with its synopsis on a line of its own, what it does under it, and a
