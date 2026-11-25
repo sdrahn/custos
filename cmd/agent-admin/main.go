@@ -12,6 +12,9 @@
 //	cmd_idp.go          internal/admin/idp        the identity provider
 //	cmd_openshell.go    internal/admin/oshsetup   OpenShell on the host
 //	cmd_chat.go         internal/admin/chat       a conversation with an agent on the terminal
+//
+// help.go is the help: the commands in groups of what they are for, each
+// with its synopsis and what it does. A new command gets its entry there.
 package main
 
 import (
@@ -25,96 +28,6 @@ import (
 
 	"github.com/sdrahn/custos/internal/admin"
 )
-
-const usage = `usage: agent-admin COMMAND …
-  list                                   the agents
-  show [NAME…]                           the gateway data and the emergency stop, as JSON
-  check NAME|FILE                        validate a configuration (FILE -: stdin)
-  create NAME --from FILE                install a new agent (supervised, no permissions; FILE -: stdin)
-  create NAME --template TEMPLATE [--from FILE | BACKEND]
-                                         install a new agent from a template: its configuration (or FILE's),
-                                         permissions and mode. BACKEND, where it runs, as the template allows:
-                                         --sandbox systemd|openshell [--openshell-driver container|systemd]
-                                         [--openshell-gateway NAME] [--token-url URL | --static-token]
-                                         [--gateway-config FILE]; openshell: gateway.url and gateway.oauth from
-                                         mcp-gateway's http settings (FILE's instead of the installed gateway's)
-  templates                              the agent templates (CONTRACT.md §14a), as JSON
-  playbooks                              the diagnostic playbooks (CONTRACT.md §14c), as JSON
-  compare [NAME…] [--template TEMPLATE]  each agent against its template (CONTRACT.md §14a), as JSON: the
-                                         configuration's and the permissions' differences (--template: for one
-                                         agent created before its template was recorded)
-  apply-template NAME [--template TEMPLATE] [--configuration] [--permissions]
-                                         give the agent its template's configuration and/or permissions (both
-                                         without either option); it keeps its name, model, schedules, events,
-                                         sandbox, gateway connection, mode, categories and credentials
-  feedback NAME ACTIVITY [--hypothesis ID=confirmed|rejected|unsure…] [--plan useful|not_useful]
-           [--executed] [--comment TEXT]  feedback on an activity's diagnosis report (CONTRACT.md §4a)
-  draft NAME [--template TEMPLATE] [BACKEND]
-                                         a new agent's starting configuration (blank or the template's),
-                                         with the host's model defaults, for BACKEND (as for create)
-  defaults [--from FILE | --clear]       the model defaults for new agents (CONTRACT.md §14b), as JSON;
-                                         --from sets them (FILE -: stdin), --clear removes them
-  edit NAME --from FILE                  replace its configuration and apply it (restart; OpenShell: its sandbox; FILE -: stdin)
-  delete NAME [--keep-state]             remove an agent (its user stays)
-  set-credential NAME CRED               encrypt a secret read from stdin
-  idp-client NAME [--keycloak [--token-lifetime D]]
-                                         the OAuth client an OpenShell agent needs at the gateway's identity
-                                         provider; --keycloak: a script that creates it there (kcadm.sh), its
-                                         tokens valid for D (default 5m, at most 1h)
-  idp-client NAME --keycloak --apply --admin USER [--admin-realm R] [--keycloak-url URL] [--token-lifetime D]
-                                         make it in Keycloak through its admin API (USER's password asked for,
-                                         or on stdin), list the issuer for agents, check a token, set the secret;
-                                         without --token-lifetime, the replaced client's token lifetime stays
-  fence NAME                             let a systemd agent's unit reach its model endpoint, for this start
-                                         (agent@.service runs it; the unit denies every other address)
-  check-token NAME < secret              mint a token with the agent's OAuth client and check its claims
-                                         as the gateway will (iss, sub, aud, scope, lifetime)
-                                         (both: --gateway-config FILE instead of the installed gateway's)
-  openshell-setup --user USER --driver container|systemd [--gateway NAME] [--ca FILE] [--check]
-                                         set up OpenShell for OpenShell agents (CONTRACT.md §16a): checks what
-                                         is installed (it installs nothing), configures the driver, registers
-                                         the gateway for root, puts mcp-gateway's CA (FILE) where the driver
-                                         needs it; --check: say what would change
-  credentials [NAME…]                    the agents' credentials: names, what uses them, missing ones; never
-                                         the values (JSON)
-  remove-credential NAME CRED [--force]  remove a stored credential (--force: one its model uses)
-  enable CATEGORY… | --all               enable task categories on a diagnostics-only host (CONTRACT.md §6b);
-                                         they start supervised
-  disable CATEGORY… | --all              disable task categories again; --all: back to diagnostics-only.
-                                         Refused while an agent has permissions in them or one promoted
-  diagnostics-only                       make a fresh host diagnostics-only (the bundled install, custos-setup)
-  seal --agents [--accept NAME…]         make the host's seal cover the agents' data and their token issuers
-                                         (CONTRACT.md §6b): signs them; a change outside agent-admin then
-                                         denies that agent everything. Once it has, a file that does not match
-                                         the seal is signed only when --accept names it (_http: the issuers)
-  seal --rekey [--accept NAME…]          a new key for the seal (a lost one): signs again what matches the
-                                         seal, and what --accept names (_enablement: the categories' state)
-  issuers [--add ISSUER…] [--remove ISSUER…]
-                                         the token issuers trusted for agents over HTTPS (_http.yaml); signed
-                                         on a host whose seal covers them
-  mode NAME advisory|supervised|bounded  set the autonomy mode (enforced by mcp-gateway)
-  owners NAME [RULE…]                    who may approve its calls besides the servers' approvers
-                                         (user:NAME, group:NAME, role:NAME, remote-user:SUB, remote-group:NAME); none clears
-  permissions NAME                       replace its gateway permissions (YAML list on stdin)
-  categories                             the task categories (CONTRACT.md §6a), as JSON
-  readiness NAME [CATEGORY]              a category's promotion readiness (CONTRACT.md §6a), as JSON
-  promote NAME CATEGORY --envelope FILE [--despite-readiness --reason TEXT]
-                                         let a category act without approval within its envelope (FILE -: stdin)
-  demote NAME CATEGORY [--reason TEXT]   back to supervised (the envelope is kept)
-  review NAME [CATEGORY]                 the autonomous actions of promoted categories still to review, as JSON
-  review NAME CATEGORY ACTIVITY CALL ok|incident [--reason TEXT]
-                                         an approver's verdict; incident (should not have run) demotes it
-  evaluate                               the demotion evaluator: demote bounded categories whose override rate
-                                         or rollback conditions say so (custos-demote.timer)
-  pause NAME | resume NAME               hold an agent / let it go on
-  chat NAME [--thread ID] [--message TEXT]
-                                         talk with an agent: each line read is a message of one thread, its
-                                         answer printed as it comes (text, tool calls, approvals waited for);
-                                         --thread continues one; --message sends one message and ends
-  trigger NAME_SCHEDULE                  start a schedule's activity (agent-schedule@.service)
-  event NAME_EVENT_UNIT                  start an event's activity for a unit that failed (agent-event@.service)
-  stop-all                               emergency stop: every agent, every schedule
-  release-all                            undo stop-all`
 
 func main() {
 	a := admin.New()
@@ -162,15 +75,36 @@ func run(a *admin.Admin, args []string) error {
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Println(usage)
+		if args[0] == "help" && len(args) > 1 {
+			h, err := commandHelp(args[1])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(a.Out, h)
+			return nil
+		}
+		fmt.Fprintln(a.Out, usage)
 		return nil
 	}
 	c, ok := commands[args[0]]
 	if !ok {
-		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
+		return fmt.Errorf("unknown command %q\n%s", args[0], usageLine)
 	}
-	return c.run(a, args[1:])
+	err := c.run(a, args[1:])
+	// COMMAND --help: the command's help, as help COMMAND.
+	var h helpRequest
+	if errors.As(err, &h) {
+		text, _ := commandHelp(args[0])
+		fmt.Fprintln(a.Out, text)
+		return nil
+	}
+	return err
 }
+
+// helpRequest is a command's --help, which parse finds.
+type helpRequest struct{ cmd string }
+
+func (h helpRequest) Error() string { return commandUsage(h.cmd) }
 
 // flags is a command's flag set: its errors are the caller's to word.
 func flags(cmd string) *flag.FlagSet {
@@ -190,9 +124,9 @@ func parse(fs *flag.FlagSet, args []string, need int) ([]string, error) {
 	for {
 		if err := fs.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				return nil, fmt.Errorf("%s", usage)
+				return nil, helpRequest{fs.Name()}
 			}
-			return nil, fmt.Errorf("%s: %v\n%s", fs.Name(), err, usage)
+			return nil, fmt.Errorf("%s: %v\n%s", fs.Name(), err, commandUsage(fs.Name()))
 		}
 		rest := fs.Args()
 		if n := len(args) - len(rest); n > 0 && args[n-1] == "--" && !(n > 1 && takesValue(fs, args[n-2])) {
@@ -207,7 +141,7 @@ func parse(fs *flag.FlagSet, args []string, need int) ([]string, error) {
 		args = args[1:]
 	}
 	if len(pos) < need {
-		return nil, fmt.Errorf("%s: missing arguments\n%s", fs.Name(), usage)
+		return nil, fmt.Errorf("%s: missing arguments\n%s", fs.Name(), commandUsage(fs.Name()))
 	}
 	return pos, nil
 }
