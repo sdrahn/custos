@@ -175,8 +175,17 @@ if [ "$gateway_host" = name ]; then
 		--listen-address=127.0.0.1 --port=53 --local="/$gw_host/" --address="/$gw_host/$host_ip" --server="${upstream:-127.0.0.53}" >/dev/null
 	mv /etc/resolv.conf "$work/resolv.conf.orig"
 	printf 'nameserver 127.0.0.1\n' >/etc/resolv.conf
-	restore_resolv() { if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi; }
+	# A sandbox's supervisor takes the first nameserver of the copy of
+	# resolv.conf its container gets when the sandbox starts, minutes from
+	# now. Read-only until the end (#336): nothing on the host may put its
+	# own resolver back in the meantime.
+	mount --bind /etc/resolv.conf /etc/resolv.conf && mount -o remount,bind,ro /etc/resolv.conf
+	restore_resolv() {
+		umount /etc/resolv.conf 2>/dev/null
+		if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi
+	}
 	trap restore_resolv EXIT
+	check "resolv.conf stays as it is for the run (read-only)" bash -c '! touch /etc/resolv.conf 2>/dev/null'
 	check "$gw_host resolves by DNS to the host's network address ($host_ip)" eventually 10 bash -c \
 		"[ -n '$host_ip' ] && getent ahostsv4 $gw_host | grep -q '^$host_ip '"
 	check "and other names still resolve (dnsmasq forwards to $upstream)" eventually 10 getent ahosts registry.opensuse.org
@@ -420,6 +429,10 @@ check "its openshell.env names the sandbox service-doctor" grep -qx "OPENSHELL_S
 check "agent-admin delete service-doctor" agent-admin delete service-doctor
 
 section "Creating the agent"
+[ "$gateway_host" = name ] &&
+	check "resolv.conf still names dnsmasq alone, for the sandbox to come" bash -c \
+		"[ \"\$(grep '^nameserver' /etc/resolv.conf)\" = 'nameserver 127.0.0.1' ]" ||
+	sed 's/^/    | resolv.conf: /' /etc/resolv.conf
 cat >"$work/sb.yaml" <<EOF
 version: 1
 name: sb
@@ -543,6 +556,21 @@ diagnose() {
 if eventually 180 bash -c 'curl -sf --max-time 10 --unix-socket /run/agents/sb/api.sock http://agent/v1/status >/dev/null'; then
 	pass "the agent answers through the relay"
 	relay_ok=1
+	# Its supervisor's policy DNS asks the first nameserver of the
+	# container's resolv.conf (#336). Docker: the supervisor's container is
+	# the sandbox's one in the host's network.
+	if [ "$gateway_host" = name ] && [ "$runtime" = docker ]; then
+		supervisor_resolv() {
+			local id
+			for id in $(ctr ps -q --filter name=agent-sb); do
+				[ "$(ctr inspect -f '{{.HostConfig.NetworkMode}}' "$id")" = host ] &&
+					cat "$(ctr inspect -f '{{.ResolvConfPath}}' "$id")"
+			done
+		}
+		check "the sandbox's supervisor asks dnsmasq for names (its resolv.conf)" bash -c \
+			"$(declare -f ctr supervisor_resolv); supervisor_resolv | grep '^nameserver' | head -n1 | grep -qx 'nameserver 127.0.0.1'" ||
+			supervisor_resolv 2>&1 | sed 's/^/    | supervisor resolv.conf: /'
+	fi
 else
 	fail "the agent answers through the relay"
 	diagnose
