@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -68,12 +68,14 @@ func TestParse(t *testing.T) {
 	}
 }
 
-// The usage text and the table name the same commands, and no two groups
-// the same one.
-func TestUsageNamesEveryCommand(t *testing.T) {
-	inUsage := map[string]bool{"resume": true} // "pause NAME | resume NAME"
-	for _, m := range regexp.MustCompile(`(?m)^  ([a-z][a-z-]*)`).FindAllStringSubmatch(usage, -1) {
-		inUsage[m[1]] = true
+// The help and the table name the same commands, and no two groups the
+// same one.
+func TestHelpNamesEveryCommand(t *testing.T) {
+	inHelp := map[string]bool{}
+	for _, g := range help {
+		for _, e := range g.entries {
+			inHelp[helpName(e)] = true
+		}
 	}
 	inTable := map[string]bool{}
 	for _, g := range groups {
@@ -87,11 +89,75 @@ func TestUsageNamesEveryCommand(t *testing.T) {
 			}
 		}
 	}
-	if !reflect.DeepEqual(inUsage, inTable) {
-		t.Errorf("usage names %v\nthe table has %v", keys(inUsage), keys(inTable))
+	if !reflect.DeepEqual(inHelp, inTable) {
+		t.Errorf("the help names %v\nthe table has %v", keys(inHelp), keys(inTable))
 	}
 	if len(commands) != len(inTable) {
 		t.Errorf("%d commands by name, %d in the groups", len(commands), len(inTable))
+	}
+}
+
+// The help reads on a terminal: no line wider than 78 columns, a blank
+// line between two commands, each command's text under its synopsis.
+func TestHelpLayout(t *testing.T) {
+	lines := strings.Split(usage, "\n")
+	for i, l := range lines {
+		if n := len([]rune(l)); n > helpWidth {
+			t.Errorf("line %d is %d wide: %q", i+1, n, l)
+		}
+	}
+	for _, g := range help {
+		if !strings.Contains(usage, "\n\n"+g.title+"\n  ") {
+			t.Errorf("group %q: not a heading of its own", g.title)
+		}
+		for i, e := range g.entries {
+			first := strings.SplitN(synopsis(e, "  "), "\n", 2)[0]
+			if i > 0 && !strings.Contains(usage, "\n\n"+first+"\n") {
+				t.Errorf("%q: no blank line before it", e.synopsis)
+			}
+		}
+	}
+}
+
+// Within a group, the commands are in alphabetical order.
+func TestHelpGroupsSorted(t *testing.T) {
+	for _, g := range help {
+		for i := 1; i < len(g.entries); i++ {
+			if a, b := helpName(g.entries[i-1]), helpName(g.entries[i]); a > b {
+				t.Errorf("%s: %s before %s", g.title, a, b)
+			}
+		}
+	}
+	if !strings.Contains(usage, "\nAgents\n  chat NAME") {
+		t.Error("Agents does not start with chat")
+	}
+}
+
+func TestHelpCommand(t *testing.T) {
+	a, _ := admintest.New(t)
+	out := &bytes.Buffer{}
+	a.Out = out
+	if err := run(a, []string{"help"}); err != nil || !strings.Contains(out.String(), "\nEmergency stop\n") {
+		t.Errorf("help: %v\n%s", err, out)
+	}
+	out.Reset()
+	if err := run(a, []string{"help", "idp-client"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); strings.Count(got, "  idp-client NAME") != 2 || strings.Contains(got, "check-token") {
+		t.Errorf("help idp-client: both forms, nothing else:\n%s", got)
+	}
+	out.Reset()
+	if err := run(a, []string{"promote", "x", "--help"}); err != nil || !strings.HasPrefix(out.String(), "  promote NAME CATEGORY") {
+		t.Errorf("promote --help: %v\n%s", err, out)
+	}
+	if err := run(a, []string{"help", "no-such"}); err == nil || !strings.HasPrefix(err.Error(), `unknown command "no-such"`) {
+		t.Errorf("help no-such: %v", err)
+	}
+	// A command line not understood shows the command's synopsis only.
+	err := run(a, []string{"mode", "one"})
+	if err == nil || err.Error() != "mode: missing arguments\nusage: agent-admin mode NAME advisory|supervised|bounded\n(agent-admin help mode: what it does)" {
+		t.Errorf("mode one: %v", err)
 	}
 }
 

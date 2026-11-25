@@ -53,11 +53,16 @@ openshell --version | grep -qF "${osh_version#v}" || { echo "OpenShell is not $o
 openshell --version
 
 if [ "$driver" = systemd ]; then
+	project=$(. "$(dirname "$0")/systemd-driver" && echo "$OPENSHELL_PROJECT")
+	repo="https://download.opensuse.org/repositories/${project//:/:\/}/$(. /etc/os-release && echo "$VERSION_ID")/"
+	log "OpenShell's supervisor and sandbox for the driver, from $repo"
+	{ zypper -n ar -f -p 105 "$repo" openshell-packages && zypper -n --gpg-auto-import-keys ref openshell-packages; } >/tmp/zypper-repo.log 2>&1 ||
+		{ tail -n 20 /tmp/zypper-repo.log; exit 1; }
 	log "the systemd compute driver's packages ($(ls "$driver_rpms"))"
 	zypper -n --no-gpg-checks in --allow-unsigned-rpm --no-recommends \
 		$(ls "$driver_rpms"/*.rpm | grep -v -- '-tests-') >/tmp/zypper-driver.log 2>&1 ||
 		{ tail -n 30 /tmp/zypper-driver.log; exit 1; }
-	rpm -q openshell-driver-systemd openshell-driver-systemd-selinux
+	rpm -q openshell-driver-systemd openshell-driver-systemd-selinux openshell-supervisor openshell-sandbox
 fi
 
 log "agent-admin openshell-setup (the $driver driver)"
