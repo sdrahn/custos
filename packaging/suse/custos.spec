@@ -29,8 +29,10 @@ BuildRequires:  systemd-rpm-macros
 # The agents' tools, policy and approvals are mcp-gateway's (CONTRACT.md §1).
 # NVIDIA OpenShell is optional (sandbox kind openshell, CONTRACT.md §16a).
 Suggests:       openshell
-# 1.17.1: MCP_GATEWAY_PRINCIPAL, for delegation by agents in OpenShell.
-Requires:       mcp-gateway >= 1.17.1
+# 1.17.1: MCP_GATEWAY_PRINCIPAL, for delegation by agents in OpenShell;
+# 1.17.2: idempotency keys, without which a tool call that an agent in
+# OpenShell sends again after a cut connection could run twice.
+Requires:       mcp-gateway >= 1.17.2
 Requires(pre):  group(mcp-users)
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 %sysusers_requires
