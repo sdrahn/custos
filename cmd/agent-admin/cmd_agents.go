@@ -98,6 +98,14 @@ var agentCommands = []command{
 		}
 		return a.SetOwners(pos[0], pos[1:])
 	}},
+	{"delegation-setup", func(a *admin.Admin, args []string) error {
+		fs := flags("delegation-setup")
+		check := fs.Bool("check", false, "")
+		if _, err := parse(fs, args, 0); err != nil {
+			return err
+		}
+		return a.DelegationSetup(*check)
+	}},
 	{"pause", func(a *admin.Admin, args []string) error { return pause(a, "pause", args) }},
 	{"resume", func(a *admin.Admin, args []string) error { return pause(a, "resume", args) }},
 	{"trigger", func(a *admin.Admin, args []string) error {

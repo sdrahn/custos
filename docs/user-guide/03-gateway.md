@@ -162,7 +162,11 @@ directions. It posts the task to the other agent's socket, naming the
 delegating agent, and waits for the result. The other agent believes
 that name only from `custos-delegate`. A copy of `agents.yaml` from
 before 0.9.17 runs the bridge as the delegating agent's user, which an
-agent in OpenShell does not have: copy the file again after the update.
+agent in OpenShell does not have, and needs the agents' users in
+`agent-clients`. After the update, run `agent-admin delegation-setup`:
+it replaces such a copy (one you changed it keeps, saying what to
+change) and takes the agents' users out of `agent-clients`, which they
+need no longer. `--check` shows what it would do.
 Allow it per agent, naming whom it may delegate to:
 
 ```yaml
