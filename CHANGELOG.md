@@ -11,6 +11,36 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.18 — 2026-11-26
+
+Tool calls of agents in OpenShell survive OpenShell closing the
+sandbox's connections: a call no longer fails at once on a connection
+OpenShell had closed, and a call cut off while it runs is sent again
+and answered by the gateway from the first, which runs once.
+
+Upgrading from 0.9.17 needs mcp-gateway 1.17.2 or later (its
+idempotency keys), and no change to configuration or gateway data.
+Restart the gateway after updating it.
+
+### Changed
+
+- An agent in OpenShell whose tool call is cut off while it runs (the
+  connection closed without an answer, as OpenShell does at every token
+  renewal) asks the gateway for the call's outcome instead of reporting
+  a failure that may in fact have run: each tool call carries an
+  idempotency key, and the gateway answers a call sent again with it
+  from the first one, which runs once (mcp-gateway 1.17.2, requirement
+  R8). Custos needs mcp-gateway 1.17.2 or later now.
+
+### Fixed
+
+- An agent in OpenShell no longer has a tool call fail with `EOF` right
+  after OpenShell closed the sandbox's connections (at a token renewal,
+  or when another sandbox was set up): each tool call goes to the
+  gateway on a connection of its own, never on an idle one OpenShell
+  may have closed. A call cut off while it runs is sent again with its
+  idempotency key (below).
+
 ## v0.9.17 — 2026-11-26
 
 Agents in OpenShell can delegate and be delegated to: delegation from
