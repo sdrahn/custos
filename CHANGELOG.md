@@ -39,7 +39,7 @@ Restart the gateway after updating it.
   or when another sandbox was set up): each tool call goes to the
   gateway on a connection of its own, never on an idle one OpenShell
   may have closed. A call cut off while it runs is sent again with its
-  idempotency key (below).
+  idempotency key (Changed, above).
 
 ## v0.9.17 — 2026-11-26
 
