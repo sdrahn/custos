@@ -294,3 +294,27 @@ func TestToolCallOnFreshConnection(t *testing.T) {
 		t.Errorf("tools/call on a new connection: %v, want each", calls)
 	}
 }
+
+// A tools/call with an idempotency key is sent again when the connection
+// ends without an answer: the gateway (1.17.2) answers the repeat from the
+// first call, so it runs once. One without a key is not
+// (TestDroppedCallNotRetried).
+func TestDroppedCallWithKeyRetried(t *testing.T) {
+	url, _, drop, _ := proxiedDropping(t)
+	ctx := context.Background()
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(ctx, HTTPTransport(url, "GW_TOKEN", nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	drop.Store(1)
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := s.CallTool(tctx, &mcp.CallToolParams{Name: "probe", Meta: mcp.Meta{MetaIdempotencyKey: "custos:e-1/c-1"}})
+	if err != nil || res.IsError {
+		t.Fatalf("the keyed call after a dropped connection: %v %+v", err, res)
+	}
+	if drop.Load() != 0 {
+		t.Errorf("the connection was not dropped: %d left", drop.Load())
+	}
+}

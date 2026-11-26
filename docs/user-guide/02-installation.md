@@ -15,7 +15,7 @@ the parts found each other. Creating the first agent is
 | What | Version or note |
 |---|---|
 | operating system | SUSE Linux Enterprise Server 16.0 or 16.1, openSUSE Leap 16.0 or 16.1 (x86_64, aarch64; SLES also s390x, ppc64le) |
-| mcp-gateway | 1.17.1 or later, with its SELinux module (`mcp-gateway-selinux`) where SELinux runs |
+| mcp-gateway | 1.17.2 or later, with its SELinux module (`mcp-gateway-selinux`) where SELinux runs |
 | SELinux | enforcing is supported and tested; `custos-selinux` is required where `selinux-policy-targeted` is installed |
 | systemd | the system's; agents use `systemd-creds` for secrets |
 | a model | an OpenAI-compatible server (for example a local vLLM or llama.cpp server), Google Gemini, or Vertex AI ([chapter 5](05-configuration.md#models)) |
