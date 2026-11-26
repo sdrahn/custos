@@ -5,6 +5,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,13 +47,32 @@ func HTTPTransport(endpoint, tokenEnv string, base http.RoundTripper) mcp.Transp
 	}
 	return &mcp.StreamableClientTransport{
 		Endpoint:   endpoint,
-		HTTPClient: &http.Client{Transport: bearer{env: tokenEnv, next: base}},
+		HTTPClient: &http.Client{Transport: bearer{env: tokenEnv, next: base, fresh: freshConns(base)}},
 	}
 }
 
+// freshConns is base without keep-alive: each request on a connection of
+// its own, closed after it. A tools/call goes on one (issue #375):
+// OpenShell closes a sandbox's open connections at a token renewal, and
+// when another sandbox is set up, and a call sent on an idle connection
+// it closed ends in EOF. Since mcp-gateway 1.17.2 a call with an
+// idempotency key is sent again then, but a fresh connection spares it
+// the wait and the repeat. A transport of the caller's that is no
+// *http.Transport (tests) stays as it is.
+func freshConns(base http.RoundTripper) http.RoundTripper {
+	t, ok := base.(*http.Transport)
+	if !ok {
+		return base
+	}
+	c := t.Clone()
+	c.DisableKeepAlives = true
+	return c
+}
+
 type bearer struct {
-	env  string
-	next http.RoundTripper
+	env string
+	// next sends every request but tools/call, fresh those (freshConns).
+	next, fresh http.RoundTripper
 }
 
 func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -61,7 +82,11 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 			r.Header.Set("Authorization", "Bearer "+tok)
 		}
 	}
-	res, err := b.next.RoundTrip(r)
+	next := b.next
+	if b.fresh != nil && rpcMethod(r) == "tools/call" {
+		next = b.fresh
+	}
+	res, err := next.RoundTrip(r)
 	// OpenShell's proxy answers 500, without asking the gateway, for a
 	// little while after it renewed the token (until the sandbox's
 	// supervisor has the new one). mcp-gateway answers 500 only to an
@@ -70,8 +95,10 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	// renewal the sandbox may also refuse the connection for a moment
 	// (connect: permission denied): nothing was sent, so any request is
 	// retried. And the proxy may close the connection without an answer
-	// (EOF): that is retried only for a request that may run twice
-	// (never a tools/call, which may have reached the gateway).
+	// (EOF): that is retried only for a request that may be sent again: a
+	// tools/call only with an idempotency key, which the gateway answers
+	// from the first call (mcp-gateway 1.17.2), never one without, which
+	// may have run.
 	for wait := retryFirst; retryable(r, res, err) && wait <= retryLast; wait *= 2 {
 		if err == nil {
 			drain(res)
@@ -87,7 +114,7 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 		}
-		res, err = b.next.RoundTrip(again)
+		res, err = next.RoundTrip(again)
 	}
 	if err == nil && res.StatusCode == http.StatusInternalServerError && r.Header.Get(sessionHeader) != "" {
 		// Still 500 on a session: as "session not found" (404) the MCP
@@ -127,31 +154,61 @@ func dropped(err error) bool {
 }
 
 // idempotent: a request whose repetition changes nothing: the session's
-// stream (GET), and the JSON-RPC methods that only read or set up a
-// session. A tools/call, a batch or anything unknown is not.
+// stream (GET), the JSON-RPC methods that only read or set up a session,
+// and a tools/call with an idempotency key, which the gateway answers
+// from the first call when it is sent again (MetaIdempotencyKey). A
+// tools/call without one, a batch or anything unknown is not.
 func idempotent(r *http.Request) bool {
 	if r.Method == http.MethodGet {
 		return true
 	}
+	if rpcMethod(r) == "tools/call" {
+		return callHasKey(r)
+	}
+	switch rpcMethod(r) {
+	case "initialize", "notifications/initialized", "ping", "tools/list", "prompts/list", "resources/list", "resources/templates/list":
+		return true
+	}
+	return false
+}
+
+// rpcMethod is the JSON-RPC method a POST carries, "" for anything else
+// (another method, a batch, a body that cannot be read again).
+func rpcMethod(r *http.Request) string {
 	if r.Method != http.MethodPost || r.GetBody == nil {
-		return false
+		return ""
 	}
 	body, err := r.GetBody()
 	if err != nil {
-		return false
+		return ""
 	}
 	defer body.Close()
 	var msg struct {
 		Method string `json:"method"`
 	}
 	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&msg) != nil {
+		return ""
+	}
+	return msg.Method
+}
+
+// callHasKey reports whether a tools/call names an idempotency key.
+func callHasKey(r *http.Request) bool {
+	body, err := r.GetBody()
+	if err != nil {
 		return false
 	}
-	switch msg.Method {
-	case "initialize", "notifications/initialized", "ping", "tools/list", "prompts/list", "resources/list", "resources/templates/list":
-		return true
+	defer body.Close()
+	var msg struct {
+		Params struct {
+			Meta map[string]any `json:"_meta"`
+		} `json:"params"`
 	}
-	return false
+	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&msg) != nil {
+		return false
+	}
+	k, _ := msg.Params.Meta[MetaIdempotencyKey].(string)
+	return k != ""
 }
 
 // The backoff of retried 500s: 0.5 s doubling to 8 s, about 15 s in all
@@ -181,6 +238,24 @@ type Notice struct {
 // approval id ("id") and the call it is for ("requestId",
 // "progressToken"; CONTRACT.md §7).
 const MetaApproval = "io.github.sdrahn.mcp-gateway/approval"
+
+// MetaIdempotencyKey is the _meta key of mcp-gateway's idempotency key
+// (1.17.2; Custos R8): a tools/call sent again with the same key, server,
+// tool and arguments is answered from the first, not run again.
+const MetaIdempotencyKey = "io.github.sdrahn.mcp-gateway/idempotencyKey"
+
+// callKey is the idempotency key of ADK's call callID of invocation: its
+// CallToken, or, longer than the gateway takes (128 characters), or with
+// a character it does not (outside printable ASCII without spaces), a
+// digest of it. The same call has the same key when it is sent again.
+func callKey(invocation, callID string) string {
+	k := CallToken(invocation, callID)
+	if len(k) <= 128 && strings.IndexFunc(k, func(r rune) bool { return r <= ' ' || r > '~' }) < 0 {
+		return k
+	}
+	d := sha256.Sum256([]byte(k))
+	return "custos:" + hex.EncodeToString(d[:])
+}
 
 // CallToken is the progress token the agent's tools/call carries for
 // ADK's call callID of invocation (NewClient), by which the gateway's
@@ -255,8 +330,9 @@ type adkCall interface {
 }
 
 // tagCalls sets a tools/call's progress token to its ADK call's
-// CallToken, unless it has one, and its proposal (ProposalKey) to what
-// propose gives for the call.
+// CallToken, unless it has one, its idempotency key (MetaIdempotencyKey)
+// to the call's own, and its proposal (ProposalKey) to what propose gives
+// for the call.
 func tagCalls(propose func(invocation, callID string) *Proposal) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
@@ -269,6 +345,9 @@ func tagCalls(propose func(invocation, callID string) *Proposal) mcp.Middleware 
 						}
 						if p.GetProgressToken() == nil {
 							p.SetProgressToken(CallToken(ids.InvocationID(), ids.FunctionCallID()))
+						}
+						if k := callKey(ids.InvocationID(), ids.FunctionCallID()); k != "" {
+							p.Meta[MetaIdempotencyKey] = k
 						}
 						if propose != nil {
 							if pr := propose(ids.InvocationID(), ids.FunctionCallID()); pr != nil {
