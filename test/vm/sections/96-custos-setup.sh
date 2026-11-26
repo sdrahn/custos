@@ -98,6 +98,36 @@ if command -v custos-setup >/dev/null; then
 		else
 			skip "the server restarts (mcp-gateway-restarts-server is not installed)"
 		fi
+		# mcp-gateway's server storage (storage-health's SMART and btrfs
+		# checks, mcp-gateway 1.17), which custos-setup --storage links.
+		if [ -e /usr/share/mcp-gateway/profiles/storage.yaml ]; then
+			# It holds capabilities and reads the disks: linked only when
+			# asked for (--storage), as restarts.
+			check "custos-setup without --storage does not link the server storage" bash -c \
+				"grep -q 'server storage: skipped (not offered' '$work/setup.out' && ! test -e /etc/mcp-gateway/servers.d/storage.yaml"
+			storage_linked() {
+				setup --storage | grep -q 'server storage: done' &&
+					test "$(readlink /etc/mcp-gateway/servers.d/storage.yaml)" = /usr/share/mcp-gateway/profiles/storage.yaml
+			}
+			check "custos-setup --storage links the server storage" storage_linked
+			storage_answers() { # storage_answers TOOL TEXT: through the gateway, as health-check, without an approval
+				local a
+				a=$(run_activity health-check "CALL storage__$1")
+				a=$(api health-check "/v1/activities/$(jq -r .id <<<"$a")")
+				jq -e --arg t "$2" '.state == "finished" and (.response // "" | startswith("done: ") and contains($t) and (contains("\"error\"") | not))' <<<"$a" >/dev/null ||
+					{ echo "    | the activity: $(jq -c '{state, response: (.response // "" | .[0:400])}' <<<"$a" 2>/dev/null || echo "$a")"; return 1; }
+			}
+			# The VM's disk is virtio: listed, without a health log.
+			root_disk=$(lsblk -ndo PKNAME "$(findmnt -nvo SOURCE /)" 2>/dev/null | head -n1)
+			check "storage__storage_devices answers health-check, listing the root disk ($root_disk)" storage_answers storage_devices "${root_disk:-health_available}"
+			if [ "$(findmnt -nvo FSTYPE /)" = btrfs ]; then
+				check "storage__btrfs_device_stats answers health-check for the btrfs root" storage_answers btrfs_device_stats devid
+			else
+				skip "storage__btrfs_device_stats (the root file system is not btrfs)"
+			fi
+		else
+			skip "the server storage (mcp-gateway-storage-server is not installed)"
+		fi
 		# Custos's server custos-net: the network commands in the host's
 		# network namespace (network_view: host, mcp-gateway R7), which
 		# the exec server's instances do not see.

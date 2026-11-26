@@ -1,0 +1,26 @@
+# A diagnostic playbook (CONTRACT.md §14c), installed in
+# /usr/share/custos/playbooks/. A file of the same name in
+# /etc/custos/playbooks/ replaces it; an empty one hides it.
+storage-health:
+  title: Storage health
+  description: The disks' SMART health, the btrfs error counters and the last scrub, and the kernel's I/O errors. It reads only; it starts no scrub or self-test.
+  needs:
+    - "storage: storage_devices, device_health, btrfs_device_stats, btrfs_scrub_status (mcp-gateway's server storage, mcp-gateway-storage-server, mcp-gateway 1.17; without it, only the journal)"
+    - "systemd-mcp"
+  steps:
+    - {tool: storage__storage_devices, why: "The disks, and which have a health log to read.", optional: true}
+    - {tool: storage__btrfs_device_stats, why: "Each btrfs device's write, read, flush, corruption and generation errors.", optional: true}
+    - {tool: storage__btrfs_scrub_status, why: "Whether a scrub runs, and the last one's result.", optional: true}
+    - {tool: systemd__list_log, why: "The kernel's I/O, NVMe and btrfs errors.", args: {pattern: "I/O error|critical medium error|nvme.*(timeout|reset|failed)|BTRFS (error|warning|critical)|ata[0-9.]+: (failed|exception)", count: 300}}
+  tools:
+    - storage__device_health
+  look_for: >
+    For each disk storage_devices lists with health_available, call
+    device_health with its name: a verdict of warning or failing, a
+    critical warning, little available spare, a high percentage used,
+    media errors, reallocated or pending sectors. A btrfs device with any
+    error counter above zero; no scrub recorded, or one with errors. I/O
+    or btrfs errors in the journal, and which device they name. A disk
+    without a health log (virtual, USB, SAS) is unverified: say so. When
+    the server storage is not offered, say that only the journal was
+    checked.
