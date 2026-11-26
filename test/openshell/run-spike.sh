@@ -183,9 +183,23 @@ if [ "$gateway_host" = name ]; then
 	# now. Read-only until the end (#336): nothing on the host may put its
 	# own resolver back in the meantime.
 	mount --bind /etc/resolv.conf /etc/resolv.conf && mount -o remount,bind,ro /etc/resolv.conf
+	# Docker gives a container the nameservers of its own configuration
+	# (daemon.json "dns") instead of the host's resolv.conf, where it has
+	# one: some runner images do (#336; the supervisor's resolv.conf then
+	# says "Overrides: [nameservers]"). For the run, Docker's nameserver is
+	# dnsmasq too, before any sandbox's container is made.
+	docker_dns=
+	if [ "$runtime" = docker ] && [ -s /etc/docker/daemon.json ] && jq -e 'has("dns")' /etc/docker/daemon.json >/dev/null 2>&1; then
+		echo "    | Docker's own nameservers: $(jq -c .dns /etc/docker/daemon.json); dnsmasq instead, for the run"
+		cp /etc/docker/daemon.json "$work/daemon.json.orig" &&
+			jq '.dns = ["127.0.0.1"]' "$work/daemon.json.orig" >/etc/docker/daemon.json &&
+			systemctl restart docker && docker_dns=1
+		check "Docker's nameserver is dnsmasq for the run" test -n "$docker_dns"
+	fi
 	restore_resolv() {
 		umount /etc/resolv.conf 2>/dev/null
 		if [ -e "$work/resolv.conf.orig" ] || [ -L "$work/resolv.conf.orig" ]; then rm -f /etc/resolv.conf; mv "$work/resolv.conf.orig" /etc/resolv.conf; fi
+		if [ -e "$work/daemon.json.orig" ]; then cp "$work/daemon.json.orig" /etc/docker/daemon.json && rm -f "$work/daemon.json.orig" && systemctl restart docker; fi
 	}
 	trap restore_resolv EXIT
 	check "resolv.conf stays as it is for the run (read-only)" bash -c '! touch /etc/resolv.conf 2>/dev/null'
