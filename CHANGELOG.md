@@ -11,6 +11,48 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.17 — 2026-11-26
+
+Agents in OpenShell can delegate and be delegated to: delegation from
+one failed with "permission denied". And feedback on a diagnosis report
+longer than 4 KB is recorded: it was refused as "no diagnosis report",
+and readiness left such reports out of an agent's diagnosis history.
+
+Upgrading from 0.9.16 needs mcp-gateway 1.17.1 or later, and no change
+to configuration or gateway data, except one: copy
+`/usr/share/custos/gateway/servers.d/agents.yaml` to
+`/etc/mcp-gateway/servers.d/` again, since an earlier copy runs the
+delegation bridge as the delegating agent's user, then reload the
+gateway. Reports written before the update are in the journal: after
+it, they take feedback and count towards readiness.
+
+### Fixed
+
+- Agents in OpenShell can delegate, and be delegated to. Delegation
+  from one failed with `dial unix /run/agents/NAME/api.sock: connect:
+  permission denied`: the gateway ran the bridge as the delegating
+  agent's user, and an agent in OpenShell, which calls the gateway with
+  a token, has none, so it got a throwaway account that may not reach
+  the sockets. The bridge now runs as the system account
+  `custos-delegate` for every agent. The gateway tells it which agent it
+  serves (`MCP_GATEWAY_PRINCIPAL`, mcp-gateway 1.17.1); a token's agent
+  counts only from an issuer trusted for agents. It names that agent to
+  the other one, which believes the name from `custos-delegate` only.
+  Custos needs mcp-gateway 1.17.1 or later now. After the update, copy
+  `/usr/share/custos/gateway/servers.d/agents.yaml` to
+  `/etc/mcp-gateway/servers.d/` again: an earlier copy still runs the
+  bridge as the delegating agent's user.
+- Feedback on a diagnosis report longer than 4 KB is recorded: it was
+  refused with "agent … has no diagnosis report for activity …", in
+  Cockpit and by `agent-admin feedback`, because `journalctl` gave the
+  report's record with the report left out (a field over 4096 bytes is
+  null in its JSON unless asked for `--all`). For the same reason
+  `agent-admin readiness` left such reports out of an agent's diagnosis
+  history (reports, verified quotes, feedback). Every reading of agent
+  records by `agent-admin` now asks for `--all`. Reports written before
+  the update are in the journal: they take feedback and count once it is
+  installed.
+
 ## v0.9.16 — 2026-11-26
 
 Custos's agents check the disks' health: the new playbook
