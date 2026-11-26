@@ -1,0 +1,18 @@
+# mcp-gateway server definition: delegation between agents
+# (Custos CONTRACT.md §9). Installed as
+# /usr/share/custos/gateway/servers.d/agents.yaml; link or copy it
+# to /etc/mcp-gateway/servers.d/ to let agents delegate.
+#
+# Its one tool, agents__delegate, is governed like any other: an agent
+# may delegate only where its permissions say so, e.g.
+#   - {server: agents, tool: delegate, args: {agent: '^patch-pilot$'}}
+# (agent-admin permissions NAME).
+version: 1
+name: agents
+command: ["/usr/libexec/custos/agent-delegate"]
+selinux_type: mcpsrv_agents_t
+isolation: principal
+network: false
+# The delegating agent's user: the callee checks it by SO_PEERCRED.
+run_as: principal
+discovery: shared
