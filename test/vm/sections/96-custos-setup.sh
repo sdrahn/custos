@@ -103,6 +103,22 @@ if command -v custos-setup >/dev/null; then
 		if [ -e /usr/share/mcp-gateway/profiles/storage.yaml ]; then
 			# It holds capabilities and reads the disks: linked only when
 			# asked for (--storage), as restarts.
+			# A btrfs to read: the CI VM's empty disk (test/vm/run-vm.sh),
+			# formatted, mounted and scrubbed once here; or the root's.
+			# Before the server's first instance starts: an instance sees the
+			# mounts there were when it started, not later ones.
+			btrfs_disk=/dev/disk/by-id/virtio-custos-btrfs
+			btrfs_mnt=
+			if [ -b "$btrfs_disk" ] && command -v mkfs.btrfs >/dev/null; then
+				btrfs_mnt=/srv/custos-btrfs
+				btrfs_ready() {
+					mkfs.btrfs -q -f -L custos-test "$btrfs_disk" && mkdir -p "$btrfs_mnt" && mount "$btrfs_disk" "$btrfs_mnt" &&
+						head -c 4M /dev/urandom >"$btrfs_mnt/data" && sync && btrfs scrub start -B "$btrfs_mnt" >/dev/null
+				}
+				check "a btrfs on the test disk, mounted and scrubbed once" btrfs_ready || btrfs_mnt=
+			elif [ "$(findmnt -nvo FSTYPE /)" = btrfs ]; then
+				btrfs_mnt=/
+			fi
 			check "custos-setup without --storage does not link the server storage" bash -c \
 				"grep -q 'server storage: skipped (not offered' '$work/setup.out' && ! test -e /etc/mcp-gateway/servers.d/storage.yaml"
 			storage_linked() {
@@ -120,20 +136,6 @@ if command -v custos-setup >/dev/null; then
 			# The VM's disk is virtio: listed, without a health log.
 			root_disk=$(lsblk -ndo PKNAME "$(findmnt -nvo SOURCE /)" 2>/dev/null | head -n1)
 			check "storage__storage_devices answers health-check, listing the root disk ($root_disk)" storage_answers storage_devices "${root_disk:-health_available}"
-			# A btrfs to read: the CI VM's empty disk (test/vm/run-vm.sh),
-			# formatted, mounted and scrubbed once here; or the root's.
-			btrfs_disk=/dev/disk/by-id/virtio-custos-btrfs
-			btrfs_mnt=
-			if [ -b "$btrfs_disk" ] && command -v mkfs.btrfs >/dev/null; then
-				btrfs_mnt=/srv/custos-btrfs
-				btrfs_ready() {
-					mkfs.btrfs -q -f -L custos-test "$btrfs_disk" && mkdir -p "$btrfs_mnt" && mount "$btrfs_disk" "$btrfs_mnt" &&
-						head -c 4M /dev/urandom >"$btrfs_mnt/data" && sync && btrfs scrub start -B "$btrfs_mnt" >/dev/null
-				}
-				check "a btrfs on the test disk, mounted and scrubbed once" btrfs_ready || btrfs_mnt=
-			elif [ "$(findmnt -nvo FSTYPE /)" = btrfs ]; then
-				btrfs_mnt=/
-			fi
 			if [ -n "$btrfs_mnt" ]; then
 				check "storage__btrfs_device_stats answers health-check, with $btrfs_mnt's device" storage_answers btrfs_device_stats "$btrfs_mnt devid"
 				[ "$btrfs_mnt" = / ] ||
