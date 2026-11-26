@@ -141,9 +141,17 @@ if command -v custos-setup >/dev/null; then
 			root_disk=$(lsblk -ndo PKNAME "$(findmnt -nvo SOURCE /)" 2>/dev/null | head -n1)
 			check "storage__storage_devices answers health-check, listing the root disk ($root_disk)" storage_answers storage_devices "${root_disk:-health_available}"
 			if [ -n "$btrfs_mnt" ]; then
-				check "storage__btrfs_device_stats answers health-check, with $btrfs_mnt's device" storage_answers btrfs_device_stats "$btrfs_mnt devid"
-				[ "$btrfs_mnt" = / ] ||
-					check "storage__btrfs_scrub_status answers health-check, with $btrfs_mnt's last scrub" storage_answers btrfs_scrub_status "$btrfs_mnt: ok, last scrub"
+				# The answer the fake model repeats is the tool's structured
+				# result (JSON), not its text lines.
+				if [ "$btrfs_mnt" = / ]; then
+					check "storage__btrfs_device_stats answers health-check, with the btrfs root's device" storage_answers btrfs_device_stats '"devid":'
+				else
+					check "storage__btrfs_device_stats answers health-check, with the test btrfs's device (no errors)" \
+						storage_answers btrfs_device_stats '"label":"custos-test"'
+					check "its counters say no errors" storage_answers btrfs_device_stats '"corruption_errs":0,"devid":1'
+					check "storage__btrfs_scrub_status answers health-check, with the test btrfs's finished scrub" \
+						storage_answers btrfs_scrub_status '"finished":true'
+				fi
 			else
 				skip "storage__btrfs_device_stats and btrfs_scrub_status (no btrfs: neither the CI VM's test disk nor the root)"
 			fi
