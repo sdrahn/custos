@@ -244,3 +244,29 @@ func dnsQuery(server string, name dnsmessage.Name, t dnsmessage.Type) ([]string,
 		return out, m.Header.RCode, nil
 	}
 }
+
+// AgentIssuersFile lists the issuers whose agent-* subjects mcp-gateway's
+// policy takes for agents (Custos's policy data, agent-admin issuers,
+// CONTRACT.md §6).
+const AgentIssuersFile = "/etc/mcp-gateway/policy/agents/_http.yaml"
+
+// AgentIssuers reads AgentIssuersFile below root: none when it is not
+// there.
+func AgentIssuers(root string) ([]string, error) {
+	b, err := os.ReadFile(filepath.Join(root, AgentIssuersFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		HTTP struct {
+			Issuers []string `yaml:"issuers"`
+		} `yaml:"_http"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", AgentIssuersFile, err)
+	}
+	return doc.HTTP.Issuers, nil
+}

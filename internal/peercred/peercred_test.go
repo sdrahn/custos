@@ -137,3 +137,44 @@ func TestRelayed(t *testing.T) {
 		t.Errorf("empty secret: %d", w.Code)
 	}
 }
+
+// The delegation bridge runs as DelegateUser for every agent: a request
+// of it is the named agent's, as if from agent-<name> (CONTRACT.md §9).
+// Anyone else's HeaderDelegator is ignored; the bridge without one is
+// refused.
+func TestGuardDelegator(t *testing.T) {
+	var seen Caller
+	h := Guard("pp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, _ = From(r.Context())
+		if r.Header.Get(HeaderDelegator) != "" {
+			t.Error("the delegator header went on")
+		}
+		w.WriteHeader(200)
+	}))
+	bridge := Caller{UID: 990, Name: DelegateUser}
+	alice := Caller{UID: 1000, Name: "alice"}
+	for _, tc := range []struct {
+		c         Caller
+		path, hdr string
+		want      int
+		as        string
+	}{
+		{bridge, "/v1/activities", "health-check", 200, "agent-health-check"},
+		{bridge, "/v1/pause", "health-check", 403, ""}, // agents only delegate
+		{bridge, "/v1/activities", "", 403, ""},
+		{bridge, "/v1/activities", "../root", 403, ""},
+		{bridge, "/v1/activities", "Health", 403, ""},
+		{alice, "/v1/activities", "health-check", 200, "alice"}, // not the bridge: ignored
+	} {
+		seen = Caller{}
+		r := httptest.NewRequest("POST", tc.path, nil).WithContext(WithCaller(context.Background(), tc.c))
+		if tc.hdr != "" {
+			r.Header.Set(HeaderDelegator, tc.hdr)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.want || (tc.want == 200 && seen.Name != tc.as) {
+			t.Errorf("%s %s %q: %d as %q, want %d as %q", tc.c.Name, tc.path, tc.hdr, w.Code, seen.Name, tc.want, tc.as)
+		}
+	}
+}
