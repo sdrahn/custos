@@ -145,6 +145,9 @@ if [ -z "$system" ]; then
 	make -s -C "$here" install install-tests DESTDIR= PREFIX=/usr SYSCONFDIR=/etc UNITDIR=/etc/systemd/system \
 		SYSUSERSDIR=/usr/lib/sysusers.d TMPFILESDIR=/usr/lib/tmpfiles.d SBINDIR=/usr/sbin >/dev/null
 	getent group mcp-users >/dev/null || groupadd -r mcp-users
+	# The package's users and groups (agent-clients, custos-delegate), as
+	# its %pre makes them.
+	systemd-sysusers /usr/lib/sysusers.d/custos.conf
 	systemd-tmpfiles --create /usr/lib/tmpfiles.d/custos.conf
 	systemctl daemon-reload
 fi
@@ -634,7 +637,20 @@ if [ -n "$relay_ok" ]; then
 		# The other way (#364): sb calls the gateway with a token, so it has
 		# no local user there; the bridge runs as custos-delegate and names
 		# sb from what the gateway says (MCP_GATEWAY_PRINCIPAL).
-		d=$(run_activity "DELEGATE dl PROBE")
+		# sb_delegate AGENT: sb delegates PROBE to AGENT. Once more when its
+		# call was cut off by a token renewal, which closes the sandbox's
+		# open connections (OpenShell; user guide chapter 12): the
+		# spike renews every minute, and a delegation can outlast that.
+		sb_delegate() {
+			local d
+			d=$(run_activity "DELEGATE $1 PROBE")
+			if grep -q 'rejected by transport: Post .*: EOF' <<<"$(jq -r .summary <<<"$d")"; then
+				echo "    | sb's call to the gateway was cut off (a token renewal?); delegating once more" >&2
+				d=$(run_activity "DELEGATE $1 PROBE")
+			fi
+			printf '%s' "$d"
+		}
+		d=$(sb_delegate dl)
 		check "sb's delegation, from OpenShell, to dl returns dl's answer" summary_has "$d" "probe ok" ||
 			{
 				echo "    | sb answered: $(jq -c '{state, summary, reason}' <<<"$d" 2>/dev/null || head -c 300 <<<"$d")"
@@ -673,7 +689,7 @@ EOF
 		check "agent-admin create sd, a second agent in OpenShell, with its credential (its sandbox)" sd_create
 		sd_answers() { curl -sf --max-time 10 --unix-socket /run/agents/sd/api.sock http://agent/v1/status >/dev/null; }
 		if check "sd answers through its relay" eventually 240 sd_answers; then
-			d=$(run_activity "DELEGATE sd PROBE")
+			d=$(sb_delegate sd)
 			check "sb's delegation, from OpenShell, to sd, in OpenShell, returns sd's answer" summary_has "$d" "probe ok" ||
 				echo "    | sb answered: $(jq -c '{state, summary, reason}' <<<"$d" 2>/dev/null || head -c 300 <<<"$d")"
 			sd_has() { journalctl -o json --all --no-pager --since "@$t0" AGENT_NAME=sd AGENT_EVENT=invocation.start | jq -e "select($1)" >/dev/null 2>&1; }

@@ -47,6 +47,10 @@ var help = sortedHelp([]helpGroup{
 		{"edit NAME --from FILE", []string{
 			"Replace the agent's configuration with FILE's and apply it: the agent restarts; an OpenShell agent gets a new sandbox.",
 		}},
+		{"delegation-setup [--check]", []string{
+			"Bring delegation between agents to the bridge's own account, custos-delegate (0.9.17): replace an unchanged earlier copy of agents.yaml in /etc/mcp-gateway/servers.d with the shipped one, then take the agents' users out of agent-clients, which only the earlier bridge needed.",
+			"A changed copy is kept, and the users with it. --check says what would change, and changes nothing.",
+		}},
 		{"delete NAME [--keep-state]", []string{
 			"Remove an agent. Its user stays. --keep-state keeps its state directory, too.",
 		}},

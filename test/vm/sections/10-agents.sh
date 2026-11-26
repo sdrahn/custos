@@ -17,7 +17,10 @@ check "agent-admin create t1 --from - (stdin)" bash -c "agent-admin create t1 --
 check "agent-admin refuses to create t1 twice" not agent-admin create t1 --from "$f"
 check "user agent-t1 exists, without a login shell" bash -c 'getent passwd agent-t1 | grep -q nologin'
 check "agent-t1 is in mcp-users" in_group agent-t1 mcp-users
-check "agent-t1 is in agent-clients" in_group agent-t1 agent-clients
+# Not in agent-clients: the delegation bridge has its account of its own
+# (custos-delegate, CONTRACT.md §9), and no definition of the server
+# agents runs it as the agent's user here.
+check "agent-t1 is not in agent-clients" not in_group agent-t1 agent-clients
 check "the configuration is root:agent-t1 0640" stat_is /etc/custos/agents/t1/agent.yaml root:agent-t1:640
 check "the socket unit is active" systemctl is-active -q agent@t1.socket
 check "the gateway data says supervised" grep -q "mode: supervised" /etc/mcp-gateway/policy/agents/t1.yaml
