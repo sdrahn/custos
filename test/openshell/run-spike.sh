@@ -597,6 +597,39 @@ if [ -n "$relay_ok" ]; then
 		"journalctl -u "$gw_unit" -o cat --no-pager --since @$t0 | grep -iE 'invalid_token|missing bearer|no subject'"
 	check "the sandbox's environment has no client secret" bash -c "! openshell -g openshell sandbox exec -n agent-sb -- env 2>/dev/null | grep -qF \"\$(cat $work/client-secret)\""
 
+	# Delegation to an agent in OpenShell: the gateway's bridge (the server
+	# agents, SELinux mcpsrv_agents_t) connects to the relay's socket,
+	# which systemd labels with the relay's domain (agent_relay_t), not
+	# the agent's. On the system gateway only, where SELinux confines the
+	# bridge.
+	if [ -n "$system" ]; then
+		agents_added=
+		if [ ! -e /etc/mcp-gateway/servers.d/agents.yaml ]; then
+			cp /usr/share/custos/gateway/servers.d/agents.yaml /etc/mcp-gateway/servers.d/agents.yaml && agents_added=1
+		fi
+		gw_has_agents() { gw /v1/servers | grep -q '"agents"'; }
+		check "the gateway takes the server agents" eventually 30 gw_has_agents
+		printf '%s\n' 'version: 1' 'name: dl' 'description: OpenShell spike, the delegating agent (systemd)' \
+			'model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}' \
+			'instruction: You are a test agent.' 'gateway: {servers: [agents]}' \
+			'limits: {max_invocation_seconds: 300}' 'interaction: {agui: true, client_tools: deny}' >"$work/dl.yaml"
+		printf '%s\n' "- {server: agents, tool: delegate, read_only: true, args: {agent: '^sb\$'}}" >"$work/dl-perms.yaml"
+		agent-admin delete dl >/dev/null 2>&1
+		dl_create() { agent-admin create dl --from "$work/dl.yaml" >/dev/null && agent-admin permissions dl <"$work/dl-perms.yaml"; }
+		check "agent-admin create dl (systemd), which may delegate to sb" dl_create
+		d=$(curl -sS --max-time 240 --unix-socket /run/agents/dl/api.sock http://agent/v1/activities \
+			-d '{"prompt":"DELEGATE sb PROBE","wait":true}')
+		check "dl's delegation to sb, in OpenShell, returns sb's answer" summary_has "$d" "probe ok" ||
+			{
+				echo "    | dl answered: $(jq -c '{state, summary, reason}' <<<"$d" 2>/dev/null || head -c 300 <<<"$d")"
+				ausearch -m AVC -ts recent 2>/dev/null | grep -E 'mcpsrv_agents_t|agent_relay_t' | tail -n 3 | sed 's/^/    | avc: /'
+			}
+		check "sb recorded the delegated activity from agent-dl" eventually 20 journal_has invocation.start \
+			'.AGENT_ORIGIN == "delegation" and .AGENT_ORIGIN_BY == "agent-dl" and .AGENT_PARENT_AGENT == "dl"'
+		agent-admin delete dl >/dev/null 2>&1
+		[ -n "$agents_added" ] && rm -f /etc/mcp-gateway/servers.d/agents.yaml
+	fi
+
 	section "Token renewal"
 	# The first token expires 90 s after it was minted; OpenShell renews
 	# 30 s before. A call after that runs on a renewed token, without

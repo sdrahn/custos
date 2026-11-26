@@ -308,6 +308,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | Message (as printed) | Section |
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `agent not reachable: … dial unix /run/agents/NAME/api.sock: connect: permission denied` when an agent delegates to an agent in OpenShell | up to 0.9.17, SELinux kept the gateway's delegation bridge (`mcpsrv_agents_t`) from the relay's socket (`agent_relay_t`; `ausearch -m AVC` shows `connectto`). Update `custos-selinux` |
 | `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
 | `agent … category … is not ready (…); see agent-admin readiness …, or promote with --despite-readiness --reason TEXT` | the measures are below the thresholds ([chapter 6](06-permissions-and-modes.md#readiness)): wait and keep approving, adjust `/etc/custos/promotion.yaml`, or promote with a reason |
 | `/etc/custos/promotion.yaml: …` | a key that is not `observation_days`, `proposals`, `override_rate`, `incident_rate` or `window_days`; a rate outside 0 to 1; a negative `observation_days` or `proposals`; `window_days` below 1 |
