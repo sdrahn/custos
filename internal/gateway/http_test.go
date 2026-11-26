@@ -1,13 +1,17 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -234,5 +238,59 @@ func TestInitialize500Stays(t *testing.T) {
 	res.Body.Close()
 	if n.Load() != 4 {
 		t.Errorf("tried %d times, want 4 (1 ms doubling to 4 ms: 3 retries)", n.Load())
+	}
+}
+
+// A tools/call goes on a connection of its own (issue #375): OpenShell
+// closes a sandbox's idle connections at a token renewal, and a call sent
+// on one it closed ends in EOF, which may not be retried.
+func TestToolCallOnFreshConnection(t *testing.T) {
+	srv := mcp.NewServer(&mcp.Implementation{Name: "gw"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{Name: "probe"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "probe ok"}}}, nil, nil
+	})
+	inner := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	var mu sync.Mutex
+	seen := map[string]bool{} // client addresses, one per connection
+	var calls []string        // the address of each tools/call, and whether it was new
+	p := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			b, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(b))
+			mu.Lock()
+			if bytes.Contains(b, []byte(`"method":"tools/call"`)) {
+				calls = append(calls, fmt.Sprint(!seen[r.RemoteAddr]))
+			}
+			seen[r.RemoteAddr] = true
+			mu.Unlock()
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	t.Cleanup(p.Close)
+	t.Setenv("GW_TOKEN", "placeholder-1")
+	ctx := context.Background()
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(ctx, HTTPTransport(p.URL, "GW_TOKEN", nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for i := 0; i < 2; i++ {
+		if _, err := s.ListTools(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+		if res, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "probe"}); err != nil || res.IsError {
+			t.Fatalf("call %d: %v %+v", i, err, res)
+		}
+	}
+	// Every idle connection closed by the other end, as OpenShell does:
+	// the next call does not go on one of them.
+	p.CloseClientConnections()
+	if res, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "probe"}); err != nil || res.IsError {
+		t.Fatalf("the call after the connections were closed: %v %+v", err, res)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(calls, " ") != "true true true" {
+		t.Errorf("tools/call on a new connection: %v, want each", calls)
 	}
 }
