@@ -120,10 +120,29 @@ if command -v custos-setup >/dev/null; then
 			# The VM's disk is virtio: listed, without a health log.
 			root_disk=$(lsblk -ndo PKNAME "$(findmnt -nvo SOURCE /)" 2>/dev/null | head -n1)
 			check "storage__storage_devices answers health-check, listing the root disk ($root_disk)" storage_answers storage_devices "${root_disk:-health_available}"
-			if [ "$(findmnt -nvo FSTYPE /)" = btrfs ]; then
-				check "storage__btrfs_device_stats answers health-check for the btrfs root" storage_answers btrfs_device_stats devid
+			# A btrfs to read: the CI VM's empty disk (test/vm/run-vm.sh),
+			# formatted, mounted and scrubbed once here; or the root's.
+			btrfs_disk=/dev/disk/by-id/virtio-custos-btrfs
+			btrfs_mnt=
+			if [ -b "$btrfs_disk" ] && command -v mkfs.btrfs >/dev/null; then
+				btrfs_mnt=/srv/custos-btrfs
+				btrfs_ready() {
+					mkfs.btrfs -q -f -L custos-test "$btrfs_disk" && mkdir -p "$btrfs_mnt" && mount "$btrfs_disk" "$btrfs_mnt" &&
+						head -c 4M /dev/urandom >"$btrfs_mnt/data" && sync && btrfs scrub start -B "$btrfs_mnt" >/dev/null
+				}
+				check "a btrfs on the test disk, mounted and scrubbed once" btrfs_ready || btrfs_mnt=
+			elif [ "$(findmnt -nvo FSTYPE /)" = btrfs ]; then
+				btrfs_mnt=/
+			fi
+			if [ -n "$btrfs_mnt" ]; then
+				check "storage__btrfs_device_stats answers health-check, with $btrfs_mnt's device" storage_answers btrfs_device_stats "$btrfs_mnt devid"
+				[ "$btrfs_mnt" = / ] ||
+					check "storage__btrfs_scrub_status answers health-check, with $btrfs_mnt's last scrub" storage_answers btrfs_scrub_status "$btrfs_mnt: ok, last scrub"
 			else
-				skip "storage__btrfs_device_stats (the root file system is not btrfs)"
+				skip "storage__btrfs_device_stats and btrfs_scrub_status (no btrfs: neither the CI VM's test disk nor the root)"
+			fi
+			if [ -n "$btrfs_mnt" ] && [ "$btrfs_mnt" != / ]; then
+				umount "$btrfs_mnt" && rmdir "$btrfs_mnt"
 			fi
 		else
 			skip "the server storage (mcp-gateway-storage-server is not installed)"
