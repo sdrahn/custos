@@ -145,6 +145,9 @@ if [ -z "$system" ]; then
 	make -s -C "$here" install install-tests DESTDIR= PREFIX=/usr SYSCONFDIR=/etc UNITDIR=/etc/systemd/system \
 		SYSUSERSDIR=/usr/lib/sysusers.d TMPFILESDIR=/usr/lib/tmpfiles.d SBINDIR=/usr/sbin >/dev/null
 	getent group mcp-users >/dev/null || groupadd -r mcp-users
+	# The package's users and groups (agent-clients, custos-delegate), as
+	# its %pre makes them.
+	systemd-sysusers /usr/lib/sysusers.d/custos.conf
 	systemd-tmpfiles --create /usr/lib/tmpfiles.d/custos.conf
 	systemctl daemon-reload
 fi
