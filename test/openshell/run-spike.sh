@@ -212,7 +212,8 @@ check "the gateway's certificate names $gw_host (no other name)" bash -c "openss
 # agent-sb's OAuth client; its tokens live 90 s, so the agent outlives one.
 head -c 24 /dev/urandom | base64 | tr -d '/+=' >"$work/client-secret"
 systemd-run --unit=osh-testidp /usr/libexec/custos/tests/testidp --listen 127.0.0.1:18445 --ttl 90 \
-	--client "agent-sb:$(cat "$work/client-secret"):agent-sb:$aud" >/dev/null
+	--client "agent-sb:$(cat "$work/client-secret"):agent-sb:$aud" \
+	--client "agent-sd:$(cat "$work/client-secret"):agent-sd:$aud" >/dev/null
 check "the token issuer answers" eventually 20 curl -sf -o /dev/null "$issuer/.well-known/openid-configuration"
 # Its subjects agent-<name> are agents (agents/_http.yaml, CONTRACT.md §16a).
 printf '_http:\n  issuers: ["%s"]\n' "$issuer" >/etc/mcp-gateway/policy/agents/_http.yaml
@@ -472,8 +473,9 @@ else
 fi
 printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' '- {server: custos-test, tool: change}' >"$work/perms.yaml"
 standin_permissions /usr/libexec/custos/tests/testsrv >>"$work/perms.yaml"
-# Delegation from the agent in OpenShell to dl, a systemd agent (#364).
-[ -n "$system" ] && printf '%s\n' "- {server: agents, tool: delegate, read_only: true, args: {agent: '^dl\$'}}" >>"$work/perms.yaml"
+# Delegation from the agent in OpenShell to dl, a systemd agent, and to
+# sd, a second agent in OpenShell (#364).
+[ -n "$system" ] && printf '%s\n' "- {server: agents, tool: delegate, read_only: true, args: {agent: '^(dl|sd)\$'}}" >>"$work/perms.yaml"
 check "agent-admin permissions sb (supervised: change needs an approval)" agent-admin permissions sb <"$work/perms.yaml"
 check "the sandbox policy is written" test -s /etc/custos/agents/sb/openshell-policy.yaml
 check "the provider profile is imported" eventually 10 bash -c 'openshell -g openshell profile list -o json 2>/dev/null | grep -q custos-gateway-sb'
@@ -647,6 +649,43 @@ if [ -n "$relay_ok" ]; then
 		check "custos-delegate is a member of agent-clients" bash -c "id -nG custos-delegate | tr ' ' '\\n' | grep -qx agent-clients"
 		check "the gateway audited agents__delegate by agent-sb (a token) as allowed" eventually 10 gw_audit_has \
 			'.sub == "agent-sb" and .server == "agents" and .name == "delegate" and .effect == "allow"'
+		# From one agent in OpenShell to another: sb delegates to sd, a
+		# second agent in OpenShell. Both call the gateway with tokens;
+		# the bridge names sb (MCP_GATEWAY_PRINCIPAL) and reaches sd through
+		# sd's relay, which passes custos-delegate on as the caller.
+		cat >"$work/sd.yaml" <<EOF
+version: 1
+name: sd
+description: OpenShell spike, the second agent in OpenShell (delegated to)
+model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
+instruction: You are a test agent.
+gateway:
+  url: "$aud"
+  servers: [custos-test]
+  oauth: {token_url: "$issuer/token", client_id: agent-sd, refresh_before_seconds: 90}
+limits: {max_invocation_seconds: 300}
+interaction: {agui: true, client_tools: deny}
+sandbox: {kind: openshell, openshell_gateway: openshell, openshell_driver: $([ "$runtime" = systemd ] && echo systemd || echo container)}
+EOF
+		agent-admin delete sd >/dev/null 2>&1
+		sd_create() {
+			agent-admin create sd --from "$work/sd.yaml" >/dev/null &&
+				printf '%s\n' '- {server: custos-test, tool: probe, read_only: true}' | agent-admin permissions sd &&
+				agent-admin set-credential sd gateway-client-secret <"$work/client-secret" >/dev/null
+		}
+		check "agent-admin create sd, a second agent in OpenShell, with its credential (its sandbox)" sd_create
+		sd_answers() { curl -sf --max-time 10 --unix-socket /run/agents/sd/api.sock http://agent/v1/status >/dev/null; }
+		if check "sd answers through its relay" eventually 240 sd_answers; then
+			d=$(run_activity "DELEGATE sd PROBE")
+			check "sb's delegation, from OpenShell, to sd, in OpenShell, returns sd's answer" summary_has "$d" "probe ok" ||
+				echo "    | sb answered: $(jq -c '{state, summary, reason}' <<<"$d" 2>/dev/null || head -c 300 <<<"$d")"
+			sd_has() { journalctl -o json --all --no-pager --since "@$t0" AGENT_NAME=sd AGENT_EVENT=invocation.start | jq -e "select($1)" >/dev/null 2>&1; }
+			check "sd recorded the delegated activity from agent-sb" eventually 30 sd_has \
+				'.AGENT_ORIGIN == "delegation" and .AGENT_ORIGIN_BY == "agent-sb" and .AGENT_PARENT_AGENT == "sb"'
+		else
+			journalctl --no-pager -o cat --since "@$t0" -u agent-openshell@sd.service 2>&1 | tail -n 15 | sed 's/^/    | relay sd: /'
+		fi
+		agent-admin delete sd >/dev/null 2>&1
 		agent-admin delete dl >/dev/null 2>&1
 		[ -n "$agents_added" ] && rm -f /etc/mcp-gateway/servers.d/agents.yaml
 	fi
