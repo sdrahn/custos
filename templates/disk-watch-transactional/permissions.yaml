@@ -8,6 +8,10 @@
 - {server: tukit, tool: list_snapshots, read_only: true}
 - {server: tukit, tool: cleanup_snapshots, category: patch-errata}
 - {server: systemd, tool: list_log, read_only: true}
+- {server: storage, tool: storage_devices, read_only: true}
+- {server: storage, tool: device_health, read_only: true}
+- {server: storage, tool: btrfs_device_stats, read_only: true}
+- {server: storage, tool: btrfs_scrub_status, read_only: true}
 # The product documentation through the gateway (mcp-docs as the server
 # suse-docs): reading only. Without it, these are never asked.
 - {server: suse-docs, tool: find_sections, read_only: true}

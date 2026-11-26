@@ -17,7 +17,7 @@ import (
 
 const usage = `usage: custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
                     --model NAME [--provider openai|vertex|gemini] [--endpoint URL] [--credential-file FILE]
-                    [--restarts]
+                    [--restarts] [--storage]
 
 The bundled health-check and diagnostics install (CONTRACT.md §17a): makes
 this freshly installed host diagnostics-only, sets the model defaults,
@@ -26,7 +26,10 @@ creates the agent health-check from its template, stores its model key
 playbooks' commands for mcp-gateway's exec server. With --restarts it
 also offers mcp-gateway's server restarts (package
 mcp-gateway-restarts-server), which holds CAP_SYS_PTRACE, for the
-services update-status finds waiting for a restart. Without
+services update-status finds waiting for a restart. With --storage it
+offers mcp-gateway's server storage (package mcp-gateway-storage-server),
+which holds CAP_SYS_ADMIN, CAP_SYS_RAWIO and CAP_DAC_READ_SEARCH and reads
+the disks, for storage-health's SMART and btrfs checks. Without
 --diagnostics-only it does nothing: the full install needs no setup.
 
 The backends, in the documented order:
@@ -52,6 +55,7 @@ func run(args []string) int {
 	fs.StringVar(&o.Model, "model", "", "")
 	fs.StringVar(&credFile, "credential-file", "", "")
 	fs.BoolVar(&o.Restarts, "restarts", false, "")
+	fs.BoolVar(&o.Storage, "storage", false, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

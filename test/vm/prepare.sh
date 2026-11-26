@@ -60,6 +60,10 @@ done
 for f in "$dir"/rpms/mcp-gateway-restarts-server-*.rpm; do
 	[ -f "$f" ] && { rpm -Uvh --nodeps "$f" || die "installing mcp-gateway-restarts-server failed"; }
 done
+# The server storage, for storage-health's disk checks (if built).
+for f in "$dir"/rpms/mcp-gateway-storage-server-*.rpm; do
+	[ -f "$f" ] && { rpm -Uvh --nodeps "$f" || die "installing mcp-gateway-storage-server failed"; }
+done
 zypper -n --no-remote --no-refresh in --no-recommends --allow-unsigned-rpm \
 	"$dir"/rpms/custos-[0-9]*.rpm "$dir"/rpms/custos-selinux-*.rpm "$dir"/rpms/custos-tests-*.rpm "$dir"/rpms/custos-diagnostics-*.rpm \
 	>/tmp/zypper-custos.log 2>&1 ||

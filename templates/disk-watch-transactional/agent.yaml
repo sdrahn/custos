@@ -18,19 +18,28 @@ instruction: |
   free space, propose cleanup_snapshots, which removes the ones the
   snapper cleanup rules allow; it needs an approval unless patch-errata
   is promoted. Never delete single snapshots.
+  Where the storage tools are offered, also check the disks' health:
+  storage_devices, then device_health for each disk with a health log,
+  btrfs_device_stats and btrfs_scrub_status. Report a disk whose verdict
+  is warning or failing, and any btrfs error counter above zero. These
+  tools only read: never propose a scrub or self-test as done by you.
   Check what you found and the steps you propose against the product
   documentation (the suse-docs tools: find_sections for a question in
   words, search for an exact setting or message, then read_section) and
   name the documents and sections you relied on. If the documentation
   is not offered, say so and go on without it.
 gateway:
-  servers: [exec, tukit, systemd, suse-docs]
+  servers: [exec, tukit, systemd, storage, suse-docs]
   tools:
     - exec__disk_usage
     - tukit__get_status
     - tukit__list_snapshots
     - tukit__cleanup_snapshots
     - systemd__list_log
+    - storage__storage_devices
+    - storage__device_health
+    - storage__btrfs_device_stats
+    - storage__btrfs_scrub_status
     - suse-docs__find_sections
     - suse-docs__search
     - suse-docs__outline

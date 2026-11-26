@@ -120,6 +120,10 @@ Requires:       mcp-gateway-exec-server
 # CAP_SYS_PTRACE, so installing it is the administrator's choice;
 # custos-setup --restarts links its profile.
 Suggests:       mcp-gateway-restarts-server
+# storage-health's SMART and btrfs checks: a server with capabilities that
+# reads the disks, so installing it is the administrator's choice too;
+# custos-setup --storage links its profile.
+Suggests:       mcp-gateway-storage-server
 Recommends:     %{name}-cockpit = %{version}
 Recommends:     %{name}-selinux = %{version}
 
