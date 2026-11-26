@@ -20,7 +20,7 @@ env:
   GATEWAY_REPO: sdrahn/mcp-gateway
   # The release branch builds against the latest mcp-gateway release
   # (custos 0.9 requires 1.16 or later).
-  GATEWAY_REF: v1.17.1
+  GATEWAY_REF: v1.17.2
   # mcp-docs, which serves custos-docs's guide to agents.
   MCP_DOCS_MODULE: github.com/sdrahn/mcp-docs/cmd/mcp-docs@main
 
