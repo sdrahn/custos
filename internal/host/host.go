@@ -47,7 +47,7 @@ type Host struct {
 	// nil: journald as custos-promotion.
 	Journal func(name string) journal.Logger
 	// JournalJSON reads journal records (journalctl -o json with these
-	// matches, over the readiness window); nil: journalctl.
+	// matches, over the readiness window); nil: JournalctlJSON.
 	JournalJSON func(args ...string) ([]byte, error)
 	// By is the person, for the records of refusals (category.refused).
 	By string
@@ -137,4 +137,17 @@ func WriteFile(path string, b []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// JournalctlArgs are journalctl's arguments for reading records as JSON
+// with args (matches, --since). --all: without it journalctl writes a
+// field longer than 4096 bytes as null, and a diagnosis report
+// (AGENT_REPORT, up to 64 KiB) would read as none.
+func JournalctlArgs(args ...string) []string {
+	return append([]string{"-o", "json", "--all", "--no-pager"}, args...)
+}
+
+// JournalctlJSON reads journal records as JSON lines (JournalctlArgs).
+func JournalctlJSON(args ...string) ([]byte, error) {
+	return exec.Command("journalctl", JournalctlArgs(args...)...).Output()
 }

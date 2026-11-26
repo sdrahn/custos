@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -71,9 +70,7 @@ func RecordFeedback(a *admin.Admin, name, activity, by string, f Feedback) error
 func reportHypotheses(a *admin.Admin, name, activity string) (map[string]bool, error) {
 	read := a.JournalJSON
 	if read == nil {
-		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager"}, args...)...).Output()
-		}
+		read = host.JournalctlJSON
 	}
 	out, err := read("AGENT_NAME="+name, "AGENT_EVENT="+journal.DiagnosisReport, "AGENT_INVOCATION="+activity)
 	if err != nil {
