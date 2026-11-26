@@ -60,6 +60,12 @@ check "agent-admin feedback on the report" agent-admin feedback pb "$pb_act" --h
 check "journal: diagnosis.feedback by root" eventually 10 bash -c \
 	"journalctl -o json --no-pager --since '@$t0' SYSLOG_IDENTIFIER=custos-promotion AGENT_EVENT=diagnosis.feedback AGENT_NAME=pb | jq -e 'select(.AGENT_INVOCATION == \"$pb_act\" and .AGENT_BY == \"root\" and (.AGENT_FEEDBACK | fromjson | .hypotheses.h1 == \"confirmed\"))' >/dev/null"
 check "agent-admin feedback refuses a hypothesis the report does not have" not agent-admin feedback pb "$pb_act" --hypothesis h9=confirmed
+# A report longer than 4096 bytes: journalctl writes such a field as null
+# unless asked for --all, and feedback took it for no report at all.
+long_act=$(api pb /v1/activities -X POST -d '{"playbook":"probe-check","prompt":"LONG REPORT","wait":true}' | jq -r '.id // empty')
+check "a playbook run with a report longer than 4 KB" bash -c \
+	"$(declare -f api); api pb /v1/activities/$long_act | jq -e '.report | tostring | length > 4096' >/dev/null"
+check "agent-admin feedback on the long report" agent-admin feedback pb "$long_act" --hypothesis h1=confirmed --comment "functional test, long report"
 check "readiness shows the diagnostics history: the report, its verified quote, root's feedback" eventually 10 bash -c \
 	"agent-admin readiness pb | jq -e '.diagnostics | .reports >= 1 and .verified_quotes >= 1 and .with_feedback >= 1 and .confirmed >= 1 and .plans_executed >= 1' >/dev/null"
 check "a playbook whose tool the gateway does not offer is refused (422)" code_is 422 api pb /v1/activities -X POST -d '{"playbook":"change-check"}'

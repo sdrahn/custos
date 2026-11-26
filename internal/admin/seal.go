@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/sdrahn/custos/internal/host"
 )
 
 // The seal (CONTRACT.md §6b, #109). agent-admin signs the enablement state
@@ -267,9 +269,7 @@ func (a *Admin) checkSealRemoved(p *Posture) error {
 	}
 	read := a.JournalJSON
 	if read == nil {
-		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager"}, args...)...).Output()
-		}
+		read = host.JournalctlJSON
 	}
 	recs, err := a.enablementRecords(read)
 	if err != nil {

@@ -127,6 +127,28 @@ func TestScriptReport(t *testing.T) {
 	}
 }
 
+// LONG REPORT: a report longer than journalctl shows a field without
+// --all (4096 bytes), for the feedback test.
+func TestScriptLongReport(t *testing.T) {
+	m := &Model{Prefix: "custos-test"}
+	for _, c := range []struct {
+		text string
+		long bool
+	}{{"PROBE REPORT", false}, {"PROBE LONG REPORT", true}} {
+		r := req(c.text, "custos-test__probe", "report_diagnosis")
+		probe := m.Respond(r)
+		ok := `{"output":"probe ok"}`
+		r.Messages = append(r.Messages, probe, message{Role: "tool", ToolCallID: probe.ToolCalls[0].ID, Content: &ok})
+		rep := m.Respond(r)
+		if len(rep.ToolCalls) != 1 {
+			t.Fatalf("%s: %+v", c.text, rep)
+		}
+		if n := len(rep.ToolCalls[0].Function.Arguments); (n > 4096) != c.long {
+			t.Errorf("%s: a report of %d bytes", c.text, n)
+		}
+	}
+}
+
 // NOTE reads a note; a note with an injection is obeyed, offered or not.
 func TestScriptObeysInjections(t *testing.T) {
 	m := &Model{Prefix: "custos-test"}
