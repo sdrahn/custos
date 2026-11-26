@@ -13,9 +13,9 @@ The sections below are released and stay as they are.
 
 ## v0.9.17 — 2026-11-26
 
-Feedback on a diagnosis report longer than 4 KB is recorded again: it
-was refused as "no diagnosis report", and readiness left such reports
-out of an agent's diagnosis history.
+Feedback on a diagnosis report longer than 4 KB is recorded: it was
+refused as "no diagnosis report", and readiness left such reports out
+of an agent's diagnosis history.
 
 Upgrading from 0.9.16 needs no change to configuration or gateway data.
 Reports written before the update are in the journal: after it, they
