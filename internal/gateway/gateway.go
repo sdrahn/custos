@@ -45,13 +45,31 @@ func HTTPTransport(endpoint, tokenEnv string, base http.RoundTripper) mcp.Transp
 	}
 	return &mcp.StreamableClientTransport{
 		Endpoint:   endpoint,
-		HTTPClient: &http.Client{Transport: bearer{env: tokenEnv, next: base}},
+		HTTPClient: &http.Client{Transport: bearer{env: tokenEnv, next: base, fresh: freshConns(base)}},
 	}
 }
 
+// freshConns is base without keep-alive: each request on a connection of
+// its own, closed after it. A tools/call goes on one (issue #375):
+// OpenShell closes a sandbox's open connections at a token renewal, and
+// when another sandbox is set up, and a call sent on an idle connection
+// it closed ends in EOF, which may not be retried (the call may have
+// reached the gateway). A transport of the caller's that is no
+// *http.Transport (tests) stays as it is.
+func freshConns(base http.RoundTripper) http.RoundTripper {
+	t, ok := base.(*http.Transport)
+	if !ok {
+		return base
+	}
+	c := t.Clone()
+	c.DisableKeepAlives = true
+	return c
+}
+
 type bearer struct {
-	env  string
-	next http.RoundTripper
+	env string
+	// next sends every request but tools/call, fresh those (freshConns).
+	next, fresh http.RoundTripper
 }
 
 func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -61,7 +79,11 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 			r.Header.Set("Authorization", "Bearer "+tok)
 		}
 	}
-	res, err := b.next.RoundTrip(r)
+	next := b.next
+	if b.fresh != nil && rpcMethod(r) == "tools/call" {
+		next = b.fresh
+	}
+	res, err := next.RoundTrip(r)
 	// OpenShell's proxy answers 500, without asking the gateway, for a
 	// little while after it renewed the token (until the sandbox's
 	// supervisor has the new one). mcp-gateway answers 500 only to an
@@ -87,7 +109,7 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 		}
-		res, err = b.next.RoundTrip(again)
+		res, err = next.RoundTrip(again)
 	}
 	if err == nil && res.StatusCode == http.StatusInternalServerError && r.Header.Get(sessionHeader) != "" {
 		// Still 500 on a session: as "session not found" (404) the MCP
@@ -133,25 +155,31 @@ func idempotent(r *http.Request) bool {
 	if r.Method == http.MethodGet {
 		return true
 	}
+	switch rpcMethod(r) {
+	case "initialize", "notifications/initialized", "ping", "tools/list", "prompts/list", "resources/list", "resources/templates/list":
+		return true
+	}
+	return false
+}
+
+// rpcMethod is the JSON-RPC method a POST carries, "" for anything else
+// (another method, a batch, a body that cannot be read again).
+func rpcMethod(r *http.Request) string {
 	if r.Method != http.MethodPost || r.GetBody == nil {
-		return false
+		return ""
 	}
 	body, err := r.GetBody()
 	if err != nil {
-		return false
+		return ""
 	}
 	defer body.Close()
 	var msg struct {
 		Method string `json:"method"`
 	}
 	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&msg) != nil {
-		return false
+		return ""
 	}
-	switch msg.Method {
-	case "initialize", "notifications/initialized", "ping", "tools/list", "prompts/list", "resources/list", "resources/templates/list":
-		return true
-	}
-	return false
+	return msg.Method
 }
 
 // The backoff of retried 500s: 0.5 s doubling to 8 s, about 15 s in all
