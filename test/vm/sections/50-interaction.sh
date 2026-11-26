@@ -92,9 +92,33 @@ check "agent-admin create t2" agent-admin create t2 --from "$(config t2 agents)"
 printf '%s\n' "- {server: agents, tool: delegate, read_only: true, args: {agent: '^t1\$'}}" | agent-admin permissions t2
 d=$(run_activity t2 "DELEGATE t1 PROBE")
 check "t2's delegation returns t1's answer" summary_has "$d" "probe ok"
+check "t2's user is not in agent-clients (the bridge runs as custos-delegate)" not in_group agent-t2 agent-clients
 did=$(jq -r .id <<<"$d")
 check "t1 recorded a delegated activity from agent-t2 with t2's activity as parent" eventually 10 journal_has t1 invocation.start ".AGENT_ORIGIN == \"delegation\" and .AGENT_ORIGIN_BY == \"agent-t2\" and .AGENT_PARENT_AGENT == \"t2\" and .AGENT_PARENT_ACTIVITY == \"$did\""
 check "the gateway audited agents__delegate by agent-t2" eventually 10 gw_audit_has '.sub == "agent-t2" and .server == "agents" and .name == "delegate" and .effect == "allow"'
 d=$(run_activity t2 "DELEGATE t3 PROBE")
 check "delegating to an agent outside the permission is denied" not summary_has "$d" 'probe ok'
 check "the gateway audited the denial" eventually 10 gw_audit_has '.sub == "agent-t2" and .name == "delegate" and .effect == "deny"'
+# A host from before 0.9.17: agents.yaml as 0.9.16 shipped it (the
+# bridge as the delegating agent's user) and an agent's user in
+# agent-clients. agent-admin delegation-setup replaces the copy and takes
+# the user out, for good.
+if [ -r "$dir/agents-0.9.16.yaml" ]; then
+	cp "$dir/agents-0.9.16.yaml" /etc/mcp-gateway/servers.d/agents.yaml
+	agent-admin delete t4 >/dev/null 2>&1
+	agent-admin create t4 --from "$(config t4 agents)" >/dev/null
+	check "under the earlier bridge, a new agent's user joins agent-clients" in_group agent-t4 agent-clients
+	check "agent-admin delegation-setup --check says what to do, and changes nothing" bash -c \
+		"agent-admin delegation-setup --check | grep -q '^todo' && cmp -s '$dir/agents-0.9.16.yaml' /etc/mcp-gateway/servers.d/agents.yaml"
+	check "agent-admin delegation-setup replaces the copy and takes agent-t4 out of agent-clients" bash -c \
+		"agent-admin delegation-setup | grep -q 'agent-t4 left agent-clients' && cmp -s /usr/share/custos/gateway/servers.d/agents.yaml /etc/mcp-gateway/servers.d/agents.yaml"
+	check "agent-t4 is not in agent-clients, and its sysusers file no longer puts it back" bash -c \
+		"! id -nG agent-t4 | tr ' ' '\\n' | grep -qx agent-clients && ! grep -q agent-clients /etc/sysusers.d/agent-t4.conf && systemd-sysusers && ! id -nG agent-t4 | tr ' ' '\\n' | grep -qx agent-clients"
+	check "a second run has nothing to do" bash -c "agent-admin delegation-setup | grep -q '^ok   no agent.s user is in agent-clients'"
+	eventually 30 servers_have agents
+	d=$(run_activity t2 "DELEGATE t1 PROBE")
+	check "delegation works after delegation-setup" summary_has "$d" "probe ok"
+	agent-admin delete t4 >/dev/null 2>&1
+else
+	skip "agent-admin delegation-setup on a host from before 0.9.17 (no agents-0.9.16.yaml in the tests)"
+fi

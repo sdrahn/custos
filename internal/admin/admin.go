@@ -194,7 +194,12 @@ func (a *Admin) CreateConfig(name string, b []byte) (err error) {
 		}
 	}()
 	user := "agent-" + name
-	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"Custos agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\nm %[2]s agent-clients\n", name, user)
+	sysusers := fmt.Sprintf("# agent-admin: the user of agent %[1]s (CONTRACT.md §2)\nu %[2]s - \"Custos agent %[1]s\" /var/lib/agents/%[1]s /usr/sbin/nologin\nm %[2]s mcp-users\n", name, user)
+	// agent-clients only for a bridge that runs as the delegating agent's
+	// user: the gateway's agents.yaml from before 0.9.17 (§9).
+	if a.agentsNeedClients() {
+		sysusers += fmt.Sprintf("m %s %s\n", user, AgentClients)
+	}
 	sf := a.Path(filepath.Join(SysusersDir, user+".conf"))
 	if err := host.WriteFile(sf, []byte(sysusers), 0o644); err != nil {
 		return err
@@ -944,10 +949,10 @@ func (a *Admin) SetOwners(name string, owners []string) error {
 			strings.HasPrefix(o, "remote-user:agent-") || strings.HasPrefix(o, "remote-group:agent-"):
 			return fmt.Errorf("owner %q is an agent's account: an agent never approves", o)
 		case o == "group:mcp-users":
-			// Every agent's user is in mcp-users (and agent-clients, which
-			// group:agent- refuses): such a rule would name every agent
-			// (security review M2).
-			return fmt.Errorf("owner %q names every agent too (each agent's user is in mcp-users and agent-clients): name the people's own group", o)
+			// Every agent's user is in mcp-users (and, with a bridge from
+			// before 0.9.17, agent-clients, which group:agent- refuses):
+			// such a rule would name every agent (security review M2).
+			return fmt.Errorf("owner %q names every agent too (each agent's user is in mcp-users): name the people's own group", o)
 		}
 		if !seen[o] {
 			seen[o] = true
