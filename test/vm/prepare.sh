@@ -32,7 +32,8 @@ if [ "$mode" != packages ]; then
 	zypper -n --gpg-auto-import-keys ref >/tmp/zypper.log 2>&1 ||
 		{ tail -n 30 /tmp/zypper.log; die "refreshing the repositories failed"; }
 	# policycoreutils-python-utils: the %selinux_* macros of the -selinux packages.
-	deps="audit policycoreutils policycoreutils-python-utils selinux-tools polkit jq curl util-linux shadow nftables"
+	# btrfsprogs: the btrfs on the tests' own disk (sections/96-custos-setup.sh).
+	deps="audit policycoreutils policycoreutils-python-utils selinux-tools polkit jq curl util-linux shadow nftables btrfsprogs"
 	# shellcheck disable=SC2086 # deps is a list of package names
 	zypper -n in --no-recommends $deps selinux-policy-targeted >/tmp/zypper.log 2>&1 ||
 		{ tail -n 30 /tmp/zypper.log; die "installing dependencies failed"; }

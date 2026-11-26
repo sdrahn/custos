@@ -107,6 +107,13 @@ else
 	download_image
 fi
 qemu-img create -q -f qcow2 -b "$work/base.qcow2" -F qcow2 "$work/disk.qcow2" 20G
+# A disk for a btrfs of the tests' own (the server storage's btrfs tools,
+# sections/96-custos-setup.sh): empty, sparse, found by its serial as
+# /dev/disk/by-id/virtio-custos-btrfs. On a PCI slot after the others
+# (addr=0x10): QEMU makes -device disks before the if=virtio ones, and the
+# firmware boots only the first disk, which must stay the system's.
+rm -f "$work/btrfs.img"
+qemu-img create -q -f raw "$work/btrfs.img" 1G
 
 ssh-keygen -q -t ed25519 -N '' -f "$work/key" <<<y >/dev/null
 cat >"$work/user-data" <<EOF
@@ -140,6 +147,7 @@ boot() {
 	qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 4096 \
 		-drive file="$work/disk.qcow2",if=virtio \
 		-drive file="$work/seed.img",if=virtio,format=raw \
+		-drive file="$work/btrfs.img",if=none,id=btrfs,format=raw -device virtio-blk-pci,drive=btrfs,serial=custos-btrfs,addr=0x10 \
 		-nic user,model=virtio-net-pci$restrict,hostfwd=tcp:127.0.0.1:$port-:22,hostfwd=tcp:127.0.0.1:19090-:9090$extra_fwd \
 		-display none -serial file:"$work/console.log" \
 		-pidfile "$work/qemu.pid" -daemonize
