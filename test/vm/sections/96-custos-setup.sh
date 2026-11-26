@@ -110,9 +110,13 @@ if command -v custos-setup >/dev/null; then
 			btrfs_disk=/dev/disk/by-id/virtio-custos-btrfs
 			btrfs_mnt=
 			if [ -b "$btrfs_disk" ] && command -v mkfs.btrfs >/dev/null; then
-				btrfs_mnt=/srv/custos-btrfs
+				btrfs_mnt=/mnt/custos-btrfs
 				btrfs_ready() {
+					# restorecon: a new btrfs's root is unlabelled until it is
+					# labelled as a mount point; the server (mcpsrv_storage_t)
+					# may not open it before, and leaves it out.
 					mkfs.btrfs -q -f -L custos-test "$btrfs_disk" && mkdir -p "$btrfs_mnt" && mount "$btrfs_disk" "$btrfs_mnt" &&
+						{ restorecon "$btrfs_mnt" 2>/dev/null || true; } &&
 						head -c 4M /dev/urandom >"$btrfs_mnt/data" && sync && btrfs scrub start -B "$btrfs_mnt" >/dev/null
 				}
 				check "a btrfs on the test disk, mounted and scrubbed once" btrfs_ready || btrfs_mnt=
