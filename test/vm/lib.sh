@@ -120,7 +120,7 @@ activity_state_is() { [ "$(activity "$1" "$2" | jq -r .state)" = "$3" ]; }
 # approval_of <agent> <activity>: the approval id its waiting call has.
 approval_of() { activity "$1" "$2" | jq -r '[.calls[] | select(.approval_id != null and .approval_id != "")][0].approval_id // empty'; }
 # journal <agent> <event>: the agent's records of the event since the start, as JSON lines.
-journal() { journalctl -o json --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_EVENT=$2" 2>/dev/null; }
+journal() { journalctl -o json --all --no-pager --since "@$t0" "AGENT_NAME=$1" "AGENT_EVENT=$2" 2>/dev/null; }
 # journal_has <agent> <event> <jq condition>
 journal_has() { journal "$1" "$2" | jq -e "select($3)" >/dev/null 2>&1; }
 # quiet_evaluator: the tests run the demotion evaluator by hand; the

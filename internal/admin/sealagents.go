@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -681,9 +680,7 @@ func (a *Admin) latestDataRecords() map[string]dataRecord {
 	out := map[string]dataRecord{}
 	read := a.JournalJSON
 	if read == nil {
-		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager"}, args...)...).Output()
-		}
+		read = host.JournalctlJSON
 	}
 	b, err := read("_UID=0", "SYSLOG_IDENTIFIER=custos-promotion", "AGENT_EVENT="+journal.GatewayData)
 	if err != nil {

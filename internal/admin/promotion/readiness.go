@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -110,7 +109,7 @@ func journalRecords(a *admin.Admin, name string, since time.Time) ([]readiness.R
 	read := a.JournalJSON
 	if read == nil {
 		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager", "--since", at}, args...)...).Output()
+			return host.JournalctlJSON(append([]string{"--since", at}, args...)...)
 		}
 	}
 	agentLog, err := read("AGENT_NAME="+name, "AGENT_CONTRACT=1")

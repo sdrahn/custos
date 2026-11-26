@@ -8,7 +8,9 @@
 //	a tool result                  → text "done: <the result>", except:
 //	  the probe's, when the first user text has REPORT
 //	                                 → call report_diagnosis, quoting "probe ok"
-//	                                   (in the probe's output) and a line that is not
+//	                                   (in the probe's output) and a line that is not;
+//	                                   with LONG REPORT, a summary of about 6 KB
+//	                                   (longer than journalctl shows a field without --all)
 //	  report_diagnosis's             → text "reported: <the result>"
 //	first user text with PLAYBOOK REPORT (a playbook run, #227), before any
 //	report_diagnosis call            → call report_diagnosis: summary "offered:
@@ -175,8 +177,12 @@ func (m *Model) Respond(req *request) message {
 	}
 	if last.Role == "tool" && strings.Contains(first, "REPORT") && answers(req.Messages, last.ToolCallID) == m.Prefix+"__probe" &&
 		offered["report_diagnosis"] {
+		summary := "The probe answers."
+		if strings.Contains(first, "LONG REPORT") {
+			summary += strings.Repeat(" Every check of the probe passed.", 200)
+		}
 		b, _ := json.Marshal(map[string]any{
-			"summary":    "The probe answers.",
+			"summary":    summary,
 			"findings":   []any{map[string]any{"id": "f1", "text": "The probe said ok.", "evidence": []any{"e1"}}},
 			"hypotheses": []any{map[string]any{"id": "h1", "text": "The test server works.", "confidence": "high", "evidence": []any{"e1", "e2"}}},
 			"evidence": []any{
