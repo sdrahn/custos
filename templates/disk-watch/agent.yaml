@@ -18,13 +18,18 @@ instruction: |
   marked important, and never one younger than a week. To free space,
   propose which snapshot numbers to delete and why; deleting needs an
   approval every time.
+  Where the storage tools are offered, also check the disks' health:
+  storage_devices, then device_health for each disk with a health log,
+  btrfs_device_stats and btrfs_scrub_status. Report a disk whose verdict
+  is warning or failing, and any btrfs error counter above zero. These
+  tools only read: never propose a scrub or self-test as done by you.
   Check what you found and the steps you propose against the product
   documentation (the suse-docs tools: find_sections for a question in
   words, search for an exact setting or message, then read_section) and
   name the documents and sections you relied on. If the documentation
   is not offered, say so and go on without it.
 gateway:
-  servers: [exec, snapper, systemd, suse-docs]
+  servers: [exec, snapper, systemd, storage, suse-docs]
   tools:
     - exec__disk_usage
     - snapper__list_configs
@@ -32,6 +37,10 @@ gateway:
     - snapper__list_snapshots
     - snapper__delete_snapshots
     - systemd__list_log
+    - storage__storage_devices
+    - storage__device_health
+    - storage__btrfs_device_stats
+    - storage__btrfs_scrub_status
     - suse-docs__find_sections
     - suse-docs__search
     - suse-docs__outline

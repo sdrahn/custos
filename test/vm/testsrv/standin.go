@@ -24,6 +24,7 @@ var StandIns = map[string][]string{
 	"tukit":      {"list_snapshots", "list_updates", "get_status"},
 	"zypp":       {"check_updates"},
 	"restarts":   {"pending_restarts"},
+	"storage":    {"storage_devices", "device_health", "btrfs_device_stats", "btrfs_scrub_status"},
 }
 
 // StandIn is the stand-in for server, or nil when there is none.

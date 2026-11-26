@@ -21,6 +21,13 @@
 # capability, so the gateway lets a call through without an approval only
 # for a permission that names server and tool exactly, as this one does.
 - {server: restarts, tool: pending_restarts, read_only: true, category: diagnostics}
+# mcp-gateway's server storage (mcp-gateway-storage-server, 1.17): it holds
+# capabilities too; these name server and tool exactly, as its role
+# storage-reader does, so the calls need no approval.
+- {server: storage, tool: storage_devices, read_only: true, category: diagnostics}
+- {server: storage, tool: device_health, read_only: true, category: diagnostics}
+- {server: storage, tool: btrfs_device_stats, read_only: true, category: diagnostics}
+- {server: storage, tool: btrfs_scrub_status, read_only: true, category: diagnostics}
 - {server: zypp, tool: check_updates, read_only: true, category: diagnostics}
 - {server: snapper, tool: list_snapshots, read_only: true, category: diagnostics}
 - {server: tukit, tool: get_status, read_only: true, category: diagnostics}

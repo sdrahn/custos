@@ -5,14 +5,14 @@
 # Uses the caller's check, eventually and skip.
 #
 # The playbooks call exec, systemd, custos-net and, optionally, snapper,
-# tukit, zypp and restarts. The tests stand in for every one of them with
+# tukit, zypp, restarts and storage. The tests stand in for every one of them with
 # testsrv --as SERVER (test/vm/testsrv/standin.go), so that every playbook
 # runs the same everywhere: what is tested is the backend's path (the
 # tools a run offers, the calls through the gateway, its audit, the
 # report), not the servers' answers, which other sections test.
 
 # The servers the stand-ins replace (testsrv's StandIns).
-standin_servers=(exec systemd custos-net snapper tukit zypp restarts)
+standin_servers=(exec systemd custos-net snapper tukit zypp restarts storage)
 
 standin_marker="# Custos functional tests: a stand-in (test/vm/playbook-runs.sh)"
 

@@ -370,7 +370,7 @@ the event's activities like any other: the refusal is recorded
 ## Diagnostic playbooks {#playbooks}
 
 A playbook is a published diagnostic procedure: which read-only tools to
-call, in which order, and what to look for. Custos ships eleven, in
+call, in which order, and what to look for. Custos ships twelve, in
 `/usr/share/custos/playbooks/`:
 
 | Playbook | Looks at |
@@ -386,6 +386,7 @@ call, in which order, and what to look for. Custos ships eleven, in
 | `boot-health` | the last boot's duration and slow or failed units |
 | `package-consistency` | unsatisfied package dependencies |
 | `update-status` | pending updates and patches, whether one waits for a reboot, and the services to restart after one (installs nothing) |
+| `storage-health` | the disks' SMART health, the btrfs error counters and the last scrub, the kernel's I/O errors (starts no scrub or self-test) |
 
 ```bash
 agent-admin playbooks | jq 'map_values(.title)'     # the playbooks
@@ -448,9 +449,33 @@ zypper install mcp-gateway-restarts-server
 ln -s /usr/share/mcp-gateway/profiles/restarts.yaml /etc/mcp-gateway/servers.d/restarts.yaml
 ```
 
+`storage-health` reads the disks' health when mcp-gateway's server
+`storage` is offered (mcp-gateway 1.17): the disks
+(`storage_devices`), each one's SMART or NVMe health log with a verdict
+(`device_health`, which the model calls for each disk that has one),
+the btrfs error counters (`btrfs_device_stats`) and the last scrub
+(`btrfs_scrub_status`). Reading a health log needs capabilities and the
+disks themselves, so this too is a profile you link yourself:
+
+```bash
+zypper install mcp-gateway-storage-server
+ln -s /usr/share/mcp-gateway/profiles/storage.yaml /etc/mcp-gateway/servers.d/storage.yaml
+systemctl restart mcp-gateway.service
+```
+
+On a transactional system, install it in the same transaction as
+`mcp-gateway-selinux`, or reboot in between: its SELinux domain comes
+with that package. The server reads only: it resets no counter and
+starts no scrub or self-test. USB bridges, SAS and virtual disks have no
+health log it reads, and the report says such a disk is unverified.
+Without the server, `storage-health` reads only the journal's I/O and
+btrfs errors. The scrubs themselves are yours to schedule, for example
+with btrfsmaintenance's `btrfs-scrub.timer`; `btrfs_scrub_status` then
+reports the last one.
+
 `custos-setup` does the first two on the diagnostics-only install, and
-links `restarts` only with `--restarts`; without it, never again once
-you removed the link.
+links `restarts` only with `--restarts`, `storage` only with
+`--storage`; without the flag, never again once you removed the link.
 
 Its answer goes to the model: each process that uses a replaced file,
 with its id, name (not its command line), user, unit, files and
@@ -464,6 +489,11 @@ or `- {server: custos-net, tool: network_addresses, read_only: true, category: d
 The gateway allows a call of `restarts` without an approval only by a
 permission that names server and tool exactly, as the `health-check`
 template's does: `- {server: restarts, tool: pending_restarts, read_only: true, category: diagnostics}`.
+The same holds for `storage`'s four tools (`- {server: storage, tool:
+device_health, read_only: true, category: diagnostics}`, …): the
+`health-check`, `disk-watch` and `disk-watch-transactional` templates
+name each, as mcp-gateway's role `storage-reader` does. A wildcard
+(`tool: '*'`) still asks for an approval at every call.
 Each playbook's `needs` says what it uses.
 
 ## Your own playbooks {#own-playbooks}

@@ -118,6 +118,10 @@ It then:
    that server's profile there too, for the services `update-status`
    finds waiting for a restart. The server holds `CAP_SYS_PTRACE`, so
    offering it is a choice of its own ([chapter 9](09-administration.md#playbook-tools)).
+   With `--storage`, and `mcp-gateway-storage-server` installed, it
+   links mcp-gateway's server `storage` the same way, for
+   `storage-health`'s SMART and btrfs checks: it holds capabilities and
+   reads the disks, so it too is your choice.
 
 Each step prints `done`, `already` or `skipped` with why: running it
 again changes only what differs, and never goes back to diagnostics-only

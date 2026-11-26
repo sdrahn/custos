@@ -1436,8 +1436,9 @@ The set GA ships: `failed-units`, `service-health`, `disk-pressure`,
 `selinux-denials`, `time-sync`, `network-config` (the interfaces, routes,
 name servers and listening ports; the tools have no network, so it does
 not test reachability), `boot-health`, `package-consistency` (unsatisfied
-dependencies) and `update-status` (read only: what is pending, not
-installing it). Their read-only commands for mcp-gateway's `exec` server
+dependencies), `update-status` (read only: what is pending, not
+installing it) and `storage-health` (the disks' SMART health, the btrfs
+error counters and the last scrub, and the kernel's I/O errors). Their read-only commands for mcp-gateway's `exec` server
 are `/usr/share/custos/templates/exec.d-diagnostics.yaml` (and
 `exec.d-disk-usage.yaml`), to copy to `/etc/mcp-gateway/exec.d/`: they run
 as the agent's user, without network, and take no arguments. The exec
@@ -1450,6 +1451,14 @@ network without using it (`network_view: host`).
 its tool `pending_restarts` lists the services and processes that still
 use files an update replaced, which the exec server's commands, run as
 the agent's user, cannot read.
+`storage-health` asks mcp-gateway's server `storage` (package
+`mcp-gateway-storage-server`, mcp-gateway 1.17), when it is offered:
+`storage_devices`, `btrfs_device_stats` and `btrfs_scrub_status` as
+steps, and `device_health` as a tool of the playbook's, which the model
+calls with each disk `storage_devices` lists, since a step's arguments
+are fixed. Reading a disk's health log needs capabilities the agent's
+user does not have. Without the server, the run reads only the
+journal's I/O and btrfs errors, and its report says so.
 
 ## 15. Units and sandbox
 
@@ -1628,7 +1637,7 @@ packages are installed:
 ```
 custos-setup --diagnostics-only --backend on-host|local-network|customer-cloud|vendor
              [--provider openai|vertex|gemini] [--endpoint URL] --model NAME
-             [--credential-file FILE] [--restarts]
+             [--credential-file FILE] [--restarts] [--storage]
 ```
 
 It is non-interactive and idempotent. In this order, each step printed
@@ -1656,7 +1665,11 @@ on standard output as `custos-setup: <step>: done|already|skipped
    there as `restarts.yaml`, keeping a file of that name that is not the
    link. Without `--restarts` it makes no link (the server holds
    `CAP_SYS_PTRACE`, so offering it is the administrator's own choice)
-   and keeps one that is there.
+   and keeps one that is there. `--storage` does the same for
+   mcp-gateway's server `storage` (`mcp-gateway-storage-server`,
+   mcp-gateway 1.17, `/usr/share/mcp-gateway/profiles/storage.yaml` as
+   `storage.yaml`), which holds `CAP_SYS_ADMIN`, `CAP_SYS_RAWIO` and
+   `CAP_DAC_READ_SEARCH` and reads the disks.
    All this before the agent, whose session then offers the commands;
 4. it creates the agent `health-check` from its template (§14a), which
    takes the defaults' model; one that exists keeps its configuration,
@@ -1737,7 +1750,9 @@ selects (O16): `custos-setup` (§17a), requiring `custos` (whose are the
 playbooks and the `health-check` template, used by the broader install
 too) and `mcp-gateway-exec-server`, recommending `custos-cockpit` and
 `custos-selinux`, and suggesting `mcp-gateway-restarts-server` (a server
-with `CAP_SYS_PTRACE`, so installing it is the administrator's choice).
+with `CAP_SYS_PTRACE`, so installing it is the administrator's choice)
+and `mcp-gateway-storage-server` (a server with capabilities that reads
+the disks, for `storage-health`).
 
 ---
 
@@ -1806,7 +1821,7 @@ inherited, not specified again.
 | The diagnostics history as trust evidence for promotion | §4a, §6a, §6b | done: `agent-admin readiness` and the Cockpit readiness view show the reports, their verified quotes and root's feedback on them; on a host that started diagnostics-only they are readiness thresholds (reports with feedback, confirmed share), so `promote` follows them |
 | The bundled health-check and diagnostics agent | §14a, §17a, §20b | done: the template `health-check` (every playbook's tools, read-only in `diagnostics`, supervised, with daily and weekly playbook schedules), which `custos-setup` creates; `custos-setup` also installs the playbooks' commands and `custos-net`, replacing an earlier release's unchanged commands, and with `--restarts` mcp-gateway's server `restarts` (security review 0.6, P1); both tested on a diagnostics-only host in the functional tests |
 | Diagnostics: read host state, logs and metrics; correlate and summarize; root-cause hypotheses; written remediation plans for the administrator | §4a, §6b | done: the `diagnostics` category (read-only), the playbooks, and the report with findings, hypotheses and a plan |
-| The published diagnostic playbook set | §14c | done: eleven playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool; the host runs the steps with their arguments (`{unit}`, `{unit_re}`) before the model answers, and a run shows the model only the playbook's tools; `update-status` sees a pending reboot (`/run/reboot-needed`, mcp-gateway 1.16) and, with mcp-gateway's server `restarts`, the services to restart |
+| The published diagnostic playbook set | §14c | done: twelve playbooks and their read-only `exec` commands; an activity or a schedule runs one, refused when the gateway does not offer a step's tool; the host runs the steps with their arguments (`{unit}`, `{unit_re}`) before the model answers, and a run shows the model only the playbook's tools; `update-status` sees a pending reboot (`/run/reboot-needed`, mcp-gateway 1.16) and, with mcp-gateway's server `restarts`, the services to restart; `storage-health` reads the disks' health with mcp-gateway's server `storage` (1.17) |
 | Confidence indicator | §4a | done: in Cockpit, each hypothesis shows the agent's confidence, labelled as its own estimate, next to how many of its quotes the host verified |
 | Recommendation provenance ("because of log line X and metric Y") | §4a | done: each hypothesis cites evidence, whose quotes the host verifies against the output of the tool calls; Cockpit shows each quote as verified or as the agent's claim alone |
 | Administrator feedback | §4a, §10 | done: `agent-admin feedback`, and in Cockpit **Was it right?** under the report, recorded outside the agent as `diagnosis.feedback` |
