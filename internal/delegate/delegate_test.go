@@ -92,3 +92,53 @@ func TestAnswer(t *testing.T) {
 		t.Errorf("an unfinished activity: %v %v", r.IsError, m)
 	}
 }
+
+// Delegator names the agent from what mcp-gateway says about the caller
+// (MCP_GATEWAY_PRINCIPAL): the kind, and for a token its issuer, before
+// the subject.
+func TestDelegator(t *testing.T) {
+	issuers := []string{"https://idp.example/realms/agents"}
+	for _, tc := range []struct {
+		principal, want string
+	}{
+		{`{"kind":"local","sub":"agent-health-check","uid":981}`, "health-check"},
+		{`{"kind":"remote","sub":"agent-dwt-osh","iss":"https://idp.example/realms/agents"}`, "dwt-osh"},
+		// Not an agent:
+		{``, ""},                // a gateway before 1.17.1
+		{`{"kind":"none"}`, ""}, // the discovery instance
+		{`{"kind":"local","sub":"alice","uid":1000}`, ""},                                              // a person
+		{`{"kind":"local","sub":"agent-x"}`, ""},                                                       // local without a uid
+		{`{"kind":"remote","sub":"agent-x","iss":"https://other.example"}`, ""},                        // another issuer
+		{`{"kind":"remote","sub":"agent-x","iss":"https://idp.example/realms/agents","uid":1000}`, ""}, // mapped to an account
+		{`{"kind":"remote","sub":"agent-../x","iss":"https://idp.example/realms/agents"}`, ""},
+		{`{"kind":"remote","sub":"agent-x"}`, ""}, // no issuer
+		{`not json`, ""},
+	} {
+		got, err := Delegator(tc.principal, issuers)
+		if got != tc.want || (tc.want == "") != (err != nil) {
+			t.Errorf("%s: %q, %v; want %q", tc.principal, got, err, tc.want)
+		}
+	}
+}
+
+// The bridge names the delegating agent to the callee.
+func TestAskNamesTheDelegator(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "callee"), 0o755)
+	var got string
+	sock := filepath.Join(dir, "callee", "api.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(HeaderDelegator)
+		w.Write([]byte(`{"id":"e-1","state":"finished","summary":"done"}`))
+	})}
+	go srv.Serve(l)
+	t.Cleanup(func() { srv.Close() })
+	res := Ask(context.Background(), dir, "health-check", Args{Agent: "callee", Task: "x"})
+	if res.IsError || got != "health-check" {
+		t.Errorf("delegator %q, result %+v", got, res)
+	}
+}
