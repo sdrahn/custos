@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -471,9 +470,7 @@ func (a *Admin) CheckCategoryEnabled(name, cat string) error {
 func (a *Admin) enablementTampered(e *Enablement) string {
 	read := a.JournalJSON
 	if read == nil {
-		read = func(args ...string) ([]byte, error) {
-			return exec.Command("journalctl", append([]string{"-o", "json", "--no-pager"}, args...)...).Output()
-		}
+		read = host.JournalctlJSON
 	}
 	if e.Record == "" {
 		return "the state has no record: it was not written by agent-admin"

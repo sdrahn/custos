@@ -55,3 +55,13 @@ func TestHost(t *testing.T) {
 		}
 	}
 }
+
+// Records are read with --all: without it journalctl writes a field
+// longer than 4096 bytes as null, and agent-admin feedback refused every
+// report longer than that ("has no diagnosis report").
+func TestJournalctlArgs(t *testing.T) {
+	got := strings.Join(JournalctlArgs("--since", "@1", "AGENT_NAME=a"), " ")
+	if got != "-o json --all --no-pager --since @1 AGENT_NAME=a" {
+		t.Errorf("journalctl %s", got)
+	}
+}
