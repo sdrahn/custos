@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-A framework for governed, agentic management of the operating system,
+A framework for governed, agentic AI management of the operating system,
 for SUSE Linux Enterprise Server 16 and openSUSE Leap 16. Agents run on
 the host, under systemd or in a sandbox, and act only through
 mcp-gateway, which enforces their policy and approvals. Administrators
