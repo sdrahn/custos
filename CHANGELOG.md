@@ -11,6 +11,29 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.17 — 2026-11-26
+
+Feedback on a diagnosis report longer than 4 KB is recorded again: it
+was refused as "no diagnosis report", and readiness left such reports
+out of an agent's diagnosis history.
+
+Upgrading from 0.9.16 needs no change to configuration or gateway data.
+Reports written before the update are in the journal: after it, they
+take feedback and count towards readiness.
+
+### Fixed
+
+- Feedback on a diagnosis report longer than 4 KB is recorded: it was
+  refused with "agent … has no diagnosis report for activity …", in
+  Cockpit and by `agent-admin feedback`, because `journalctl` gave the
+  report's record with the report left out (a field over 4096 bytes is
+  null in its JSON unless asked for `--all`). For the same reason
+  `agent-admin readiness` left such reports out of an agent's diagnosis
+  history (reports, verified quotes, feedback). Every reading of agent
+  records by `agent-admin` now asks for `--all`. Reports written before
+  the update are in the journal: they take feedback and count once it is
+  installed.
+
 ## v0.9.16 — 2026-11-26
 
 Custos's agents check the disks' health: the new playbook
