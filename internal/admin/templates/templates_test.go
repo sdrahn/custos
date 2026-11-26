@@ -55,6 +55,10 @@ var knownTools = map[string]struct{ read, change []string }{
 	"restarts": {
 		read: []string{"pending_restarts"},
 	},
+	// mcp-gateway's server storage (1.17, mcp-gateway-storage-server).
+	"storage": {
+		read: []string{"storage_devices", "device_health", "btrfs_device_stats", "btrfs_scrub_status"},
+	},
 	"exec":       {}, // from the shipped exec.d files (init)
 	"custos-net": {}, // from gateway/custos-net.d (init)
 }

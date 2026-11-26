@@ -57,6 +57,14 @@ const (
 // servers.d, where custos-setup links it when the package is installed.
 const RestartsProfile = "/usr/share/mcp-gateway/profiles/restarts.yaml"
 
+// StorageProfile is mcp-gateway's server storage (package
+// mcp-gateway-storage-server, mcp-gateway 1.17): the disks' SMART health,
+// the btrfs error counters and the last scrub, for the playbook
+// storage-health. It names capabilities (CAP_SYS_ADMIN, CAP_SYS_RAWIO,
+// CAP_DAC_READ_SEARCH) and reads the disks, so it too is accepted only
+// from servers.d.
+const StorageProfile = "/usr/share/mcp-gateway/profiles/storage.yaml"
+
 // shippedBefore are the SHA-256 digests of the exec command files earlier
 // releases shipped (0.3.0; 0.4.0 and 0.5.0): a copy that is one of them
 // is no administrator's change, and custos-setup replaces it with the
@@ -80,6 +88,8 @@ type Options struct {
 	Credential []byte
 	// Restarts offers mcp-gateway's server restarts (--restarts).
 	Restarts bool
+	// Storage offers mcp-gateway's server storage (--storage).
+	Storage bool
 }
 
 // Step is one thing custos-setup did: done, already (nothing to do),
@@ -234,6 +244,10 @@ func Run(a *admin.Admin, o Options) ([]Step, error) {
 	restartsStep := setupRestartsServer(a, o.Restarts)
 	steps = append(steps, restartsStep)
 	execAdded = execAdded || restartsStep.Result == "done"
+	// mcp-gateway's server storage, for storage-health, when installed.
+	storageStep := setupStorageServer(a, o.Storage)
+	steps = append(steps, storageStep)
+	execAdded = execAdded || storageStep.Result == "done"
 
 	// 4. The health-check agent, from its template with the defaults.
 	if _, err := os.Stat(filepath.Join(a.AgentDir(HealthCheck), "agent.yaml")); err == nil {
@@ -362,30 +376,60 @@ func setupNetServer(a *admin.Admin) Step {
 // mcp-gateway-restarts-server is installed and the administrator asked
 // for it (--restarts): the server holds CAP_SYS_PTRACE, so offering it is
 // a choice of its own, not one the package or an earlier run made
-// (security review 0.6, P1). A link that is there is kept; a file there
-// that is not that link is the administrator's and stays.
+// (security review 0.6, P1).
 func setupRestartsServer(a *admin.Admin, want bool) Step {
-	const name = "server restarts"
-	if _, err := os.Stat(a.Path(RestartsProfile)); err != nil {
-		return Step{name, "skipped", "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart"}
+	return linkProfile(a, want, profileServer{
+		name:         "restarts",
+		profile:      RestartsProfile,
+		notInstalled: "mcp-gateway-restarts-server is not installed: update-status then does without the services to restart",
+		notOffered:   "not offered: it holds CAP_SYS_PTRACE; add --restarts to offer it for update-status's services to restart",
+	})
+}
+
+// setupStorageServer links mcp-gateway's profile storage the same way,
+// when mcp-gateway-storage-server is installed and the administrator
+// asked for it (--storage): the server holds capabilities and reads the
+// disks.
+func setupStorageServer(a *admin.Admin, want bool) Step {
+	return linkProfile(a, want, profileServer{
+		name:         "storage",
+		profile:      StorageProfile,
+		notInstalled: "mcp-gateway-storage-server is not installed: storage-health then reads only the journal",
+		notOffered:   "not offered: it holds CAP_SYS_ADMIN, CAP_SYS_RAWIO and CAP_DAC_READ_SEARCH and reads the disks; add --storage to offer it for storage-health",
+	})
+}
+
+// profileServer is one of mcp-gateway's servers that names capabilities,
+// whose profile custos-setup links into servers.d when asked to.
+type profileServer struct {
+	name, profile, notInstalled, notOffered string
+}
+
+// linkProfile links the server's profile into servers.d. A link that is
+// there is kept, and so is a file there that is not that link: it is the
+// administrator's.
+func linkProfile(a *admin.Admin, want bool, p profileServer) Step {
+	name := "server " + p.name
+	if _, err := os.Stat(a.Path(p.profile)); err != nil {
+		return Step{name, "skipped", p.notInstalled}
 	}
 	if _, err := os.Stat(a.Path(GatewayServersDir)); err != nil {
 		return Step{name, "skipped", GatewayServersDir + " does not exist"}
 	}
-	dst := a.Path(filepath.Join(GatewayServersDir, "restarts.yaml"))
-	if target, err := os.Readlink(dst); err == nil && target == RestartsProfile {
+	dst := a.Path(filepath.Join(GatewayServersDir, p.name+".yaml"))
+	if target, err := os.Readlink(dst); err == nil && target == p.profile {
 		return Step{name, "already", ""}
 	}
 	if _, err := os.Lstat(dst); err == nil {
-		return Step{name, "skipped", dst + " is not the link to " + RestartsProfile + ": kept"}
+		return Step{name, "skipped", dst + " is not the link to " + p.profile + ": kept"}
 	}
 	if !want {
-		return Step{name, "skipped", "not offered: it holds CAP_SYS_PTRACE; add --restarts to offer it for update-status's services to restart"}
+		return Step{name, "skipped", p.notOffered}
 	}
-	if err := os.Symlink(RestartsProfile, dst); err != nil {
+	if err := os.Symlink(p.profile, dst); err != nil {
 		return Step{name, "failed", err.Error()}
 	}
-	return Step{name, "done", dst + " -> " + RestartsProfile}
+	return Step{name, "done", dst + " -> " + p.profile}
 }
 
 func sha256Hex(b []byte) string {

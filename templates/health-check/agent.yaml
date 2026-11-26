@@ -36,7 +36,7 @@ instruction: |
   name the documents and sections you relied on. If the documentation
   is not offered, say so and go on without it.
 gateway:
-  servers: [systemd, exec, custos-net, restarts, zypp, snapper, tukit, suse-docs]
+  servers: [systemd, exec, custos-net, restarts, storage, zypp, snapper, tukit, suse-docs]
   tools:
     - systemd__list_loaded_units
     - systemd__list_log
@@ -55,6 +55,10 @@ gateway:
     - exec__package_dependencies
     - exec__reboot_status
     - restarts__pending_restarts
+    - storage__storage_devices
+    - storage__device_health
+    - storage__btrfs_device_stats
+    - storage__btrfs_scrub_status
     - zypp__check_updates
     - snapper__list_snapshots
     - tukit__get_status
@@ -76,3 +80,4 @@ schedules:
   - {name: disk-pressure, on_calendar: "*-*-* 06:10", playbook: disk-pressure}
   - {name: journal-errors, on_calendar: "*-*-* 06:20", playbook: journal-errors}
   - {name: update-status, on_calendar: "Mon *-*-* 06:30", playbook: update-status}
+  - {name: storage-health, on_calendar: "Mon *-*-* 06:40", playbook: storage-health}

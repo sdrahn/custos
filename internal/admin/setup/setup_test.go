@@ -55,7 +55,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 	// The exec server's running instances stop, so that the next ones
 	// read the new commands.
 	want := "diagnostics-only=done, model defaults=done, exec commands exec.d-diagnostics.yaml=done, " +
-		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, server custos-net=done, server restarts=skipped, agent health-check=done, credential=done"
+		"exec commands exec.d-disk-usage.yaml=done, exec instances=done, server custos-net=done, server restarts=skipped, server storage=skipped, agent health-check=done, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("first run:\n got %s\nwant %s", got, want)
 	}
@@ -94,7 +94,7 @@ func TestSetupDiagnosticsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = "diagnostics-only=already, model defaults=already, exec commands exec.d-diagnostics.yaml=already, " +
-		"exec commands exec.d-disk-usage.yaml=already, server custos-net=already, server restarts=skipped, agent health-check=already, credential=done"
+		"exec commands exec.d-disk-usage.yaml=already, server custos-net=already, server restarts=skipped, server storage=skipped, agent health-check=already, credential=done"
 	if got := results(steps); got != want {
 		t.Errorf("second run:\n got %s\nwant %s", got, want)
 	}
@@ -240,62 +240,76 @@ func TestSetupReplacesAnEarlierReleasesCommands(t *testing.T) {
 	}
 }
 
-// mcp-gateway's server restarts: custos-setup links its profile into
-// servers.d when mcp-gateway-restarts-server is installed, keeps a file
-// there that is not that link, and health-check may call its tool.
+// mcp-gateway's servers restarts and storage: custos-setup links each
+// one's profile into servers.d when its package is installed and its flag
+// given, keeps a file there that is not that link, and health-check may
+// call its tools.
 func TestSetupRestartsServer(t *testing.T) {
+	testProfileServer(t, "restarts", RestartsProfile, "--restarts", func(o *Options, v bool) { o.Restarts = v }, []string{"pending_restarts"})
+}
+
+func TestSetupStorageServer(t *testing.T) {
+	testProfileServer(t, "storage", StorageProfile, "--storage", func(o *Options, v bool) { o.Storage = v },
+		[]string{"storage_devices", "device_health", "btrfs_device_stats", "btrfs_scrub_status"})
+}
+
+func testProfileServer(t *testing.T, server, profile, flag string, set func(*Options, bool), tools []string) {
+	t.Helper()
 	a, _ := setupHost(t)
 	o := Options{DiagnosticsOnly: true, Backend: "on-host", Model: "m"}
-	host.WriteFile(a.Path(RestartsProfile), []byte("name: restarts\n"), 0o644)
-	dst := a.Path(filepath.Join(GatewayServersDir, "restarts.yaml"))
+	host.WriteFile(a.Path(profile), []byte("name: "+server+"\n"), 0o644)
+	dst := a.Path(filepath.Join(GatewayServersDir, server+".yaml"))
+	step := "server " + server
 	// Installed but not asked for (security review 0.6, P1): not linked,
 	// and the step says how.
 	steps, err := Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := results(steps); !strings.Contains(got, "server restarts=skipped") {
-		t.Errorf("without --restarts: %s", got)
+	if got := results(steps); !strings.Contains(got, step+"=skipped") {
+		t.Errorf("without %s: %s", flag, got)
 	}
 	for _, s := range steps {
-		if s.Name == "server restarts" && !strings.Contains(s.Detail, "--restarts") {
+		if s.Name == step && !strings.Contains(s.Detail, flag) {
 			t.Errorf("the step does not say how: %v", s)
 		}
 	}
 	if _, err := os.Lstat(dst); err == nil {
-		t.Fatal("linked without --restarts")
+		t.Fatalf("linked without %s", flag)
 	}
-	o.Restarts = true
+	set(&o, true)
 	steps, err = Run(a, o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := results(steps); !strings.Contains(got, "server restarts=done") {
-		t.Errorf("with --restarts: %s", got)
+	if got := results(steps); !strings.Contains(got, step+"=done") {
+		t.Errorf("with %s: %s", flag, got)
 	}
-	if target, err := os.Readlink(dst); err != nil || target != RestartsProfile {
+	if target, err := os.Readlink(dst); err != nil || target != profile {
 		t.Errorf("link %q %v", target, err)
 	}
 	g, err := a.ReadGateway(HealthCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var allowed bool
-	for _, p := range g.Permissions {
-		if p["server"] == "restarts" && p["tool"] == "pending_restarts" && p["read_only"] == true && p["category"] == "diagnostics" {
-			allowed = true
+	for _, tool := range tools {
+		var allowed bool
+		for _, p := range g.Permissions {
+			if p["server"] == server && p["tool"] == tool && p["read_only"] == true && p["category"] == "diagnostics" {
+				allowed = true
+			}
+		}
+		if !allowed {
+			t.Errorf("health-check may not call %s__%s: %+v", server, tool, g.Permissions)
 		}
 	}
-	if !allowed {
-		t.Errorf("health-check may not call restarts__pending_restarts: %+v", g.Permissions)
-	}
-	if steps, _ := Run(a, o); !strings.Contains(results(steps), "server restarts=already") {
+	if steps, _ := Run(a, o); !strings.Contains(results(steps), step+"=already") {
 		t.Errorf("second run: %s", results(steps))
 	}
 	// A link that is there stays without the flag; one the administrator
 	// removed is not made again without it.
-	o.Restarts = false
-	if steps, _ := Run(a, o); !strings.Contains(results(steps), "server restarts=already") {
+	set(&o, false)
+	if steps, _ := Run(a, o); !strings.Contains(results(steps), step+"=already") {
 		t.Errorf("kept link: %s", results(steps))
 	}
 	os.Remove(dst)
@@ -303,11 +317,11 @@ func TestSetupRestartsServer(t *testing.T) {
 	if _, err := os.Lstat(dst); err == nil {
 		t.Error("linked again after the administrator removed it")
 	}
-	o.Restarts = true
+	set(&o, true)
 	// The administrator's own definition stays.
-	host.WriteFile(dst, []byte("name: restarts\n# mine\n"), 0o644)
+	host.WriteFile(dst, []byte("name: "+server+"\n# mine\n"), 0o644)
 	steps, _ = Run(a, o)
-	if !strings.Contains(results(steps), "server restarts=skipped") {
+	if !strings.Contains(results(steps), step+"=skipped") {
 		t.Errorf("own file: %s", results(steps))
 	}
 	if b, _ := os.ReadFile(dst); !strings.Contains(string(b), "# mine") {

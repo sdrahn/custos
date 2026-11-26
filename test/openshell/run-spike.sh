@@ -428,7 +428,7 @@ model: {provider: openai, name: fake, endpoint: "http://127.0.0.1:8008/v1"}
 instruction: You are a test agent.
 gateway:
   url: "$aud"
-  servers: [custos-test, exec, systemd, custos-net, snapper, tukit, zypp, restarts]   # the playbooks' stand-ins, #227
+  servers: [custos-test, exec, systemd, custos-net, snapper, tukit, zypp, restarts, storage]   # the playbooks' stand-ins, #227
   oauth: {token_url: "$issuer/token", client_id: agent-sb, refresh_before_seconds: 90}
 limits: {max_invocation_seconds: 300}
 interaction: {agui: true, client_tools: deny}
