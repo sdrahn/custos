@@ -1,7 +1,7 @@
 # mcp-gateway requirements from Custos 0.10
 
-Status: proposed. For an mcp-gateway session to implement; Custos
-follows once a gateway release has it. The general constraints of
+Status: R8 is in mcp-gateway 1.17.2 (`_meta` key
+`io.github.sdrahn.mcp-gateway/idempotencyKey`), and Custos uses it. The general constraints of
 `mcp-gateway-for-custos-0.3.md` apply: nothing Custos-specific in the
 gateway, policy decides who sees what, changes only add, and the
 gateway's own records stay trustworthy.

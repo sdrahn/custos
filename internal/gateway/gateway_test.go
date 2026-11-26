@@ -164,3 +164,54 @@ func TestProposalClean(t *testing.T) {
 		t.Errorf("%d bytes", len(b))
 	}
 }
+
+// A call from an ADK tool carries its idempotency key (mcp-gateway 1.17.2,
+// R8), the same for the same call; a call from outside ADK none.
+func TestCallsCarryKey(t *testing.T) {
+	ctx := context.Background()
+	got := make(chan any, 2)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "gw"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{Name: "probe"}, func(_ context.Context, r *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		got <- r.Params.Meta[MetaIdempotencyKey]
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil, nil
+	})
+	st, ct := mcp.NewInMemoryTransports()
+	if _, err := srv.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewClient("pp", "test", nil, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.CallTool(adkCtx{ctx, "e-1", "c-9"}, &mcp.CallToolParams{Name: "probe"}); err != nil {
+		t.Fatal(err)
+	}
+	if k := <-got; k != CallToken("e-1", "c-9") {
+		t.Errorf("key %v, want %s", k, CallToken("e-1", "c-9"))
+	}
+	if _, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "probe"}); err != nil {
+		t.Fatal(err)
+	}
+	if k := <-got; k != nil {
+		t.Errorf("a call from outside ADK got key %v", k)
+	}
+}
+
+// A key the gateway would refuse (over 128 characters, a space) becomes a
+// digest, the same for the same call.
+func TestCallKey(t *testing.T) {
+	if k := callKey("e-1", "c-9"); k != "custos:e-1/c-9" {
+		t.Errorf("plain: %q", k)
+	}
+	long := strings.Repeat("x", 200)
+	for _, id := range []string{long, "call 9", "c-é"} {
+		k := callKey("e-1", id)
+		if len(k) > 128 || strings.ContainsAny(k, " é") || !strings.HasPrefix(k, "custos:") || k != callKey("e-1", id) {
+			t.Errorf("%q: key %q", id, k)
+		}
+	}
+	if callKey("e-1", long) == callKey("e-2", long) {
+		t.Error("two calls, one key")
+	}
+}

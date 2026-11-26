@@ -30,7 +30,7 @@ the version it implements in `GET /v1/status` (`contract`).
 
 | Part | Role | Enforces |
 |---|---|---|
-| **mcp-gateway** (≥ 1.17.1) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
+| **mcp-gateway** (≥ 1.17.2) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
 | **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
 | **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
 | **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
@@ -803,7 +803,15 @@ the agent nor its host can grant or forge one.
 
 1. The agent calls a tool, with a progress token in the call's
    `_meta.progressToken` that is unique among its calls in flight
-   (MCP's own field for naming a request). Policy says `ask` (channel
+   (MCP's own field for naming a request), and the same value as the
+   call's idempotency key (`_meta["io.github.sdrahn.mcp-gateway/idempotencyKey"]`,
+   mcp-gateway 1.17.2; a digest of it where it is longer than 128
+   characters or has a character the gateway refuses). An agent in
+   OpenShell whose connection ends without an answer, as OpenShell's
+   proxy does at a token renewal, sends the call again with that key:
+   the gateway answers it from the first call, which runs once, and a
+   pending approval stays the one approval. A call without a key is
+   never sent again. Policy says `ask` (channel
    `oob`). The gateway creates a pending approval and the call waits (gateway
    `approval_timeout`, 120 s by default; the approval itself stays
    pending after the call goes away, and the agent's next identical
