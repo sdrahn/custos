@@ -308,6 +308,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | Message (as printed) | Section |
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `agent not reachable: … api.sock: connect: permission denied`, a systemd agent delegating to one in OpenShell | up to 0.9.16, SELinux kept the delegation bridge from the relay's socket (`ausearch -m AVC`: `connectto`). Update `custos-selinux` |
 | `agent not reachable: … api.sock: connect: permission denied`, a systemd agent delegating to one in OpenShell | up to 0.9.17, SELinux kept the delegation bridge from the relay's socket (`ausearch -m AVC`: `connectto`). Update `custos-selinux` |
 | `agent not reachable: … dial unix /run/agents/NAME/api.sock: connect: permission denied` when an agent delegates to an agent in OpenShell | up to 0.9.17, SELinux kept the gateway's delegation bridge (`mcpsrv_agents_t`) from the relay's socket (`agent_relay_t`; `ausearch -m AVC` shows `connectto`). Update `custos-selinux` |
 | `agent … has no diagnosis report for activity …`, although the activity shows its report (Cockpit's feedback form, `agent-admin feedback`) | up to 0.9.16, a report longer than 4 KB: `journalctl` showed its record's report as empty, and feedback found none. Update Custos; the report's record is in the journal and feedback on it then works |
