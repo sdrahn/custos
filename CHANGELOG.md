@@ -11,6 +11,37 @@ added by the pull request that makes the change. `tools/changelog show`
 prints them as the next release's section; a release writes them here.
 The sections below are released and stay as they are.
 
+## v0.9.16 — 2026-11-26
+
+Custos's agents check the disks' health: the new playbook
+`storage-health` reads each disk's SMART or NVMe health log, the btrfs
+error counters and the last scrub with mcp-gateway's server `storage`
+(mcp-gateway 1.17), and the kernel's I/O errors from the journal.
+
+Upgrading from 0.9.15 needs no change to configuration or gateway data.
+To use the new checks, install `mcp-gateway-storage-server` (on a
+transactional system in the same transaction as `mcp-gateway-selinux`),
+link its profile (`custos-setup --storage`, or by hand as chapter 9 of
+the user guide says) and restart the gateway. An agent made before
+0.9.16 gets the tools with `agent-admin apply-template NAME`; it keeps
+its schedules, so add the weekly `storage-health` run to it yourself.
+
+### Added
+
+- The diagnostic playbook `storage-health` checks the disks' health with
+  mcp-gateway's server `storage` (package `mcp-gateway-storage-server`,
+  mcp-gateway 1.17): the disks, each one's SMART or NVMe health log with
+  a verdict, the btrfs error counters and the last scrub, and the
+  journal's I/O and btrfs errors. It reads only. Without the server it
+  reads the journal alone and says so. The `health-check` template runs
+  it every Monday, and it and the `disk-watch` templates may call the
+  server's four tools, each named, without an approval.
+  `custos-setup --storage` links the server's profile when the package
+  is installed; the server holds capabilities and reads the disks, so
+  offering it is your choice, as with `--restarts`. An agent made
+  before this release gets the tools with `agent-admin apply-template`;
+  it keeps its schedules, so add the weekly run to it yourself.
+
 ## v0.9.15 — 2026-11-25
 
 `agent-admin help` is easier to read: the commands in groups of what
