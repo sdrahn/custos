@@ -7,7 +7,7 @@ section "Diagnostic playbooks"
 # CONTRACT.md §14c: published playbooks; an activity runs one through the
 # gateway, refused when the gateway does not offer a step's tool.
 check "agent-admin playbooks lists the shipped set, none broken" bash -c \
-	"agent-admin playbooks | jq -e '(keys | length) == 11 and .\"failed-units\".title and ([.[] | select(.error)] | length == 0)' >/dev/null"
+	"agent-admin playbooks | jq -e '(keys | length) == 12 and .\"failed-units\".title and ([.[] | select(.error)] | length == 0)' >/dev/null"
 if [ -x /usr/libexec/mcp-servers/mcp-server-exec ]; then
 	check "the shipped diagnostic commands pass mcp-server-exec --check" \
 		/usr/libexec/mcp-servers/mcp-server-exec --check --commands /usr/share/custos/templates/exec.d-diagnostics.yaml
