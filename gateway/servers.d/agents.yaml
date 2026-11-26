@@ -13,6 +13,10 @@ command: ["/usr/libexec/custos/agent-delegate"]
 selinux_type: mcpsrv_agents_t
 isolation: principal
 network: false
-# The delegating agent's user: the callee checks it by SO_PEERCRED.
-run_as: principal
+# One account for every delegating agent, in agent-clients: an agent in
+# OpenShell has no local user at the gateway (a token), and a throwaway
+# one may not reach the sockets. The gateway tells the bridge whom it
+# serves (MCP_GATEWAY_PRINCIPAL, mcp-gateway 1.17.1); the callee believes
+# the agent it names from this account only (CONTRACT.md §9).
+run_as: custos-delegate
 discovery: shared

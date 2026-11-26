@@ -365,7 +365,7 @@ func TestDelegationGetsFullResponse(t *testing.T) {
 	if err := os.Symlink(filepath.Join(filepath.Dir(e.gw.Socket), "api.sock"), filepath.Join(dir, "patch-pilot", "api.sock")); err != nil {
 		t.Fatal(err)
 	}
-	r := delegate.Ask(context.Background(), dir, delegate.Args{Agent: "patch-pilot", Task: "Restart nginx."})
+	r := delegate.Ask(context.Background(), dir, "triage", delegate.Args{Agent: "patch-pilot", Task: "Restart nginx."})
 	var m map[string]any
 	json.Unmarshal([]byte(r.Content[0].(*mcp.TextContent).Text), &m)
 	if r.IsError || m["answer"] != strings.TrimSpace(long) || m["state"] != "finished" {

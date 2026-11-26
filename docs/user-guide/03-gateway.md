@@ -154,10 +154,16 @@ cp /usr/share/custos/gateway/servers.d/agents.yaml /etc/mcp-gateway/servers.d/ag
 systemctl reload mcp-gateway.service
 ```
 
-The gateway runs the bridge `agent-delegate` as the delegating agent's
-user (SELinux `mcpsrv_agents_t`). It posts the task to the other agent's
-socket and waits for the result. Allow it per agent, naming whom it may
-delegate to:
+The gateway runs the bridge `agent-delegate` as the system account
+`custos-delegate` (SELinux `mcpsrv_agents_t`) for every delegating
+agent, and tells it which agent that is (mcp-gateway 1.17.1). This
+works for agents under systemd and in OpenShell alike, in both
+directions. It posts the task to the other agent's socket, naming the
+delegating agent, and waits for the result. The other agent believes
+that name only from `custos-delegate`. A copy of `agents.yaml` from
+before 0.9.17 runs the bridge as the delegating agent's user, which an
+agent in OpenShell does not have: copy the file again after the update.
+Allow it per agent, naming whom it may delegate to:
 
 ```yaml
 - {server: agents, tool: delegate, read_only: true, args: {agent: '^patch-pilot$'}}

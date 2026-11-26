@@ -308,6 +308,7 @@ ausearch -m AVC,USER_AVC -ts recent | grep -E 'agent_t|agent_relay_t|mcpsrv_agen
 | Message (as printed) | Section |
 |---|---|
 | any `version:`, `name:`, `model.`, `gateway.`, `schedules[…]`, `client_tools:`, `sandbox.kind:` message | [Configuration errors](#configuration-errors) |
+| `agent not reachable: … api.sock: connect: permission denied`, delegating to or from an agent in OpenShell | up to 0.9.16 the bridge ran as the caller's user, and an agent in OpenShell has none. Update Custos and mcp-gateway (1.17.1), copy `agents.yaml` again ([chapter 3](03-gateway.md#delegation)) |
 | `agent … has no diagnosis report for activity …`, although the activity shows its report (Cockpit's feedback form, `agent-admin feedback`) | up to 0.9.16, a report longer than 4 KB: `journalctl` showed its record's report as empty, and feedback found none. Update Custos; the report's record is in the journal and feedback on it then works |
 | `no task category "…" (the catalog has: …)` | the name is not in `agent-admin categories` ([chapter 6](06-permissions-and-modes.md#categories)) |
 | `agent … category … is not ready (…); see agent-admin readiness …, or promote with --despite-readiness --reason TEXT` | the measures are below the thresholds ([chapter 6](06-permissions-and-modes.md#readiness)): wait and keep approving, adjust `/etc/custos/promotion.yaml`, or promote with a reason |

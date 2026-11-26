@@ -104,6 +104,13 @@ list_dirs_pattern(mcpsrv_agents_t, agent_runtime_t, agent_runtime_t)
 read_files_pattern(mcpsrv_agents_t, agent_conf_t, agent_conf_t)
 stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, init_t)
 stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, agent_t)
+# It reads the issuers trusted for agents (/etc/mcp-gateway/policy/agents/
+# _http.yaml, 0644), to know a token's agent: mcp-gateway's configuration,
+# not its credentials or signing key, which are labelled apart.
+gen_require(`
+	type mcpgw_etc_t;
+')
+read_files_pattern(mcpsrv_agents_t, mcpgw_etc_t, mcpgw_etc_t)
 allow mcpsrv_agents_t self:unix_stream_socket create_stream_socket_perms;
 
 # The diagnostic commands Custos ships for mcp-gateway's exec server
@@ -188,6 +195,11 @@ init_daemon_domain(agent_relay_t, agent_relay_exec_t)
 allow agent_relay_t agent_sock_t:sock_file getattr;
 allow agent_relay_t init_t:unix_stream_socket { accept read write getattr getopt setopt shutdown };
 allow agent_relay_t self:unix_stream_socket create_stream_socket_perms;
+# The relay's socket (agent-openshell@.socket) is labelled by systemd with
+# the domain of the service it starts, agent_relay_t: the delegation
+# bridge connects to it as to a systemd agent's (agent_t), to delegate a
+# task to an agent in OpenShell.
+stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, agent_relay_t)
 allow agent_relay_t self:tcp_socket create_stream_socket_perms;
 allow agent_relay_t self:udp_socket create_socket_perms;
 allow agent_relay_t self:process { getsched signal signull };
