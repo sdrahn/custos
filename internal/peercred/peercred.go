@@ -29,8 +29,8 @@ type Caller struct {
 func (c Caller) Root() bool { return c.UID == 0 }
 
 // Agent returns the agent name if the caller is an agent's user
-// (agent-<name>, CONTRACT.md §2): in practice the delegation bridge, which
-// the gateway runs as the delegating agent's user.
+// (agent-<name>, CONTRACT.md §2), or the delegation bridge acting for one
+// (DelegateUser with HeaderDelegator, delegated).
 func (c Caller) Agent() (string, bool) {
 	if len(c.Name) > 6 && c.Name[:6] == "agent-" {
 		return c.Name[6:], true
@@ -82,6 +82,34 @@ var (
 	agentMay = regexp.MustCompile(`^/v1/activities(/[^/]+)?$`)
 )
 
+// The delegation bridge (agent-delegate, CONTRACT.md §9) runs as
+// DelegateUser, whichever agent delegates, and names the delegating
+// agent in HeaderDelegator: the gateway told it whom it serves.
+const (
+	DelegateUser    = "custos-delegate"
+	HeaderDelegator = "X-Custos-Delegator"
+)
+
+// agentName is an agent's name (config.ValidName, which this package may
+// not import).
+var agentName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
+
+// delegated is the caller a request is from: the delegating agent's user
+// for the bridge (DelegateUser) naming one in HeaderDelegator, the caller
+// itself for anyone else, whose HeaderDelegator is ignored. The bridge
+// without a delegator is refused (false).
+func delegated(c Caller, r *http.Request) (Caller, bool) {
+	d := r.Header.Get(HeaderDelegator)
+	r.Header.Del(HeaderDelegator)
+	if c.Name != DelegateUser {
+		return c, true
+	}
+	if !agentName.MatchString(d) {
+		return c, false
+	}
+	return Caller{UID: c.UID, Name: "agent-" + d}, true
+}
+
 // Guard allows only the paths of the contract, and only the caller's own
 // sessions unless the caller is root. Everything else is 404, so the ADK
 // server's builder and debug endpoints are not reachable. Agents (the
@@ -93,6 +121,11 @@ func Guard(app string, next http.Handler) http.Handler {
 			http.Error(w, "caller unknown", http.StatusForbidden)
 			return
 		}
+		if c, ok = delegated(c, r); !ok {
+			http.Error(w, "the delegation bridge names no delegating agent", http.StatusForbidden)
+			return
+		}
+		r = r.WithContext(WithCaller(r.Context(), c))
 		p := r.URL.Path
 		if _, isAgent := c.Agent(); isAgent && !agentMay.MatchString(p) && !open[p] {
 			http.Error(w, "agents may only delegate", http.StatusForbidden)

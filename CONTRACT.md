@@ -30,7 +30,7 @@ the version it implements in `GET /v1/status` (`contract`).
 
 | Part | Role | Enforces |
 |---|---|---|
-| **mcp-gateway** (≥ 1.16) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
+| **mcp-gateway** (≥ 1.17.1) | the agents' only tools; OPA policy (autonomy modes, §6); approvals and grants (§7) | *may this agent call this tool with these arguments now* |
 | **systemd** | runs, schedules and stops agents; sandboxes them with the `systemd` backend | what an agent process can touch; that a stopped agent stays stopped |
 | **SELinux** | confines agents (`systemd` backend: `agent_t`; `openshell` backend: the container runtime's domain) | that an agent reaches the gateway's MCP socket, never its control socket nor another agent's socket |
 | **sandbox backend** (§3a) | `systemd` (the default) or `openshell` (NVIDIA OpenShell) | files, processes and network egress of the agent process |
@@ -918,9 +918,18 @@ delegation itself needs an approval unless it is marked `read_only`.
 
 1. The delegating host adds a trace to the call's arguments:
    `_trace: {root_agent, root_activity, parent_agent, parent_activity}`.
-2. The gateway runs the `agents` server (`agent-delegate`) **as the
-   delegating agent's user** (`run_as: principal`). It posts the task to
-   the callee's `POST /v1/activities` and waits for the result. The tool
+2. The gateway runs the `agents` server (`agent-delegate`) as the
+   system account **`custos-delegate`** (`run_as: custos-delegate`, a
+   member of `agent-clients`), whichever agent delegates, and tells it
+   whom it serves (`MCP_GATEWAY_PRINCIPAL`, mcp-gateway 1.17.1). The
+   bridge serves an agent only: a local principal `agent-<name>` (an
+   agent under systemd, on the gateway's socket), or a remote one whose
+   token is from an issuer trusted for agents (`_http.yaml`, §6), is
+   mapped to no local account, and has the subject `agent-<name>` (an
+   agent in OpenShell). It checks the kind and the issuer before the
+   subject, and refuses every call for anyone else. It posts the task to
+   the callee's `POST /v1/activities` with the header
+   `X-Custos-Delegator: <name>` and waits for the result. The tool
    answers `{"agent", "activity", "state", "answer", "report"?, "reason"?}`:
    `answer` is the callee activity's `response` (§4, its last text in
    full, up to 32 KiB), or its `summary` from a host without one;
@@ -928,8 +937,14 @@ delegation itself needs an approval unless it is marked `read_only`.
    did not finish. An activity that did not finish is a tool error. The
    answer is tool output like any other: the delegating host checks it
    for signs of a prompt injection (§4 `calls[].suspected_injection`).
-3. The callee sees the caller as `agent-<parent>` by `SO_PEERCRED`. It
-   records `origin: {kind: delegation, by: agent-<parent>}`. It believes
+3. The callee sees the caller by `SO_PEERCRED` (for an agent in
+   OpenShell, by its relay's `X-Custos-Caller`, §3a). A caller
+   `custos-delegate` is the agent its `X-Custos-Delegator` names, as if
+   it were `agent-<name>`, and is refused without one; anyone else's
+   `X-Custos-Delegator` is ignored. A caller `agent-<parent>` (an
+   `agents` server still run as the delegating agent's user, `run_as:
+   principal`) is that agent, as before. It records `origin: {kind:
+   delegation, by: agent-<parent>}`. It believes
    the trace only when `parent_agent` is that caller, and otherwise
    records the activity without a parent.
 4. The callee works as **its own principal**, under its own mode,

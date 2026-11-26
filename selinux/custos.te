@@ -104,6 +104,13 @@ list_dirs_pattern(mcpsrv_agents_t, agent_runtime_t, agent_runtime_t)
 read_files_pattern(mcpsrv_agents_t, agent_conf_t, agent_conf_t)
 stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, init_t)
 stream_connect_pattern(mcpsrv_agents_t, agent_runtime_t, agent_sock_t, agent_t)
+# It reads the issuers trusted for agents (/etc/mcp-gateway/policy/agents/
+# _http.yaml, 0644), to know a token's agent: mcp-gateway's configuration,
+# not its credentials or signing key, which are labelled apart.
+gen_require(`
+	type mcpgw_etc_t;
+')
+read_files_pattern(mcpsrv_agents_t, mcpgw_etc_t, mcpgw_etc_t)
 allow mcpsrv_agents_t self:unix_stream_socket create_stream_socket_perms;
 
 # The diagnostic commands Custos ships for mcp-gateway's exec server

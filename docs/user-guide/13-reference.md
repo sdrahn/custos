@@ -16,7 +16,7 @@ fields, gateway data, AG-UI events) are defined in the contract,
 |---|---|---|
 | `/usr/sbin/agent-admin` (also `/usr/libexec/custos/agent-admin`) | root; anyone for `check FILE`, `show`, `categories`, `templates`, `draft`, reading `defaults` and listing `issuers`; root or `systemd-journal` for `readiness` and the review queue | administration ([chapter 9](09-administration.md#agent-admin)) |
 | `/usr/libexec/custos/agent-launcher` | `agent-<name>` (`agent_t`) | the agent: `agent-launcher serve` |
-| `/usr/libexec/custos/agent-delegate` | the delegating agent's user (`mcpsrv_agents_t`), started by mcp-gateway | the `agents` server: delegation |
+| `/usr/libexec/custos/agent-delegate` | `custos-delegate` (`mcpsrv_agents_t`), started by mcp-gateway for the delegating agent | the `agents` server: delegation |
 | `/usr/libexec/custos/agent-openshell-relay` | root (`agent_relay_t`) | an OpenShell agent's socket and journal |
 | `/usr/libexec/custos/agent-openshell-logs` | the relay | follows the sandbox container's output |
 | `/usr/libexec/custos/agent-openshell-start` | root, before the relay (`agent-openshell@.service`) | starts the agent's sandbox and waits until it is ready |
